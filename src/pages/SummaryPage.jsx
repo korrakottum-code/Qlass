@@ -86,7 +86,7 @@ function StatChip({ label, value, color }) {
   );
 }
 
-function SectionStats({ queues, procedures }) {
+function SectionStats({ queues, procedures, showStatus = false }) {
   const total = queues.length;
   const revenue = queues.reduce((s, q) => s + (Number(q.price) || 0), 0);
   const byType = {
@@ -94,14 +94,54 @@ function SectionStats({ queues, procedures }) {
     old: queues.filter((q) => q.customerType === "old").length,
     course: queues.filter((q) => q.customerType === "course").length,
   };
+  
+  const byStatus = {
+    pending: queues.filter((q) => q.status === "pending").length,
+    follow1: queues.filter((q) => q.status === "follow1").length,
+    follow2: queues.filter((q) => q.status === "follow2").length,
+    follow3: queues.filter((q) => q.status === "follow3").length,
+    confirmed: queues.filter((q) => q.status === "confirmed").length,
+    rescheduled: queues.filter((q) => q.status === "rescheduled").length,
+    no_show: queues.filter((q) => q.status === "no_show").length,
+    cancelled: queues.filter((q) => q.status === "cancelled").length,
+    done: queues.filter((q) => q.status === "done").length,
+  };
+  
   return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-      <StatChip label="คิวทั้งหมด" value={total} color="var(--accent)" />
-      <StatChip label="รายได้" value={revenue ? `฿${revenue.toLocaleString()}` : "—"} color="var(--green)" />
-      <StatChip label="ลูกค้าใหม่" value={byType.new} color="var(--blue)" />
-      <StatChip label="ลูกค้าเก่า" value={byType.old} color="var(--text2)" />
-      <StatChip label="ใช้คอร์ส" value={byType.course} color="var(--amber)" />
-    </div>
+    <>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <StatChip label="คิวทั้งหมด" value={total} color="var(--accent)" />
+        <StatChip label="รายได้" value={revenue ? `฿${revenue.toLocaleString()}` : "—"} color="var(--green)" />
+        <StatChip label="ลูกค้าใหม่" value={byType.new} color="var(--blue)" />
+        <StatChip label="ลูกค้าเก่า" value={byType.old} color="var(--text2)" />
+        <StatChip label="ใช้คอร์ส" value={byType.course} color="var(--amber)" />
+      </div>
+      
+      {showStatus && total > 0 && (
+        <div style={{
+          marginTop: 12,
+          padding: "12px 16px",
+          background: "var(--surface2)",
+          borderRadius: "var(--radius-sm)",
+          border: "1.5px solid var(--border)",
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text2)", marginBottom: 8 }}>
+            📊 สถานะคิว
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {byStatus.pending > 0 && <StatChip label="รอยืนยัน" value={byStatus.pending} color="#f59e0b" />}
+            {byStatus.follow1 > 0 && <StatChip label="โทรตาม ×1" value={byStatus.follow1} color="#f97316" />}
+            {byStatus.follow2 > 0 && <StatChip label="โทรตาม ×2" value={byStatus.follow2} color="#ef4444" />}
+            {byStatus.follow3 > 0 && <StatChip label="โทรตาม ×3" value={byStatus.follow3} color="#dc2626" />}
+            {byStatus.confirmed > 0 && <StatChip label="ยืนยันแล้ว" value={byStatus.confirmed} color="#3b82f6" />}
+            {byStatus.rescheduled > 0 && <StatChip label="เลื่อนนัด" value={byStatus.rescheduled} color="#8b5cf6" />}
+            {byStatus.no_show > 0 && <StatChip label="ไม่มาตามนัด" value={byStatus.no_show} color="#6b7280" />}
+            {byStatus.cancelled > 0 && <StatChip label="ยกเลิก" value={byStatus.cancelled} color="#ef4444" />}
+            {byStatus.done > 0 && <StatChip label="มาแล้ว/เสร็จ" value={byStatus.done} color="#10b981" />}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -341,7 +381,7 @@ export default function SummaryPage({ queues, branches, rooms, procedures, promo
           </span>
         </div>
         <div className="card-body">
-          <SectionStats queues={appointmentQueues} procedures={procedures} />
+          <SectionStats queues={appointmentQueues} procedures={procedures} showStatus={true} />
           {advanceBookings.length > 0 && (
             <div style={{
               fontSize: 12, color: "var(--amber)", marginBottom: 8,
