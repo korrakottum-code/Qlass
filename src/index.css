@@ -58,7 +58,6 @@ body{background:var(--bg);font-family:var(--font);color:var(--text);font-size:14
 }
 .main-shell{
   width:100%;
-  max-width:1200px;
 }
 .top-bar{
   background:var(--surface);border-bottom:1px solid var(--border);
