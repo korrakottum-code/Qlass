@@ -28,11 +28,11 @@ function normalizeThaiDigits(s) {
   return s.replace(/[๐-๙]/g, (c) => "๐๑๒๓๔๕๖๗๘๙".indexOf(c));
 }
 
-// ─── Normalize ข้อความ: ลบ emoji, zero-width, multiple spaces ───
+// ─── Normalize ข้อความ: ลบ emoji, zero-width, multiple spaces (คง newline ไว้) ───
 function normalizeText(s) {
   return normalizeThaiDigits(s)
     .replace(/[\u200B-\u200F\uFEFF]/g, "") // zero-width chars
-    .replace(/\s+/g, " ")
+    .replace(/[^\S\n]+/g, " ")             // collapse spaces but keep \n
     .trim();
 }
 
@@ -95,7 +95,7 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
   ];
   for (let i = 0; i < lines.length; i++) {
     for (const pat of phonePatterns) {
-      const m = lines[i].match(pat) || fullText.match(pat);
+      const m = lines[i].match(pat);
       if (m) {
         result.phone = m[1].replace(/[\s\-]/g, "");
         if (result.phone.length >= 9 && result.phone.length <= 10) {
@@ -109,12 +109,24 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
     }
     if (result.phone) break;
   }
+  // fullText fallback for phone (don't mark usedLines)
+  if (!result.phone) {
+    for (const pat of phonePatterns) {
+      const m = fullText.match(pat);
+      if (m) {
+        result.phone = m[1].replace(/[\s\-]/g, "");
+        if (result.phone.length >= 9 && result.phone.length <= 10) {
+          confidence.phone = "high";
+          break;
+        } else { delete result.phone; }
+      }
+    }
+  }
 
   // ─── Date (หลายรูปแบบ: dd/mm/yy, dd-mm-yyyy, 5 เม.ย. 69, วันที่ 5/4/69, พรุ่งนี้, มะรืน) ───
   // รูปแบบตัวเลข
   for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/(?:วันที่\s*)?(\d{1,2})\s*[\/\-\.]\s*(\d{1,2})\s*[\/\-\.]\s*(\d{2,4})/) ||
-              fullText.match(/(?:วันที่\s*)?(\d{1,2})\s*[\/\-\.]\s*(\d{1,2})\s*[\/\-\.]\s*(\d{2,4})/);
+    const m = lines[i].match(/(?:วันที่\s*)?(\d{1,2})\s*[\/\-\.]\s*(\d{1,2})\s*[\/\-\.]\s*(\d{2,4})/);
     if (m) {
       const d = String(m[1]).padStart(2, "0");
       const mo = String(m[2]).padStart(2, "0");
@@ -172,11 +184,10 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
   ];
   for (let i = 0; i < lines.length; i++) {
     for (const pat of timePatterns) {
-      const m = lines[i].match(pat) || fullText.match(pat);
+      const m = lines[i].match(pat);
       if (m) {
         let h = parseInt(m[1]);
         let min = parseInt(m[2] || "0");
-        // "บ่าย3" → 15:00
         if (pat.source.includes("บ่าย") && h < 12) h += 12;
         if (h >= 7 && h <= 22) {
           result.timeBlock = h * 12 + Math.floor(min / 5);
@@ -253,7 +264,7 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
     }
     if (result.branchId) break;
   }
-  // ขั้น 2: exact/partial match
+  // ขั้น 2: exact/partial match (per-line first, then fullText fallback)
   if (!result.branchId) {
     let bestScore = 0;
     let bestMatch = null;
@@ -263,11 +274,11 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
         const short = branch.name.replace(/^(สาขา|Class)\s*/i, "").trim();
         const names = [branch.name, short].filter(Boolean);
         for (const n of names) {
-          if (lines[i].includes(n) || fullText.includes(n)) {
+          if (lines[i].includes(n)) {
             result.branchId = branch.id;
             confidence.branchId = "high";
             usedLines.add(i);
-            bestMatch = null; // exact found
+            bestMatch = null;
             break;
           }
           // fuzzy
