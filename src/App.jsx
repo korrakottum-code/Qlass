@@ -320,15 +320,28 @@ export default function App() {
   }, [showToast]);
 
   const saveRoom = useCallback(async (data) => {
-    if (data.id) {
+    if (data.bulk) {
+      // Bulk mode: สร้างห้องหลายสาขาพร้อมกัน
+      for (const item of data.items) {
+        await createRoom(item);
+      }
+      const updatedRooms = await getAllRooms();
+      setRooms(updatedRooms || []);
+      setModal(null);
+      showToast("success", `สร้าง ${data.items.length} ห้องเรียบร้อย 🚀`);
+    } else if (data.id) {
       await updateRoom(data.id, data);
+      const updatedRooms = await getAllRooms();
+      setRooms(updatedRooms || []);
+      setModal(null);
+      showToast("success", "บันทึกห้องเรียบร้อย");
     } else {
       await createRoom(data);
+      const updatedRooms = await getAllRooms();
+      setRooms(updatedRooms || []);
+      setModal(null);
+      showToast("success", "บันทึกห้องเรียบร้อย");
     }
-    const updatedRooms = await getAllRooms();
-    setRooms(updatedRooms || []);
-    setModal(null);
-    showToast("success", "บันทึกห้องเรียบร้อย");
   }, [showToast]);
 
   const saveRoomSchedule = useCallback(async (data) => {
@@ -555,6 +568,7 @@ export default function App() {
                 branches={filteredBranches}
                 rooms={filteredRooms}
                 onAdd={(branchId) => setModal({ type: "room", data: null, defaultBranchId: branchId })}
+                onBulkAdd={() => setModal({ type: "room", data: null, bulkMode: true })}
                 onEdit={(r) => setModal({ type: "room", data: r })}
                 onDelete={deleteRoom}
               />
@@ -641,7 +655,7 @@ export default function App() {
             <PromoModal data={modal.data} procedures={procedures} onSave={savePromo} onClose={() => setModal(null)} />
           )}
           {modal.type === "room" && (
-            <RoomModal data={modal.data} branches={filteredBranches} rooms={filteredRooms} defaultBranchId={modal.defaultBranchId} onSave={saveRoom} onClose={() => setModal(null)} />
+            <RoomModal data={modal.data} branches={filteredBranches} rooms={filteredRooms} defaultBranchId={modal.defaultBranchId} bulkMode={modal.bulkMode} onSave={saveRoom} onClose={() => setModal(null)} />
           )}
           {modal.type === "schedule" && (
             <ScheduleModal data={modal.data} rooms={filteredRooms} branches={filteredBranches} onSave={saveRoomSchedule} onClose={() => setModal(null)} />

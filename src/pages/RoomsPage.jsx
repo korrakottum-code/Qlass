@@ -1,8 +1,13 @@
 import { blockToTime } from "../utils/helpers";
 
-export default function RoomsPage({ branches, rooms, onAdd, onEdit, onDelete }) {
+export default function RoomsPage({ branches, rooms, onAdd, onBulkAdd, onEdit, onDelete }) {
   return (
     <>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <button className="btn btn-primary" onClick={onBulkAdd}>
+          🚀 เพิ่มห้องทุกสาขาพร้อมกัน
+        </button>
+      </div>
       {branches.map((branch) => {
         const bRooms = rooms.filter((r) => r.branchId === branch.id);
         const mCount = bRooms.filter((r) => r.type === "M").length;
