@@ -126,5 +126,5 @@ CREATE INDEX idx_tickets_branch_id ON tickets(branch_id);
 
 -- Insert initial staff (Pin: 0000 and 1234)
 INSERT INTO staff (id, name, nickname, role, pin, branch_id) VALUES 
-('s1s1s1s1-s1s1-s1s1-s1s1-s1s1s1s1s1s1', 'ผู้ดูแลระบบ', 'Admin', 'superadmin', '0000', NULL),
-('s2s2s2s2-s2s2-s2s2-s2s2-s2s2s2s2s2s2', 'น้องแนน', 'แนน', 'cashier', '1234', 'b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1');
+('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'ผู้ดูแลระบบ', 'Admin', 'superadmin', '0000', NULL),
+('ffffffff-ffff-ffff-ffff-ffffffffffff', 'น้องแนน', 'แนน', 'cashier', '1234', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
