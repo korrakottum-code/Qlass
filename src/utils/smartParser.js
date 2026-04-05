@@ -63,7 +63,7 @@ const PROCEDURE_ALIASES = {
   "ลดไขมัน": "Meso Fat", "meso": "Meso Fat", "เมโส": "Meso Fat", "mesofat": "Meso Fat",
   "พีล": "Chemical Peel", "peel": "Chemical Peel", "เคมิคอล": "Chemical Peel",
   "กำจัดขน": "Diode Laser", "diode": "Diode Laser",
-  "วิตามิน": "IV Drip", "iv": "IV Drip", "drip": "IV Drip", "ดริป": "IV Drip",
+  "วิตามิน": "IV Drip", "iv": "IV Drip", "drip": "IV Drip", "ดริป": "IV Drip", "ดริปผิว": "IV Drip", "ดริปวิตามิน": "IV Drip",
   "อัลเทอร่า": "Ultherapy", "ulthera": "Ultherapy", "ultherapy": "Ultherapy",
   "ipl": "IPL",
 };
@@ -449,16 +449,22 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
     }
   }
 
-  // ─── Name (smart: handle "คุณXX", "น.ส.", numbering, nicknames in parentheses) ───
+  // ─── Name (smart: handle "1.หมวย", "คุณXX", "น.ส.", nicknames in parentheses) ───
+  // คำที่ไม่ใช่ชื่อ (skip)
+  const NOT_NAMES = /^(ปรึกษา|consult|สอบถาม|ติดต่อ|นัดหมาย|จอง|book|ใหม่|เก่า|คอร์ส|new|old|course)$/i;
+  // ขั้น 1: pattern ที่ชัดเจนว่าเป็นชื่อ
   const namePatterns = [
     /(?:ชื่อ|คุณ|นาย|นาง|น\.?ส\.?|Ms\.?|Mr\.?|Mrs\.?)\s*([^\d\n]{2,30})/i,
+    /^\d+[\.\)]\s*([ก-๙][ก-๙a-zA-Z\s]{1,30})/,  // "1.หมวย", "2.จิตราพร ทรงชัยเจริญ"
   ];
   for (let i = 0; i < lines.length; i++) {
     if (usedLines.has(i)) continue;
     for (const pat of namePatterns) {
       const m = lines[i].match(pat);
       if (m) {
-        result.name = m[1].replace(/\s*\(.*?\)\s*$/, "").trim();
+        let nameCandidate = m[1].replace(/\s*\(.*?\)\s*$/, "").trim();
+        if (NOT_NAMES.test(nameCandidate)) continue;
+        result.name = nameCandidate;
         // extract nickname from parentheses
         const nick = lines[i].match(/\(([^)]+)\)/);
         if (nick) result.name = `${result.name} (${nick[1]})`;
@@ -469,7 +475,7 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
     }
     if (result.name) break;
   }
-  // fallback: first unused meaningful line
+  // ขั้น 2: fallback — first unused meaningful line
   if (!result.name) {
     for (let i = 0; i < lines.length; i++) {
       if (usedLines.has(i)) continue;
@@ -480,9 +486,9 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
       if (/วันที่|เวลา|ราคา|หมายเหตุ|note/i.test(line)) continue;
       if (/^\d{1,2}\s*[:\.]\s*\d{2}$/.test(line)) continue;
       if (/^[MT]\d{1,2}$/i.test(line)) continue;
-      if (/^(ใหม่|เก่า|คอร์ส|new|old|course)$/i.test(line)) continue;
-      // remove leading numbering
+      // remove leading numbering (1. 2. 3) etc.)
       const cleaned = line.replace(/^\d+[\.\)\s]+/, "").replace(/^[-–•]\s*/, "").trim();
+      if (NOT_NAMES.test(cleaned)) continue;
       // name should be 2-40 chars, start with Thai/English letter
       if (cleaned.length >= 2 && cleaned.length <= 40 && /^[ก-๙a-zA-Z]/.test(cleaned)) {
         result.name = cleaned;
