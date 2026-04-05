@@ -601,3 +601,15 @@ export async function deleteQueue(id) {
   
   if (error) throw error;
 }
+
+// ═══════════════════════════════════════════════════════════
+// ALIAS FUNCTIONS FOR COMPATIBILITY
+// ═══════════════════════════════════════════════════════════
+
+export const getAllBranches = fetchBranches;
+export const getAllProcedures = fetchProcedures;
+export const getAllPromos = fetchPromos;
+export const getAllRooms = fetchRooms;
+export const getAllRoomSchedules = fetchRoomSchedules;
+export const getAllStaff = fetchStaff;
+export const getAllQueues = fetchQueues;
