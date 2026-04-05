@@ -608,6 +608,40 @@ export async function deleteQueue(id) {
 // ALIAS FUNCTIONS FOR COMPATIBILITY
 // ═══════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════
+// PROCEDURE CATEGORIES
+// ═══════════════════════════════════════════════════════════
+
+export async function fetchCategories() {
+  const { data, error } = await supabase
+    .from("procedure_categories")
+    .select("*")
+    .order("created_at", { ascending: true });
+  
+  if (error) throw error;
+  return data.map(c => c.name);
+}
+
+export async function createCategory(name) {
+  const { data, error } = await supabase
+    .from("procedure_categories")
+    .insert([{ name }])
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data.name;
+}
+
+export async function deleteCategory(name) {
+  const { error } = await supabase
+    .from("procedure_categories")
+    .delete()
+    .eq("name", name);
+  
+  if (error) throw error;
+}
+
 export const getAllBranches = fetchBranches;
 export const getAllProcedures = fetchProcedures;
 export const getAllPromos = fetchPromos;
@@ -615,3 +649,4 @@ export const getAllRooms = fetchRooms;
 export const getAllRoomSchedules = fetchRoomSchedules;
 export const getAllStaff = fetchStaff;
 export const getAllQueues = fetchQueues;
+export const getAllCategories = fetchCategories;

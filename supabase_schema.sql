@@ -126,6 +126,19 @@ CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
 CREATE INDEX IF NOT EXISTS idx_tickets_reported_by ON tickets(reported_by);
 CREATE INDEX IF NOT EXISTS idx_tickets_branch_id ON tickets(branch_id);
 
+-- 9. Procedure Categories Table
+CREATE TABLE IF NOT EXISTS procedure_categories (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Insert default categories (if not exist)
+INSERT INTO procedure_categories (name) VALUES
+('Injection'), ('Laser'), ('Energy'), ('Lifting'),
+('Skincare'), ('Wellness'), ('Body'), ('Other')
+ON CONFLICT (name) DO NOTHING;
+
 -- Insert initial staff (Pin: 0000 and 1234) (if not exists)
 INSERT INTO staff (id, name, nickname, role, pin, branch_id) VALUES 
 ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'ผู้ดูแลระบบ', 'Admin', 'superadmin', '0000', NULL),

@@ -9,7 +9,8 @@ import {
   createRoom, updateRoom, deleteRoom as deleteRoomDB,
   createRoomSchedule, updateRoomSchedule, deleteRoomSchedule as deleteRoomScheduleDB,
   createStaff, updateStaff, deleteStaff as deleteStaffDB,
-  createQueue, updateQueue, deleteQueue as deleteQueueDB
+  createQueue, updateQueue, deleteQueue as deleteQueueDB,
+  getAllCategories, createCategory as createCategoryDB, deleteCategory as deleteCategoryDB
 } from "./utils/supabaseService";
 import { learnFromCorrection } from "./utils/smartParser";
 
@@ -84,14 +85,15 @@ export default function App() {
     async function loadFromSupabase() {
       try {
         setIsLoading(true);
-        const [staffData, branchData, procedureData, promoData, roomData, scheduleData, queueData] = await Promise.all([
+        const [staffData, branchData, procedureData, promoData, roomData, scheduleData, queueData, categoryData] = await Promise.all([
           getAllStaff(),
           getAllBranches(),
           getAllProcedures(),
           getAllPromos(),
           getAllRooms(),
           getAllRoomSchedules(),
-          getAllQueues()
+          getAllQueues(),
+          getAllCategories().catch(() => null),
         ]);
         
         setStaff(staffData || []);
@@ -101,6 +103,9 @@ export default function App() {
         setRooms(roomData || []);
         setRoomSchedules(scheduleData || []);
         setQueues(queueData || []);
+        if (categoryData && categoryData.length > 0) {
+          setCategories(categoryData);
+        }
       } catch (error) {
         console.error('Error loading from Supabase:', error);
         setSupabaseError(error.message);
@@ -391,17 +396,30 @@ export default function App() {
     showToast("success", "ลบหัตถการแล้ว");
   }, [showToast]);
 
-  const addCategory = useCallback((name) => {
+  const addCategory = useCallback(async (name) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    setCategories((prev) => prev.includes(trimmed) ? prev : [...prev, trimmed]);
-  }, []);
+    if (categories.includes(trimmed)) return;
+    try {
+      await createCategoryDB(trimmed);
+      const updated = await getAllCategories();
+      setCategories(updated || [...categories, trimmed]);
+    } catch {
+      // Fallback: just add locally
+      setCategories((prev) => prev.includes(trimmed) ? prev : [...prev, trimmed]);
+    }
+  }, [categories]);
 
-  const deleteCategory = useCallback((name) => {
-    setCategories((prev) => prev.filter((c) => c !== name));
-    setProcedures((prev) => prev.map((p) => p.category === name ? { ...p, category: "" } : p));
+  const deleteCategory = useCallback(async (name) => {
+    try {
+      await deleteCategoryDB(name);
+      const updated = await getAllCategories();
+      setCategories(updated || categories.filter((c) => c !== name));
+    } catch {
+      setCategories((prev) => prev.filter((c) => c !== name));
+    }
     showToast("success", `ลบหมวด "${name}" แล้ว`);
-  }, [showToast]);
+  }, [showToast, categories]);
 
   const deletePromo = useCallback(async (id) => {
     await deletePromoDB(id);
