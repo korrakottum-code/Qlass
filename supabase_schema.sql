@@ -92,14 +92,14 @@ CREATE TABLE queues (
 -- OPTIONAL: Insert mock data if needed to test the application quickly
 -- Insert initial sample branches
 INSERT INTO branches (id, name) VALUES 
-('b1b1b1b1-b1b1-b1b1-b1b1-b1b1b1b1b1b1', 'สาขาขอนแก่น'),
-('b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2', 'สาขาสยาม');
+('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'สาขาขอนแก่น'),
+('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'สาขาสยาม');
 
 -- Insert initial sample procedures
 INSERT INTO procedures (id, name, blocks, category, room_type) VALUES 
-('p1p1p1p1-p1p1-p1p1-p1p1-p1p1p1p1p1p1', 'Botox', 3, 'Injection', 'M'),
-('p2p2p2p2-p2p2-p2p2-p2p2-p2p2p2p2p2p2', 'Filler', 4, 'Injection', 'M'),
-('p3p3p3p3-p3p3-p3p3-p3p3-p3p3p3p3p3p3', 'Laser CO2', 6, 'Laser', 'T');
+('11111111-1111-1111-1111-111111111111', 'Botox', 3, 'Injection', 'M'),
+('22222222-2222-2222-2222-222222222222', 'Filler', 4, 'Injection', 'M'),
+('33333333-3333-3333-3333-333333333333', 'Laser CO2', 6, 'Laser', 'T');
 
 -- 8. Tickets Table (Issue Reporting System)
 CREATE TABLE tickets (
