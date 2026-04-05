@@ -11,6 +11,33 @@ export default function LoginScreen({ staff, onLogin }) {
 
   const activeStaff = staff.filter((s) => s.active);
 
+  // Show message if no staff data
+  if (staff.length === 0) {
+    return (
+      <div style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        fontFamily: "var(--font, sans-serif)", color: "#fff", textAlign: "center", padding: 20,
+      }}>
+        <img src={qlassLogo} alt="Qlass Logo" style={{ width: 80, height: 80, marginBottom: 16 }} />
+        <h1 style={{ fontSize: 26, fontWeight: 800, marginBottom: 16 }}>Qlass</h1>
+        <div style={{ maxWidth: 400, background: "rgba(255,255,255,0.1)", padding: 24, borderRadius: 12 }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
+          <h2 style={{ fontSize: 18, marginBottom: 12 }}>ไม่พบข้อมูลพนักงาน</h2>
+          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", marginBottom: 16 }}>
+            กรุณาตรวจสอบ:
+          </p>
+          <ul style={{ textAlign: "left", fontSize: 13, color: "rgba(255,255,255,0.7)", lineHeight: 1.8 }}>
+            <li>Supabase มีข้อมูลในตาราง <code>staff</code> หรือไม่</li>
+            <li>Environment Variables ถูกต้องหรือไม่</li>
+            <li>รัน SQL schema ใน Supabase แล้วหรือยัง</li>
+          </ul>
+        </div>
+      </div>
+    );
+  }
+
   const results = query.trim()
     ? activeStaff.filter((s) => {
         const q = query.trim().toLowerCase();
