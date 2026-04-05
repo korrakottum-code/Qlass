@@ -139,7 +139,7 @@ export default function BookingPage({
   }
 
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div>
       <SmartParseBox
         branches={branches}
         rooms={rooms}

@@ -83,7 +83,7 @@ export default function TicketPage({ tickets, branches, staff, currentUser, onCr
   };
 
   return (
-    <div style={{ padding: "24px", maxWidth: 1400, margin: "0 auto" }}>
+    <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: "#1a1a2e", margin: 0 }}>
           🎫 แจ้งปัญหาระบบ

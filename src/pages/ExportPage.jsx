@@ -14,7 +14,7 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
   const [endDate, setEndDate] = useState(getTodayStr());
 
   return (
-    <div style={{ padding: "24px", maxWidth: 1200, margin: "0 auto" }}>
+    <div>
       <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 24, color: "#1a1a2e" }}>
         📊 Export ข้อมูล
       </h1>
