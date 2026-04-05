@@ -12,9 +12,10 @@ const FIELD_LABELS = {
   date: "วันที่",
   timeBlock: "เวลา",
   customerType: "ประเภท",
+  note: "หมายเหตุ",
 };
 const CUST_LABELS = { new: "ลูกค้าใหม่", old: "ลูกค้าเก่า", course: "ใช้คอร์ส" };
-const FIELD_ORDER = ["name", "phone", "branchId", "roomId", "customerType", "procedureId", "promoId", "price", "date", "timeBlock"];
+const FIELD_ORDER = ["name", "phone", "branchId", "roomId", "customerType", "procedureId", "promoId", "price", "date", "timeBlock", "note"];
 
 export default function SmartParseBox({ branches, rooms = [], procedures, promos, hints, onApply }) {
   const [text, setText] = useState("");
@@ -126,7 +127,7 @@ export default function SmartParseBox({ branches, rooms = [], procedures, promos
             onPaste={handlePaste}
             autoFocus
             placeholder={
-              "วางข้อความได้เลย...\n\nตัวอย่าง:\n36.พัสวี มณีแสง (แนน)\n092-4645516\nฟิลเลอร์ 1990฿\nวันที่ 16/4/69\nเวลา 18:00\nขอนแก่น\nใหม่"
+              "วางข้อความจาก LINE/chat ได้เลย...\n\nตัวอย่าง:\nคุณแนน (สมหญิง)\n092-464-5516\nฟิลเลอร์ 1,990 บาท\n5 เม.ย. 69\nบ่าย3\nขอนแก่น\nลค.ใหม่\nหมายเหตุ: แพ้ยาชา"
             }
             rows={6}
             style={{ width: "100%", resize: "vertical", fontSize: 13, fontFamily: "var(--mono)" }}

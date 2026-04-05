@@ -10,7 +10,8 @@ import {
   createRoomSchedule, updateRoomSchedule, deleteRoomSchedule as deleteRoomScheduleDB,
   createStaff, updateStaff, deleteStaff as deleteStaffDB,
   createQueue, updateQueue, deleteQueue as deleteQueueDB,
-  getAllCategories, createCategory as createCategoryDB, deleteCategory as deleteCategoryDB
+  getAllCategories, createCategory as createCategoryDB, deleteCategory as deleteCategoryDB,
+  fetchTickets, createTicketDB, updateTicketDB, deleteTicketDB
 } from "./utils/supabaseService";
 import { learnFromCorrection } from "./utils/smartParser";
 
@@ -85,7 +86,7 @@ export default function App() {
     async function loadFromSupabase() {
       try {
         setIsLoading(true);
-        const [staffData, branchData, procedureData, promoData, roomData, scheduleData, queueData, categoryData] = await Promise.all([
+        const [staffData, branchData, procedureData, promoData, roomData, scheduleData, queueData, categoryData, ticketData] = await Promise.all([
           getAllStaff(),
           getAllBranches(),
           getAllProcedures(),
@@ -94,6 +95,7 @@ export default function App() {
           getAllRoomSchedules(),
           getAllQueues(),
           getAllCategories().catch(() => null),
+          fetchTickets().catch(() => null),
         ]);
         
         setStaff(staffData || []);
@@ -105,6 +107,9 @@ export default function App() {
         setQueues(queueData || []);
         if (categoryData && categoryData.length > 0) {
           setCategories(categoryData);
+        }
+        if (ticketData) {
+          setTickets(ticketData);
         }
       } catch (error) {
         console.error('Error loading from Supabase:', error);
@@ -460,28 +465,39 @@ export default function App() {
 
   // ═══════ TICKET ACTIONS ═══════
   const createTicket = useCallback(async (ticketData, images) => {
-    const newTicket = {
-      ...ticketData,
-      id: genId("T"),
-      imageUrls: [],
-      status: "open",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    setTickets((prev) => [newTicket, ...prev]);
-    showToast("success", "ส่งคำร้องเรียบร้อย");
+    try {
+      const newTicket = await createTicketDB(ticketData);
+      const updated = await fetchTickets();
+      setTickets(updated || []);
+      showToast("success", "ส่งคำร้องเรียบร้อย");
+    } catch (err) {
+      console.error("Create ticket error:", err);
+      showToast("error", "ไม่สามารถสร้างคำร้องได้");
+    }
   }, [showToast]);
 
-  const updateTicket = useCallback((id, updates) => {
-    setTickets((prev) => prev.map((t) => 
-      t.id === id ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t
-    ));
-    showToast("success", "อัปเดตสถานะแล้ว");
+  const updateTicket = useCallback(async (id, updates) => {
+    try {
+      await updateTicketDB(id, updates);
+      const updated = await fetchTickets();
+      setTickets(updated || []);
+      showToast("success", "อัปเดตสถานะแล้ว");
+    } catch (err) {
+      console.error("Update ticket error:", err);
+      showToast("error", "ไม่สามารถอัปเดตได้");
+    }
   }, [showToast]);
 
-  const deleteTicket = useCallback((id) => {
-    setTickets((prev) => prev.filter((t) => t.id !== id));
-    showToast("success", "ลบคำร้องแล้ว");
+  const deleteTicket = useCallback(async (id) => {
+    try {
+      await deleteTicketDB(id);
+      const updated = await fetchTickets();
+      setTickets(updated || []);
+      showToast("success", "ลบคำร้องแล้ว");
+    } catch (err) {
+      console.error("Delete ticket error:", err);
+      showToast("error", "ไม่สามารถลบได้");
+    }
   }, [showToast]);
 
   // ═══════ RENDER ═══════

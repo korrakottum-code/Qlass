@@ -605,6 +605,116 @@ export async function deleteQueue(id) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// TICKETS
+// ═══════════════════════════════════════════════════════════
+
+export async function fetchTickets() {
+  const { data, error } = await supabase
+    .from("tickets")
+    .select("*")
+    .order("created_at", { ascending: false });
+  
+  if (error) throw error;
+  return data.map(t => ({
+    id: t.id,
+    title: t.title,
+    description: t.description,
+    category: t.category,
+    priority: t.priority,
+    status: t.status,
+    branchId: t.branch_id,
+    reportedBy: t.reported_by,
+    assignedTo: t.assigned_to,
+    imageUrls: t.image_urls || [],
+    adminNotes: t.admin_notes || "",
+    createdAt: t.created_at,
+    updatedAt: t.updated_at,
+    resolvedAt: t.resolved_at,
+  }));
+}
+
+export async function createTicketDB(ticket) {
+  const { data, error } = await supabase
+    .from("tickets")
+    .insert([{
+      title: ticket.title,
+      description: ticket.description,
+      category: ticket.category,
+      priority: ticket.priority,
+      status: "open",
+      branch_id: ticket.branchId || null,
+      reported_by: ticket.reportedBy || null,
+      image_urls: ticket.imageUrls || [],
+    }])
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return {
+    id: data.id,
+    title: data.title,
+    description: data.description,
+    category: data.category,
+    priority: data.priority,
+    status: data.status,
+    branchId: data.branch_id,
+    reportedBy: data.reported_by,
+    assignedTo: data.assigned_to,
+    imageUrls: data.image_urls || [],
+    adminNotes: data.admin_notes || "",
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+    resolvedAt: data.resolved_at,
+  };
+}
+
+export async function updateTicketDB(id, updates) {
+  const updateData = {};
+  if (updates.status !== undefined) updateData.status = updates.status;
+  if (updates.adminNotes !== undefined) updateData.admin_notes = updates.adminNotes;
+  if (updates.assignedTo !== undefined) updateData.assigned_to = updates.assignedTo;
+  if (updates.priority !== undefined) updateData.priority = updates.priority;
+  updateData.updated_at = new Date().toISOString();
+  if (updates.status === "resolved" || updates.status === "closed") {
+    updateData.resolved_at = new Date().toISOString();
+  }
+
+  const { data, error } = await supabase
+    .from("tickets")
+    .update(updateData)
+    .eq("id", id)
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return {
+    id: data.id,
+    title: data.title,
+    description: data.description,
+    category: data.category,
+    priority: data.priority,
+    status: data.status,
+    branchId: data.branch_id,
+    reportedBy: data.reported_by,
+    assignedTo: data.assigned_to,
+    imageUrls: data.image_urls || [],
+    adminNotes: data.admin_notes || "",
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+    resolvedAt: data.resolved_at,
+  };
+}
+
+export async function deleteTicketDB(id) {
+  const { error } = await supabase
+    .from("tickets")
+    .delete()
+    .eq("id", id);
+  
+  if (error) throw error;
+}
+
+// ═══════════════════════════════════════════════════════════
 // ALIAS FUNCTIONS FOR COMPATIBILITY
 // ═══════════════════════════════════════════════════════════
 
