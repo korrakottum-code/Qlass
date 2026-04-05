@@ -391,6 +391,7 @@ export async function fetchStaff() {
 }
 
 export async function createStaff(staff) {
+  const rates = staff.commissionRates || { new: 0, old: 0, course: 0 };
   const { data, error } = await supabase
     .from("staff")
     .insert([{
@@ -401,9 +402,9 @@ export async function createStaff(staff) {
       role: staff.role,
       pin: staff.pin,
       active: staff.active,
-      commission_rate_new: staff.commissionRates.new,
-      commission_rate_old: staff.commissionRates.old,
-      commission_rate_course: staff.commissionRates.course,
+      commission_rate_new: rates.new,
+      commission_rate_old: rates.old,
+      commission_rate_course: rates.course,
     }])
     .select()
     .single();
@@ -427,6 +428,7 @@ export async function createStaff(staff) {
 }
 
 export async function updateStaff(id, staff) {
+  const rates = staff.commissionRates || { new: 0, old: 0, course: 0 };
   const { data, error } = await supabase
     .from("staff")
     .update({
@@ -437,9 +439,9 @@ export async function updateStaff(id, staff) {
       role: staff.role,
       pin: staff.pin,
       active: staff.active,
-      commission_rate_new: staff.commissionRates.new,
-      commission_rate_old: staff.commissionRates.old,
-      commission_rate_course: staff.commissionRates.course,
+      commission_rate_new: rates.new,
+      commission_rate_old: rates.old,
+      commission_rate_course: rates.course,
     })
     .eq("id", id)
     .select()
