@@ -1,9 +1,7 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
-import {
-  initBranches, initProcedures, initRooms, initPromos, initRoomSchedules, initStaff,
-  PROCEDURE_CATEGORIES, ROLES,
-} from "./utils/constants";
-import { genId, getTodayStr, getEmptyBookingForm, blockToTime, filterByUserBranch, canViewAllBranches } from "./utils/helpers";
+import { useState, useEffect, useMemo } from "react";
+import { initBranches, initProcedures, initRooms, initPromos, initRoomSchedules, initStaff, PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
+import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch } from "./utils/helpers";
+import { getAllStaff, getAllBranches, getAllProcedures, getAllPromos, getAllRooms, getAllRoomSchedules, getAllQueues } from "./utils/supabaseService";
 import { learnFromCorrection } from "./utils/smartParser";
 
 import Sidebar from "./components/Sidebar";
@@ -71,6 +69,35 @@ export default function App() {
   // ─── Smart parser learning ───
   const [parseHints, setParseHints] = useState({ branchAliases: {}, procedureAliases: {} });
   const [lastParseSnapshot, setLastParseSnapshot] = useState(null);
+
+  // ─── Load data from Supabase on initial mount ───
+  useEffect(() => {
+    async function loadFromSupabase() {
+      try {
+        const [staffData, branchData, procedureData, promoData, roomData, scheduleData, queueData] = await Promise.all([
+          getAllStaff(),
+          getAllBranches(),
+          getAllProcedures(),
+          getAllPromos(),
+          getAllRooms(),
+          getAllRoomSchedules(),
+          getAllQueues()
+        ]);
+        
+        if (staffData && staffData.length > 0) setStaff(staffData);
+        if (branchData && branchData.length > 0) setBranches(branchData);
+        if (procedureData && procedureData.length > 0) setProcedures(procedureData);
+        if (promoData && promoData.length > 0) setPromos(promoData);
+        if (roomData && roomData.length > 0) setRooms(roomData);
+        if (scheduleData && scheduleData.length > 0) setRoomSchedules(scheduleData);
+        if (queueData && queueData.length > 0) setQueues(queueData);
+      } catch (error) {
+        console.error('Error loading from Supabase:', error);
+        // Fallback to localStorage/initData if Supabase fails
+      }
+    }
+    loadFromSupabase();
+  }, []);
 
   // ─── Persist data to localStorage whenever it changes ───
   useEffect(() => {
