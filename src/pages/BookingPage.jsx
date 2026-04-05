@@ -7,7 +7,7 @@ export default function BookingPage({
   form, setForm, editingQueueId, setEditingQueueId,
   branches, rooms, procedures, promos,
   roomSchedules, queues,
-  onSubmit, onQuickAddPromo, onSmartApply, parseHints, todayStats,
+  onSubmit, onQuickAddPromo, onSmartApply, onBulkBooking, parseHints, todayStats,
   currentUser,
 }) {
   const [showQuickPromo, setShowQuickPromo] = useState(false);
@@ -147,6 +147,7 @@ export default function BookingPage({
         promos={promos}
         hints={parseHints || { branchAliases: {}, procedureAliases: {}, promoAliases: {}, roomAliases: {}, procedureToRoom: {} }}
         onApply={onSmartApply}
+        onBulkApply={onBulkBooking}
       />
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-header">

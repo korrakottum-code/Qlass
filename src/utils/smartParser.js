@@ -530,6 +530,73 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
 }
 
 /**
+ * แยกข้อความหลายคนออกเป็น blocks
+ * รองรับ: เลขนำหน้า (1. 2. 3.), บรรทัดว่างคั่น, phone number เริ่มต้น block ใหม่
+ * คืน array ของ string (แต่ละ block = 1 คน)
+ */
+export function splitMultiBooking(rawText) {
+  const lines = rawText.split(/\n/).map((l) => l.trim());
+  
+  // ─── ขั้น 1: ตรวจว่ามีเลขนำหน้า (1. 2. 3.) หรือไม่ ───
+  const numberedStarts = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\d+[\.\)]\s*\S/.test(lines[i])) {
+      numberedStarts.push(i);
+    }
+  }
+  // ถ้ามีเลข >= 2 ตัว → split ตามเลข
+  if (numberedStarts.length >= 2) {
+    const blocks = [];
+    for (let j = 0; j < numberedStarts.length; j++) {
+      const start = numberedStarts[j];
+      const end = j + 1 < numberedStarts.length ? numberedStarts[j + 1] : lines.length;
+      blocks.push(lines.slice(start, end).join("\n"));
+    }
+    return blocks;
+  }
+
+  // ─── ขั้น 2: split ด้วยบรรทัดว่าง (2+ empty lines) ───
+  const emptyBlocks = rawText.split(/\n\s*\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  if (emptyBlocks.length >= 2) {
+    return emptyBlocks;
+  }
+
+  // ─── ขั้น 3: split ด้วย phone pattern (เจอเบอร์โทรใหม่ = คนใหม่) ───
+  // ถ้ามี phone >= 2 ตัว → ย้อนขึ้น 1 บรรทัด (ชื่อ) เป็นจุดเริ่ม block
+  const phoneLines = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*0[689]\d[\d\s\-]{7,12}$/.test(lines[i])) {
+      phoneLines.push(i);
+    }
+  }
+  if (phoneLines.length >= 2) {
+    const blocks = [];
+    for (let j = 0; j < phoneLines.length; j++) {
+      // เริ่ม block จากบรรทัดก่อน phone (ชื่อ) หรือจาก phone เอง
+      const nameLineIdx = phoneLines[j] > 0 ? phoneLines[j] - 1 : phoneLines[j];
+      const start = j === 0 ? 0 : nameLineIdx;
+      const end = j + 1 < phoneLines.length
+        ? (phoneLines[j + 1] > 0 ? phoneLines[j + 1] - 1 : phoneLines[j + 1])
+        : lines.length;
+      blocks.push(lines.slice(start, end).join("\n"));
+    }
+    return blocks;
+  }
+
+  // ─── ไม่พบหลายคน → คืน array 1 block ───
+  return [rawText];
+}
+
+/**
+ * Parse หลายคนพร้อมกัน
+ * คืน array ของ { fields, confidence }
+ */
+export function parseMultiBooking(rawText, context) {
+  const blocks = splitMultiBooking(rawText);
+  return blocks.map((block) => parseBookingText(block, context));
+}
+
+/**
  * เรียนรู้จาก correction ทั้ง 4 ช่อง: branch, procedure, promo, room
  * คืน hints ชุดใหม่
  */

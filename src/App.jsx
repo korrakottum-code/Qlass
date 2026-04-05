@@ -546,6 +546,39 @@ export default function App() {
                   setForm((f) => ({ ...f, ...Object.fromEntries(Object.entries(fields).filter(([,v]) => v !== undefined && v !== null && v !== "")) }));
                   setLastParseSnapshot({ rawText, fields });
                 }}
+                onBulkBooking={async (allFields) => {
+                  let created = 0;
+                  for (const fields of allFields) {
+                    if (!fields.name && !fields.phone) continue;
+                    try {
+                      await createQueue({
+                        name: fields.name || "",
+                        phone: fields.phone || "",
+                        branchId: fields.branchId || "",
+                        roomId: fields.roomId || "",
+                        procedureId: fields.procedureId || "",
+                        promoId: fields.promoId || "",
+                        price: fields.price || "",
+                        note: fields.note || "",
+                        customerType: fields.customerType || "new",
+                        date: fields.date || getTodayStr(),
+                        timeBlock: fields.timeBlock ?? null,
+                        status: "waiting",
+                        statusNote: "",
+                        createdAt: getTodayStr(),
+                        recordedBy: currentUser?.id || null,
+                      });
+                      created++;
+                    } catch (err) {
+                      console.error("Bulk booking error:", err);
+                    }
+                  }
+                  if (created > 0) {
+                    const updatedQueues = await getAllQueues();
+                    setQueues(updatedQueues || []);
+                    showToast("success", `🚀 สร้าง ${created} คิวเรียบร้อย!`);
+                  }
+                }}
                 todayStats={todayStats}
                 currentUser={currentUser}
               />
