@@ -9,10 +9,11 @@ export default function LoginScreen({ staff, onLogin }) {
   const [error, setError] = useState(false);
   const inputRef = useRef(null);
 
-  const activeStaff = staff.filter((s) => s.active);
+  const safeStaff = Array.isArray(staff) ? staff : [];
+  const activeStaff = safeStaff.filter((s) => s?.active);
 
   // Show message if no staff data
-  if (staff.length === 0) {
+  if (safeStaff.length === 0) {
     return (
       <div style={{
         position: "fixed", inset: 0, zIndex: 9999,
