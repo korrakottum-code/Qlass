@@ -1,7 +1,16 @@
 import { useState, useEffect, useMemo } from "react";
 import { initBranches, initProcedures, initRooms, initPromos, initRoomSchedules, initStaff, PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
 import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch } from "./utils/helpers";
-import { getAllStaff, getAllBranches, getAllProcedures, getAllPromos, getAllRooms, getAllRoomSchedules, getAllQueues } from "./utils/supabaseService";
+import { 
+  getAllStaff, getAllBranches, getAllProcedures, getAllPromos, getAllRooms, getAllRoomSchedules, getAllQueues,
+  createBranch, updateBranch, deleteBranch as deleteBranchDB,
+  createProcedure, updateProcedure, deleteProcedure as deleteProcedureDB,
+  createPromo, updatePromo, deletePromo as deletePromoDB,
+  createRoom, updateRoom, deleteRoom as deleteRoomDB,
+  createRoomSchedule, updateRoomSchedule, deleteRoomSchedule as deleteRoomScheduleDB,
+  createStaff, updateStaff, deleteStaff as deleteStaffDB,
+  createQueue, updateQueue, deleteQueue as deleteQueueDB
+} from "./utils/supabaseService";
 import { learnFromCorrection } from "./utils/smartParser";
 
 import Sidebar from "./components/Sidebar";
@@ -31,28 +40,17 @@ import CommissionPage from "./pages/CommissionPage";
 import ExportPage from "./pages/ExportPage";
 import TicketPage from "./pages/TicketPage";
 
-// ─── Helper: Load from localStorage with fallback ───
-function loadFromStorage(key, fallback) {
-  try {
-    const stored = localStorage.getItem(key);
-    return stored ? JSON.parse(stored) : fallback;
-  } catch (e) {
-    console.error(`Error loading ${key} from localStorage:`, e);
-    return fallback;
-  }
-}
-
 export default function App() {
-  // ─── Master data with localStorage persistence ───
-  const [branches, setBranches] = useState(() => loadFromStorage('qlass_branches', initBranches));
-  const [procedures, setProcedures] = useState(() => loadFromStorage('qlass_procedures', initProcedures));
-  const [rooms, setRooms] = useState(() => loadFromStorage('qlass_rooms', initRooms));
-  const [promos, setPromos] = useState(() => loadFromStorage('qlass_promos', initPromos));
-  const [roomSchedules, setRoomSchedules] = useState(() => loadFromStorage('qlass_roomSchedules', initRoomSchedules));
-  const [queues, setQueues] = useState(() => loadFromStorage('qlass_queues', []));
-  const [categories, setCategories] = useState(() => loadFromStorage('qlass_categories', PROCEDURE_CATEGORIES));
-  const [staff, setStaff] = useState(() => loadFromStorage('qlass_staff', initStaff));
-  const [tickets, setTickets] = useState(() => loadFromStorage('qlass_tickets', []));
+  // ─── Master data from Supabase only ───
+  const [branches, setBranches] = useState([]);
+  const [procedures, setProcedures] = useState([]);
+  const [rooms, setRooms] = useState([]);
+  const [promos, setPromos] = useState([]);
+  const [roomSchedules, setRoomSchedules] = useState([]);
+  const [queues, setQueues] = useState([]);
+  const [categories, setCategories] = useState(PROCEDURE_CATEGORIES);
+  const [staff, setStaff] = useState([]);
+  const [tickets, setTickets] = useState([]);
 
   // ─── Auth ───
   const [currentUser, setCurrentUser] = useState(null);
@@ -84,13 +82,13 @@ export default function App() {
           getAllQueues()
         ]);
         
-        if (staffData && staffData.length > 0) setStaff(staffData);
-        if (branchData && branchData.length > 0) setBranches(branchData);
-        if (procedureData && procedureData.length > 0) setProcedures(procedureData);
-        if (promoData && promoData.length > 0) setPromos(promoData);
-        if (roomData && roomData.length > 0) setRooms(roomData);
-        if (scheduleData && scheduleData.length > 0) setRoomSchedules(scheduleData);
-        if (queueData && queueData.length > 0) setQueues(queueData);
+        setStaff(staffData || []);
+        setBranches(branchData || []);
+        setProcedures(procedureData || []);
+        setPromos(promoData || []);
+        setRooms(roomData || []);
+        setRoomSchedules(scheduleData || []);
+        setQueues(queueData || []);
       } catch (error) {
         console.error('Error loading from Supabase:', error);
         // Fallback to localStorage/initData if Supabase fails
@@ -99,42 +97,7 @@ export default function App() {
     loadFromSupabase();
   }, []);
 
-  // ─── Persist data to localStorage whenever it changes ───
-  useEffect(() => {
-    localStorage.setItem('qlass_branches', JSON.stringify(branches));
-  }, [branches]);
-
-  useEffect(() => {
-    localStorage.setItem('qlass_procedures', JSON.stringify(procedures));
-  }, [procedures]);
-
-  useEffect(() => {
-    localStorage.setItem('qlass_rooms', JSON.stringify(rooms));
-  }, [rooms]);
-
-  useEffect(() => {
-    localStorage.setItem('qlass_promos', JSON.stringify(promos));
-  }, [promos]);
-
-  useEffect(() => {
-    localStorage.setItem('qlass_roomSchedules', JSON.stringify(roomSchedules));
-  }, [roomSchedules]);
-
-  useEffect(() => {
-    localStorage.setItem('qlass_queues', JSON.stringify(queues));
-  }, [queues]);
-
-  useEffect(() => {
-    localStorage.setItem('qlass_categories', JSON.stringify(categories));
-  }, [categories]);
-
-  useEffect(() => {
-    localStorage.setItem('qlass_staff', JSON.stringify(staff));
-  }, [staff]);
-
-  useEffect(() => {
-    localStorage.setItem('qlass_tickets', JSON.stringify(tickets));
-  }, [tickets]);
+  // Note: All data is now stored in Supabase only, no localStorage
 
   // ─── Computed: allowed pages for currentUser ───
   const allowedPages = useMemo(() => {
@@ -199,7 +162,7 @@ export default function App() {
   }
 
   // ═══════ BOOKING ACTIONS ═══════
-  const handleBookingSubmit = useCallback(() => {
+  const handleBookingSubmit = useCallback(async () => {
     if (!form.name.trim() || !form.phone.trim()) {
       showToast("error", "กรุณากรอกชื่อและเบอร์โทร");
       return;
@@ -235,16 +198,19 @@ export default function App() {
     }
 
     if (editingQueueId) {
-      setQueues((prev) => prev.map((q) => (q.id === editingQueueId ? { ...form, id: editingQueueId } : q)));
+      await updateQueue(editingQueueId, form);
+      const updatedQueues = await getAllQueues();
+      setQueues(updatedQueues || []);
       showToast("success", "แก้ไขคิวเรียบร้อย");
       setEditingQueueId(null);
     } else {
-      setQueues((prev) => [...prev, {
+      await createQueue({
         ...form,
-        id: genId("Q"),
         createdAt: getTodayStr(),
         recordedBy: currentUser?.id || null,
-      }]);
+      });
+      const updatedQueues = await getAllQueues();
+      setQueues(updatedQueues || []);
       showToast("success", "บันทึกคิวเรียบร้อย ✓");
     }
 
@@ -266,15 +232,17 @@ export default function App() {
     setPage("booking");
   }, []);
 
-  const deleteQueue = useCallback((id) => {
-    setQueues((prev) => prev.filter((q) => q.id !== id));
+  const deleteQueue = useCallback(async (id) => {
+    await deleteQueueDB(id);
+    const updatedQueues = await getAllQueues();
+    setQueues(updatedQueues || []);
     showToast("success", "ลบคิวแล้ว");
   }, [showToast]);
 
-  const updateQueueStatus = useCallback((id, payload) => {
-    setQueues((prev) => prev.map((q) =>
-      q.id === id ? { ...q, ...payload, statusUpdatedAt: getTodayStr() } : q
-    ));
+  const updateQueueStatus = useCallback(async (id, payload) => {
+    await updateQueue(id, { ...payload, statusUpdatedAt: getTodayStr() });
+    const updatedQueues = await getAllQueues();
+    setQueues(updatedQueues || []);
     setModal(null);
     const st = payload.status;
     const labels = { confirmed:"ยืนยันแล้ว ✅", rescheduled:"เลื่อนนัดแล้ว 📅", no_show:"บันทึก: ไม่มาตามนัด 🚫", cancelled:"ยกเลิกแล้ว ❌", done:"เสร็จสิ้น 🎉", follow1:"บันทึก: โทรตาม ×1", follow2:"บันทึก: โทรตาม ×2", follow3:"บันทึก: โทรตาม ×3 📞" };
@@ -282,88 +250,106 @@ export default function App() {
   }, [showToast]);
 
   // ═══════ CRUD HELPERS ═══════
-  const saveBranch = useCallback((data) => {
+  const saveBranch = useCallback(async (data) => {
     if (data.id) {
-      setBranches((prev) => prev.map((b) => (b.id === data.id ? data : b)));
+      await updateBranch(data.id, data);
     } else {
-      setBranches((prev) => [...prev, { ...data, id: genId("b") }]);
+      await createBranch(data);
     }
+    const updatedBranches = await getAllBranches();
+    setBranches(updatedBranches || []);
     setModal(null);
     showToast("success", "บันทึกสาขาเรียบร้อย");
   }, [showToast]);
 
-  const saveProcedure = useCallback((data) => {
+  const saveProcedure = useCallback(async (data) => {
     if (data.id) {
-      setProcedures((prev) => prev.map((p) => (p.id === data.id ? data : p)));
+      await updateProcedure(data.id, data);
     } else {
-      setProcedures((prev) => [...prev, { ...data, id: genId("p") }]);
+      await createProcedure(data);
     }
+    const updatedProcedures = await getAllProcedures();
+    setProcedures(updatedProcedures || []);
     setModal(null);
     showToast("success", "บันทึกหัตถการเรียบร้อย");
   }, [showToast]);
 
-  const savePromo = useCallback((data) => {
+  const savePromo = useCallback(async (data) => {
     if (data.id) {
-      setPromos((prev) => prev.map((p) => (p.id === data.id ? data : p)));
+      await updatePromo(data.id, data);
     } else {
-      setPromos((prev) => [...prev, { ...data, id: genId("pr") }]);
+      await createPromo(data);
     }
+    const updatedPromos = await getAllPromos();
+    setPromos(updatedPromos || []);
     setModal(null);
     showToast("success", "บันทึกโปรเรียบร้อย");
   }, [showToast]);
 
-  const quickAddPromo = useCallback((data) => {
-    const newPromo = { ...data, id: genId("pr") };
-    setPromos((prev) => [...prev, newPromo]);
+  const quickAddPromo = useCallback(async (data) => {
+    const newPromo = await createPromo(data);
+    const updatedPromos = await getAllPromos();
+    setPromos(updatedPromos || []);
     showToast("success", `เพิ่มโปร "${newPromo.name}" แล้ว`);
     return newPromo;
   }, [showToast]);
 
-  const saveRoom = useCallback((data) => {
+  const saveRoom = useCallback(async (data) => {
     if (data.id) {
-      setRooms((prev) => prev.map((r) => (r.id === data.id ? data : r)));
+      await updateRoom(data.id, data);
     } else {
-      setRooms((prev) => [...prev, { ...data, id: genId("r") }]);
+      await createRoom(data);
     }
+    const updatedRooms = await getAllRooms();
+    setRooms(updatedRooms || []);
     setModal(null);
     showToast("success", "บันทึกห้องเรียบร้อย");
   }, [showToast]);
 
-  const saveRoomSchedule = useCallback((data) => {
+  const saveRoomSchedule = useCallback(async (data) => {
     if (data.id) {
       const { roomIds, ...rest } = data;
       const updated = { ...rest, roomId: roomIds[0] };
-      setRoomSchedules((prev) => prev.map((s) => (s.id === data.id ? updated : s)));
+      await updateRoomSchedule(data.id, updated);
       showToast("success", "แก้ไขตารางเรียบร้อย");
     } else {
       const { roomIds, ...rest } = data;
-      const newSchedules = roomIds.map((roomId) => ({ ...rest, roomId, id: genId("rs") }));
-      setRoomSchedules((prev) => [...prev, ...newSchedules]);
+      for (const roomId of roomIds) {
+        await createRoomSchedule({ ...rest, roomId });
+      }
       showToast("success", `เพิ่มตาราง ${roomIds.length} ห้องเรียบร้อย`);
     }
+    const updatedSchedules = await getAllRoomSchedules();
+    setRoomSchedules(updatedSchedules || []);
     setModal(null);
   }, [showToast]);
 
-  const saveStaff = useCallback((data) => {
+  const saveStaff = useCallback(async (data) => {
     if (data.id) {
-      setStaff((prev) => prev.map((s) => (s.id === data.id ? data : s)));
+      await updateStaff(data.id, data);
       // อัปเดต currentUser ถ้าแก้ไขตัวเอง
       if (currentUser?.id === data.id) setCurrentUser(data);
     } else {
-      setStaff((prev) => [...prev, { ...data, id: genId("s") }]);
+      await createStaff(data);
     }
+    const updatedStaff = await getAllStaff();
+    setStaff(updatedStaff || []);
     setModal(null);
     showToast("success", "บันทึกข้อมูลพนักงานเรียบร้อย");
   }, [showToast, currentUser]);
 
   // ─── Delete helpers ───
-  const deleteBranch = useCallback((id) => {
-    setBranches((prev) => prev.filter((x) => x.id !== id));
+  const deleteBranch = useCallback(async (id) => {
+    await deleteBranchDB(id);
+    const updatedBranches = await getAllBranches();
+    setBranches(updatedBranches || []);
     showToast("success", "ลบสาขาแล้ว");
   }, [showToast]);
 
-  const deleteProcedure = useCallback((id) => {
-    setProcedures((prev) => prev.filter((x) => x.id !== id));
+  const deleteProcedure = useCallback(async (id) => {
+    await deleteProcedureDB(id);
+    const updatedProcedures = await getAllProcedures();
+    setProcedures(updatedProcedures || []);
     showToast("success", "ลบหัตถการแล้ว");
   }, [showToast]);
 
@@ -379,29 +365,42 @@ export default function App() {
     showToast("success", `ลบหมวด "${name}" แล้ว`);
   }, [showToast]);
 
-  const deletePromo = useCallback((id) => {
-    setPromos((prev) => prev.filter((x) => x.id !== id));
+  const deletePromo = useCallback(async (id) => {
+    await deletePromoDB(id);
+    const updatedPromos = await getAllPromos();
+    setPromos(updatedPromos || []);
     showToast("success", "ลบโปรแล้ว");
   }, [showToast]);
 
-  const deleteRoom = useCallback((id) => {
-    setRooms((prev) => prev.filter((x) => x.id !== id));
+  const deleteRoom = useCallback(async (id) => {
+    await deleteRoomDB(id);
+    const updatedRooms = await getAllRooms();
+    setRooms(updatedRooms || []);
     showToast("success", "ลบห้องแล้ว");
   }, [showToast]);
 
-  const deleteRoomSchedule = useCallback((id) => {
-    setRoomSchedules((prev) => prev.filter((x) => x.id !== id));
+  const deleteRoomSchedule = useCallback(async (id) => {
+    await deleteRoomScheduleDB(id);
+    const updatedSchedules = await getAllRoomSchedules();
+    setRoomSchedules(updatedSchedules || []);
     showToast("success", "ลบตารางแล้ว");
   }, [showToast]);
 
-  const deleteStaff = useCallback((id) => {
-    setStaff((prev) => prev.filter((x) => x.id !== id));
+  const deleteStaff = useCallback(async (id) => {
+    await deleteStaffDB(id);
+    const updatedStaff = await getAllStaff();
+    setStaff(updatedStaff || []);
     showToast("success", "ลบพนักงานแล้ว");
   }, [showToast]);
 
-  const toggleStaffActive = useCallback((id) => {
-    setStaff((prev) => prev.map((s) => s.id === id ? { ...s, active: !s.active } : s));
-  }, []);
+  const toggleStaffActive = useCallback(async (id) => {
+    const staffMember = staff.find(s => s.id === id);
+    if (staffMember) {
+      await updateStaff(id, { ...staffMember, active: !staffMember.active });
+      const updatedStaff = await getAllStaff();
+      setStaff(updatedStaff || []);
+    }
+  }, [staff]);
 
   // ═══════ TICKET ACTIONS ═══════
   const createTicket = useCallback(async (ticketData, images) => {
