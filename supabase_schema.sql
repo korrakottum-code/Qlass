@@ -2,14 +2,14 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 1. Branches Table
-CREATE TABLE branches (
+CREATE TABLE IF NOT EXISTS branches (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- 2. Procedures Table
-CREATE TABLE procedures (
+CREATE TABLE IF NOT EXISTS procedures (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
   blocks INTEGER NOT NULL DEFAULT 1,
@@ -19,7 +19,7 @@ CREATE TABLE procedures (
 );
 
 -- 3. Promos Table
-CREATE TABLE promos (
+CREATE TABLE IF NOT EXISTS promos (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
   procedure_id UUID REFERENCES procedures(id) ON DELETE SET NULL,
@@ -29,7 +29,7 @@ CREATE TABLE promos (
 );
 
 -- 4. Rooms Table
-CREATE TABLE rooms (
+CREATE TABLE IF NOT EXISTS rooms (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
   branch_id UUID REFERENCES branches(id) ON DELETE CASCADE,
@@ -41,7 +41,7 @@ CREATE TABLE rooms (
 );
 
 -- 5. Room Schedules Table
-CREATE TABLE room_schedules (
+CREATE TABLE IF NOT EXISTS room_schedules (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
   date DATE, -- Nullable for regular/everyday schedule
@@ -53,7 +53,7 @@ CREATE TABLE room_schedules (
 );
 
 -- 6. Staff Table
-CREATE TABLE staff (
+CREATE TABLE IF NOT EXISTS staff (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
   nickname TEXT,
@@ -69,7 +69,7 @@ CREATE TABLE staff (
 );
 
 -- 7. Queues Table
-CREATE TABLE queues (
+CREATE TABLE IF NOT EXISTS queues (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
   phone TEXT NOT NULL,
@@ -90,19 +90,21 @@ CREATE TABLE queues (
 );
 
 -- OPTIONAL: Insert mock data if needed to test the application quickly
--- Insert initial sample branches
+-- Insert initial sample branches (if not exists)
 INSERT INTO branches (id, name) VALUES 
 ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'สาขาขอนแก่น'),
-('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'สาขาสยาม');
+('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'สาขาสยาม')
+ON CONFLICT (id) DO NOTHING;
 
--- Insert initial sample procedures
+-- Insert initial sample procedures (if not exists)
 INSERT INTO procedures (id, name, blocks, category, room_type) VALUES 
 ('11111111-1111-1111-1111-111111111111', 'Botox', 3, 'Injection', 'M'),
 ('22222222-2222-2222-2222-222222222222', 'Filler', 4, 'Injection', 'M'),
-('33333333-3333-3333-3333-333333333333', 'Laser CO2', 6, 'Laser', 'T');
+('33333333-3333-3333-3333-333333333333', 'Laser CO2', 6, 'Laser', 'T')
+ON CONFLICT (id) DO NOTHING;
 
 -- 8. Tickets Table (Issue Reporting System)
-CREATE TABLE tickets (
+CREATE TABLE IF NOT EXISTS tickets (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   title TEXT NOT NULL,
   description TEXT NOT NULL,
@@ -120,11 +122,12 @@ CREATE TABLE tickets (
 );
 
 -- Create index for faster queries
-CREATE INDEX idx_tickets_status ON tickets(status);
-CREATE INDEX idx_tickets_reported_by ON tickets(reported_by);
-CREATE INDEX idx_tickets_branch_id ON tickets(branch_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
+CREATE INDEX IF NOT EXISTS idx_tickets_reported_by ON tickets(reported_by);
+CREATE INDEX IF NOT EXISTS idx_tickets_branch_id ON tickets(branch_id);
 
--- Insert initial staff (Pin: 0000 and 1234)
+-- Insert initial staff (Pin: 0000 and 1234) (if not exists)
 INSERT INTO staff (id, name, nickname, role, pin, branch_id) VALUES 
 ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'ผู้ดูแลระบบ', 'Admin', 'superadmin', '0000', NULL),
-('ffffffff-ffff-ffff-ffff-ffffffffffff', 'น้องแนน', 'แนน', 'cashier', '1234', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+('ffffffff-ffff-ffff-ffff-ffffffffffff', 'น้องแนน', 'แนน', 'cashier', '1234', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+ON CONFLICT (id) DO NOTHING;

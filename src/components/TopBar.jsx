@@ -14,12 +14,20 @@ const PAGE_TITLES = {
   staff: "👥 จัดการพนักงาน",
 };
 
-export default function TopBar({ page, isEditing }) {
+export default function TopBar({ page, isEditing, supabaseError }) {
   const titleKey = page === "booking" && isEditing ? "booking-edit" : page;
   return (
     <div className="top-bar">
       <h2>{PAGE_TITLES[titleKey] || page}</h2>
       <div className="top-bar-right">
+        {supabaseError && (
+          <span style={{
+            fontSize: 11, color: "#22c55e", background: "rgba(34, 197, 94, 0.1)",
+            padding: "4px 8px", borderRadius: 4, marginRight: 8,
+          }}>
+            🎯 โหมดตัวอย่าง
+          </span>
+        )}
         <span style={{ fontSize: 12, color: "var(--text3)" }}>
           {formatThaiDate(getTodayStr())}
         </span>

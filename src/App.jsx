@@ -18,6 +18,7 @@ import TopBar from "./components/TopBar";
 import Toast from "./components/Toast";
 import Modal from "./components/Modal";
 import LoginScreen from "./components/LoginScreen";
+import LoadingScreen from "./components/LoadingScreen";
 
 import BranchModal from "./components/modals/BranchModal";
 import ProcedureModal from "./components/modals/ProcedureModal";
@@ -41,15 +42,18 @@ import ExportPage from "./pages/ExportPage";
 import TicketPage from "./pages/TicketPage";
 
 export default function App() {
+  // Simple test render
+  console.log('App component rendering...');
+  
   // ─── Master data from Supabase only ───
-  const [branches, setBranches] = useState([]);
-  const [procedures, setProcedures] = useState([]);
-  const [rooms, setRooms] = useState([]);
-  const [promos, setPromos] = useState([]);
-  const [roomSchedules, setRoomSchedules] = useState([]);
+  const [branches, setBranches] = useState(initBranches);
+  const [procedures, setProcedures] = useState(initProcedures);
+  const [rooms, setRooms] = useState(initRooms);
+  const [promos, setPromos] = useState(initPromos);
+  const [roomSchedules, setRoomSchedules] = useState(initRoomSchedules);
   const [queues, setQueues] = useState([]);
   const [categories, setCategories] = useState(PROCEDURE_CATEGORIES);
-  const [staff, setStaff] = useState([]);
+  const [staff, setStaff] = useState(initStaff);
   const [tickets, setTickets] = useState([]);
 
   // ─── Auth ───
@@ -59,6 +63,8 @@ export default function App() {
   const [page, setPage] = useState("booking");
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [supabaseError, setSupabaseError] = useState(null);
 
   // ─── Booking form ───
   const [form, setForm] = useState(getEmptyBookingForm);
@@ -72,6 +78,7 @@ export default function App() {
   useEffect(() => {
     async function loadFromSupabase() {
       try {
+        setIsLoading(true);
         const [staffData, branchData, procedureData, promoData, roomData, scheduleData, queueData] = await Promise.all([
           getAllStaff(),
           getAllBranches(),
@@ -91,7 +98,18 @@ export default function App() {
         setQueues(queueData || []);
       } catch (error) {
         console.error('Error loading from Supabase:', error);
-        // Fallback to localStorage/initData if Supabase fails
+        setSupabaseError(error.message);
+        // Fallback to initial data if Supabase fails
+        console.log('Using demo data for preview...');
+        setStaff(initStaff);
+        setBranches(initBranches);
+        setProcedures(initProcedures);
+        setPromos(initPromos);
+        setRooms(initRooms);
+        setRoomSchedules(initRoomSchedules);
+        setQueues([]);
+      } finally {
+        setIsLoading(false);
       }
     }
     loadFromSupabase();
@@ -430,9 +448,13 @@ export default function App() {
 
   // ═══════ RENDER ═══════
 
-  // Show login screen if not logged in
+  // Debug logging
+  console.log('App render state:', { isLoading, currentUser: !!currentUser, staffLength: staff.length, supabaseError });
+
+  // Show login screen if not logged in (temporarily removed loading check)
   if (!currentUser) {
-    return <LoginScreen staff={staff} onLogin={handleLogin} />;
+    console.log('Showing LoginScreen with staff:', staff.length);
+    return <LoginScreen staff={staff} onLogin={handleLogin} supabaseError={supabaseError} />;
   }
 
   return (
@@ -447,153 +469,155 @@ export default function App() {
       />
 
       <div className="main">
-        <TopBar page={page} isEditing={!!editingQueueId} />
+        <div className="main-shell">
+          <TopBar page={page} isEditing={!!editingQueueId} supabaseError={supabaseError} />
 
-        <div className="content">
-          {page === "booking" && (
-            <BookingPage
-              form={form}
-              setForm={setForm}
-              editingQueueId={editingQueueId}
-              setEditingQueueId={setEditingQueueId}
-              branches={filteredBranches}
-              rooms={filteredRooms}
-              procedures={procedures}
-              promos={promos}
-              roomSchedules={roomSchedules}
-              queues={filteredQueues}
-              onSubmit={handleBookingSubmit}
-              onQuickAddPromo={quickAddPromo}
-              parseHints={parseHints || { branchAliases: {}, procedureAliases: {}, promoAliases: {}, roomAliases: {}, procedureToRoom: {} }}
-              onSmartApply={(fields, rawText) => {
-                setForm((f) => ({ ...f, ...Object.fromEntries(Object.entries(fields).filter(([,v]) => v !== undefined && v !== null && v !== "")) }));
-                setLastParseSnapshot({ rawText, fields });
-              }}
-              todayStats={todayStats}
-              currentUser={currentUser}
-            />
-          )}
+          <div className="content">
+            {page === "booking" && (
+              <BookingPage
+                form={form}
+                setForm={setForm}
+                editingQueueId={editingQueueId}
+                setEditingQueueId={setEditingQueueId}
+                branches={filteredBranches}
+                rooms={filteredRooms}
+                procedures={procedures}
+                promos={promos}
+                roomSchedules={roomSchedules}
+                queues={filteredQueues}
+                onSubmit={handleBookingSubmit}
+                onQuickAddPromo={quickAddPromo}
+                parseHints={parseHints || { branchAliases: {}, procedureAliases: {}, promoAliases: {}, roomAliases: {}, procedureToRoom: {} }}
+                onSmartApply={(fields, rawText) => {
+                  setForm((f) => ({ ...f, ...Object.fromEntries(Object.entries(fields).filter(([,v]) => v !== undefined && v !== null && v !== "")) }));
+                  setLastParseSnapshot({ rawText, fields });
+                }}
+                todayStats={todayStats}
+                currentUser={currentUser}
+              />
+            )}
 
-          {page === "queue-table" && (
-            <QueueTablePage
-              queues={filteredQueues}
-              branches={filteredBranches}
-              rooms={filteredRooms}
-              procedures={procedures}
-              promos={promos}
-              staff={staff}
-              onEdit={editQueue}
-              onDelete={deleteQueue}
-              onUpdateStatus={(q) => setModal({ type: "status", data: q })}
-            />
-          )}
+            {page === "queue-table" && (
+              <QueueTablePage
+                queues={filteredQueues}
+                branches={filteredBranches}
+                rooms={filteredRooms}
+                procedures={procedures}
+                promos={promos}
+                staff={staff}
+                onEdit={editQueue}
+                onDelete={deleteQueue}
+                onUpdateStatus={(q) => setModal({ type: "status", data: q })}
+              />
+            )}
 
-          {page === "branches" && (
-            <BranchesPage
-              branches={branches}
-              rooms={rooms}
-              onAdd={() => setModal({ type: "branch", data: null })}
-              onEdit={(b) => setModal({ type: "branch", data: b })}
-              onDelete={deleteBranch}
-            />
-          )}
+            {page === "branches" && (
+              <BranchesPage
+                branches={branches}
+                rooms={rooms}
+                onAdd={() => setModal({ type: "branch", data: null })}
+                onEdit={(b) => setModal({ type: "branch", data: b })}
+                onDelete={deleteBranch}
+              />
+            )}
 
-          {page === "procedures" && (
-            <ProceduresPage
-              procedures={procedures}
-              categories={categories}
-              onAdd={() => setModal({ type: "procedure", data: null })}
-              onEdit={(p) => setModal({ type: "procedure", data: p })}
-              onDelete={deleteProcedure}
-              onAddCategory={addCategory}
-              onDeleteCategory={deleteCategory}
-            />
-          )}
+            {page === "procedures" && (
+              <ProceduresPage
+                procedures={procedures}
+                categories={categories}
+                onAdd={() => setModal({ type: "procedure", data: null })}
+                onEdit={(p) => setModal({ type: "procedure", data: p })}
+                onDelete={deleteProcedure}
+                onAddCategory={addCategory}
+                onDeleteCategory={deleteCategory}
+              />
+            )}
 
-          {page === "promos" && (
-            <PromosPage
-              promos={promos}
-              procedures={procedures}
-              onAdd={() => setModal({ type: "promo", data: null })}
-              onEdit={(p) => setModal({ type: "promo", data: p })}
-              onDelete={deletePromo}
-            />
-          )}
+            {page === "promos" && (
+              <PromosPage
+                promos={promos}
+                procedures={procedures}
+                onAdd={() => setModal({ type: "promo", data: null })}
+                onEdit={(p) => setModal({ type: "promo", data: p })}
+                onDelete={deletePromo}
+              />
+            )}
 
-          {page === "rooms" && (
-            <RoomsPage
-              branches={filteredBranches}
-              rooms={filteredRooms}
-              onAdd={(branchId) => setModal({ type: "room", data: null, defaultBranchId: branchId })}
-              onEdit={(r) => setModal({ type: "room", data: r })}
-              onDelete={deleteRoom}
-            />
-          )}
+            {page === "rooms" && (
+              <RoomsPage
+                branches={filteredBranches}
+                rooms={filteredRooms}
+                onAdd={(branchId) => setModal({ type: "room", data: null, defaultBranchId: branchId })}
+                onEdit={(r) => setModal({ type: "room", data: r })}
+                onDelete={deleteRoom}
+              />
+            )}
 
-          {page === "summary" && (
-            <SummaryPage
-              queues={filteredQueues}
-              branches={filteredBranches}
-              rooms={filteredRooms}
-              procedures={procedures}
-              promos={promos}
-            />
-          )}
+            {page === "summary" && (
+              <SummaryPage
+                queues={filteredQueues}
+                branches={filteredBranches}
+                rooms={filteredRooms}
+                procedures={procedures}
+                promos={promos}
+              />
+            )}
 
-          {page === "room-schedule" && (
-            <RoomSchedulePage
-              roomSchedules={roomSchedules}
-              rooms={filteredRooms}
-              branches={filteredBranches}
-              onAdd={() => setModal({ type: "schedule", data: null })}
-              onEdit={(s) => setModal({ type: "schedule", data: s })}
-              onDelete={deleteRoomSchedule}
-            />
-          )}
+            {page === "room-schedule" && (
+              <RoomSchedulePage
+                roomSchedules={roomSchedules}
+                rooms={filteredRooms}
+                branches={filteredBranches}
+                onAdd={() => setModal({ type: "schedule", data: null })}
+                onEdit={(s) => setModal({ type: "schedule", data: s })}
+                onDelete={deleteRoomSchedule}
+              />
+            )}
 
-          {page === "staff" && (
-            <StaffPage
-              staff={staff}
-              branches={branches}
-              onAdd={() => setModal({ type: "staff", data: null })}
-              onEdit={(s) => setModal({ type: "staff", data: s })}
-              onToggleActive={toggleStaffActive}
-              onDelete={deleteStaff}
-            />
-          )}
+            {page === "staff" && (
+              <StaffPage
+                staff={staff}
+                branches={branches}
+                onAdd={() => setModal({ type: "staff", data: null })}
+                onEdit={(s) => setModal({ type: "staff", data: s })}
+                onToggleActive={toggleStaffActive}
+                onDelete={deleteStaff}
+              />
+            )}
 
-          {page === "commission" && (
-            <CommissionPage
-              queues={filteredQueues}
-              staff={staff}
-              branches={filteredBranches}
-              procedures={procedures}
-              promos={promos}
-            />
-          )}
+            {page === "commission" && (
+              <CommissionPage
+                queues={filteredQueues}
+                staff={staff}
+                branches={filteredBranches}
+                procedures={procedures}
+                promos={promos}
+              />
+            )}
 
-          {page === "export" && (
-            <ExportPage
-              queues={filteredQueues}
-              branches={filteredBranches}
-              rooms={filteredRooms}
-              procedures={procedures}
-              promos={promos}
-              staff={staff}
-            />
-          )}
+            {page === "export" && (
+              <ExportPage
+                queues={filteredQueues}
+                branches={filteredBranches}
+                rooms={filteredRooms}
+                procedures={procedures}
+                promos={promos}
+                staff={staff}
+              />
+            )}
 
-          {page === "tickets" && (
-            <TicketPage
-              tickets={tickets}
-              branches={filteredBranches}
-              staff={staff}
-              currentUser={currentUser}
-              onCreateTicket={createTicket}
-              onUpdateTicket={updateTicket}
-              onDeleteTicket={deleteTicket}
-            />
-          )}
+            {page === "tickets" && (
+              <TicketPage
+                tickets={tickets}
+                branches={filteredBranches}
+                staff={staff}
+                currentUser={currentUser}
+                onCreateTicket={createTicket}
+                onUpdateTicket={updateTicket}
+                onDeleteTicket={deleteTicket}
+              />
+            )}
+          </div>
         </div>
       </div>
 

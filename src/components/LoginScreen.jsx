@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { ROLES } from "../utils/constants";
 import qlassLogo from "../assets/qlass-logo.svg";
 
-export default function LoginScreen({ staff, onLogin }) {
+export default function LoginScreen({ staff, onLogin, supabaseError }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(null);
   const [pin, setPin] = useState("");
@@ -21,6 +21,17 @@ export default function LoginScreen({ staff, onLogin }) {
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
         fontFamily: "var(--font, sans-serif)", color: "#fff", textAlign: "center", padding: 20,
       }}>
+        {supabaseError && (
+          <div style={{
+            position: "absolute", top: 20, left: 20, right: 20,
+            background: "rgba(34, 197, 94, 0.2)", border: "1px solid rgba(34, 197, 94, 0.5)",
+            borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#86efac",
+            display: "flex", alignItems: "center", gap: 8,
+          }}>
+            <span>🎯</span>
+            <span>โหมดตัวอย่าง: ใช้ข้อมูลสาธิต (ไม่ต้องตั้งค่า Supabase)</span>
+          </div>
+        )}
         <img src={qlassLogo} alt="Qlass Logo" style={{ width: 80, height: 80, marginBottom: 16 }} />
         <h1 style={{ fontSize: 26, fontWeight: 800, marginBottom: 16 }}>Qlass</h1>
         <div style={{ maxWidth: 400, background: "rgba(255,255,255,0.1)", padding: 24, borderRadius: 12 }}>
@@ -34,6 +45,18 @@ export default function LoginScreen({ staff, onLogin }) {
             <li>Environment Variables ถูกต้องหรือไม่</li>
             <li>รัน SQL schema ใน Supabase แล้วหรือยัง</li>
           </ul>
+          {supabaseError && (
+            <div style={{ 
+              marginTop: 16, 
+              padding: 12, 
+              background: "rgba(220,38,38,0.2)", 
+              borderRadius: 8, 
+              fontSize: 12,
+              color: "#fca5a5"
+            }}>
+              <strong>ข้อผิดพลาด:</strong> {supabaseError}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -96,6 +119,18 @@ export default function LoginScreen({ staff, onLogin }) {
         <img src={qlassLogo} alt="Qlass Logo" style={{ width: 80, height: 80, marginBottom: 8 }} />
         <h1 style={{ color: "#fff", fontSize: 26, fontWeight: 800, margin: 0 }}>Qlass</h1>
       </div>
+
+      {/* Demo mode indicator */}
+      {supabaseError && (
+        <div style={{
+          background: "rgba(34, 197, 94, 0.2)", border: "1px solid rgba(34, 197, 94, 0.5)",
+          borderRadius: 8, padding: "8px 16px", fontSize: 12, color: "#86efac",
+          display: "flex", alignItems: "center", gap: 8, marginBottom: 20,
+        }}>
+          <span>🎯</span>
+          <span>โหมดตัวอย่าง: ใช้ข้อมูลสาธิต (ไม่ต้องตั้งค่า Supabase)</span>
+        </div>
+      )}
 
       {!selected ? (
         /* Search + list */

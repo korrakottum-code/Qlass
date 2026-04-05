@@ -17,31 +17,33 @@
   --shadow-md:0 4px 12px rgba(0,0,0,0.08);
 }
 
-body{background:var(--bg);font-family:var(--font);color:var(--text);font-size:14px;line-height:1.5}
+body{background:var(--bg);font-family:var(--font);color:var(--text);font-size:14px;line-height:1.5;overflow-x:hidden}
 
 #root{width:100%;max-width:100%;margin:0;text-align:left}
 
-.app{display:flex;min-height:100vh}
+.app{display:flex;min-height:100vh;overflow-x:hidden}
 
 /* ─── Sidebar ─── */
 .sidebar{
   width:220px;background:var(--text);color:#fff;
   display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:40;
+  transition:transform 0.3s ease;
 }
+.sidebar.collapsed{width:72px}
 .sidebar-brand{padding:20px 16px 16px;border-bottom:1px solid rgba(255,255,255,0.08)}
 .sidebar-brand h1{font-size:15px;font-weight:700;letter-spacing:-0.02em;color:#fff;margin:0}
 .sidebar-brand p{font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px}
 .sidebar-nav{flex:1;padding:8px;overflow-y:auto}
 .nav-section{font-size:10px;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:0.08em;padding:16px 8px 6px;font-weight:600}
 .nav-item{
-  display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;
+  display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:8px;
   cursor:pointer;font-size:13px;font-weight:500;color:rgba(255,255,255,0.55);
   transition:all 0.15s;border:none;background:none;width:100%;text-align:left;
   font-family:var(--font);
 }
 .nav-item:hover{color:#fff;background:rgba(255,255,255,0.06)}
 .nav-item.active{color:#fff;background:var(--accent);font-weight:600}
-.nav-item .icon{font-size:16px;width:22px;text-align:center;flex-shrink:0}
+.nav-item .icon{font-size:16px;width:28px;text-align:center;flex-shrink:0}
 .nav-badge{
   margin-left:auto;font-size:10px;font-weight:700;
   background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:10px;
@@ -49,7 +51,15 @@ body{background:var(--bg);font-family:var(--font);color:var(--text);font-size:14
 }
 
 /* ─── Main ─── */
-.main{margin-left:220px;flex:1;min-width:0}
+.main{
+  margin-left:220px;
+  flex:1;
+  min-width:0;
+}
+.main-shell{
+  width:100%;
+  max-width:1200px;
+}
 .top-bar{
   background:var(--surface);border-bottom:1px solid var(--border);
   padding:14px 28px;display:flex;align-items:center;justify-content:space-between;
@@ -219,13 +229,34 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
 
+/* ─── Mobile hamburger button ─── */
+.mobile-menu-btn{
+  display:none;position:fixed;top:10px;left:10px;z-index:50;
+  width:40px;height:40px;border-radius:10px;
+  background:var(--text);color:#fff;border:none;
+  font-size:20px;cursor:pointer;
+  align-items:center;justify-content:center;
+  box-shadow:var(--shadow-md);
+}
+.mobile-overlay{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:39;
+}
+
 @media(max-width:768px){
-  .sidebar{width:56px}
-  .sidebar-brand h1,.sidebar-brand p,.nav-section,.nav-item span:not(.icon),.nav-badge{display:none}
-  .nav-item{justify-content:center;padding:10px}
-  .main{margin-left:56px}
+  .mobile-menu-btn{display:flex}
+  .mobile-overlay.open{display:block}
+  .sidebar{
+    transform:translateX(-100%);
+    width:260px;
+  }
+  .sidebar.mobile-open{
+    transform:translateX(0);
+  }
+  .sidebar.collapsed{width:260px}
+  .main{margin-left:0}
+  .main-shell{max-width:none}
+  .top-bar{padding:12px 16px 12px 56px}
   .form-grid{grid-template-columns:1fr}
   .stats-row{grid-template-columns:repeat(2,1fr)}
   .content{padding:16px}
-  .top-bar{padding:12px 16px}
 }
