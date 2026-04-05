@@ -56,8 +56,13 @@ export default function App() {
   const [staff, setStaff] = useState(initStaff);
   const [tickets, setTickets] = useState([]);
 
-  // ─── Auth ───
-  const [currentUser, setCurrentUser] = useState(null);
+  // ─── Auth (persist across refresh) ───
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('qlass_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
 
   // ─── UI state ───
   const [page, setPage] = useState("booking");
@@ -169,6 +174,7 @@ export default function App() {
   // ─── Login / Logout ───
   function handleLogin(user) {
     setCurrentUser(user);
+    localStorage.setItem('qlass_user', JSON.stringify(user));
     const pages = ROLES.find((r) => r.value === user.role)?.pages || [];
     setPage(pages[0] || "queue-table");
     showToast("success", `ยินดีต้อนรับ ${user.nickname || user.name} 👋`);
@@ -176,6 +182,7 @@ export default function App() {
 
   function handleLogout() {
     setCurrentUser(null);
+    localStorage.removeItem('qlass_user');
     setModal(null);
   }
 
