@@ -95,9 +95,9 @@ export const CUSTOMER_TYPES = [
   { value: "course", label: "ใช้คอร์ส", emoji: "📋" },
 ];
 
-// Time blocks: 09:00 - 22:00 (block 108 - 264)
-export const WORK_START_BLOCK = 108;
-export const WORK_END_BLOCK = 264;
+// Time blocks: 11:00 - 20:00 (block 132 - 240)
+export const WORK_START_BLOCK = 132;
+export const WORK_END_BLOCK = 240;
 
 export const NAV_ITEMS = [
   { section: "งานหลัก" },

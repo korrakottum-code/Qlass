@@ -58,7 +58,7 @@ export default function RoomModal({ data, branches, rooms, defaultBranchId, onSa
   }
 
   function selectAll() {
-    setSelectedBranchIds(branches.map((b) => b.id));
+    setSelectedBranchIds(branches.filter((b) => b.name && b.name.trim()).map((b) => b.id));
   }
 
   function selectNone() {
@@ -132,7 +132,7 @@ export default function RoomModal({ data, branches, rooms, defaultBranchId, onSa
           {bulkMode && !isEdit ? (
             <div className="form-group full">
               <label className="form-label">
-                <span className="req">*</span> เลือกสาขา ({selectedBranchIds.length}/{branches.length})
+                <span className="req">*</span> เลือกสาขา ({selectedBranchIds.length}/{branches.filter((b) => b.name && b.name.trim()).length})
               </label>
               <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                 <button className="btn btn-sm btn-secondary" onClick={selectAll}>เลือกทั้งหมด</button>
@@ -143,7 +143,7 @@ export default function RoomModal({ data, branches, rooms, defaultBranchId, onSa
                 border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
                 padding: 8, display: "flex", flexDirection: "column", gap: 2,
               }}>
-                {branches.map((b) => {
+                {branches.filter((b) => b.name && b.name.trim()).map((b) => {
                   const checked = selectedBranchIds.includes(b.id);
                   const existingCount = rooms.filter((r) => r.branchId === b.id && r.type === type).length;
                   return (
@@ -176,7 +176,7 @@ export default function RoomModal({ data, branches, rooms, defaultBranchId, onSa
               <label className="form-label"><span className="req">*</span> สาขา</label>
               <select value={branchId} onChange={(e) => setBranchId(e.target.value)} autoFocus disabled={isEdit}>
                 <option value="">-- เลือก --</option>
-                {branches.map((b) => (
+                {branches.filter((b) => b.name && b.name.trim()).map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>
