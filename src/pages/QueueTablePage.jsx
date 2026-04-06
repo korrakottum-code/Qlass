@@ -156,17 +156,27 @@ export default function QueueTablePage({
                   <span style={{ fontSize: 12, color: "var(--text3)" }}>{items.length} คิว</span>
                 </div>
                 <div style={{ overflowX: "auto" }}>
-                  <table className="data-table">
+                  <table className="data-table" style={{ tableLayout: "fixed", width: "100%" }}>
+                    <colgroup>
+                      <col style={{ width: 70 }} />
+                      <col style={{ width: 160 }} />
+                      <col style={{ width: 140 }} />
+                      <col style={{ width: 80 }} />
+                      <col style={{ width: 90 }} />
+                      <col style={{ width: 90 }} />
+                      <col style={{ width: 110 }} />
+                      <col style={{ width: 90 }} />
+                    </colgroup>
                     <thead>
                       <tr>
-                        <th>เวลา</th>
+                        <th style={{ whiteSpace: "nowrap" }}>เวลา</th>
                         <th>ชื่อลูกค้า</th>
                         <th>หัตถการ</th>
-                        <th>ราคา</th>
-                        <th>ประเภท</th>
-                        <th>บันทึกโดย</th>
-                        <th>สถานะ</th>
-                        <th style={{ textAlign: "center" }}>จัดการ</th>
+                        <th style={{ whiteSpace: "nowrap" }}>ราคา</th>
+                        <th style={{ whiteSpace: "nowrap" }}>ประเภท</th>
+                        <th style={{ whiteSpace: "nowrap" }}>บันทึกโดย</th>
+                        <th style={{ whiteSpace: "nowrap" }}>สถานะ</th>
+                        <th style={{ textAlign: "center", whiteSpace: "nowrap" }}>จัดการ</th>
                       </tr>
                     </thead>
                     <tbody>

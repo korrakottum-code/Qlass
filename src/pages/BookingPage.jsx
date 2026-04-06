@@ -45,6 +45,19 @@ export default function BookingPage({
     }
   }, [form.promoId, promos, setForm]);
 
+  // หา note ของ room schedule ที่ตรงกับห้อง + วันที่เลือก
+  const scheduleNote = useMemo(() => {
+    if (!form.roomId || !form.date) return null;
+    const match = roomSchedules?.find(
+      (s) => s.roomId === form.roomId && s.date === form.date && s.note
+    );
+    if (match) return match.note;
+    const fallback = roomSchedules?.find(
+      (s) => s.roomId === form.roomId && !s.date && s.note
+    );
+    return fallback?.note || null;
+  }, [form.roomId, form.date, roomSchedules]);
+
   // Selected procedure's block count
   const selectedProcBlocks = useMemo(() => {
     if (!form.procedureId) return 0;
@@ -220,6 +233,11 @@ export default function BookingPage({
               {selectedRoom?.notes && (
                 <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: "#dc2626", lineHeight: 1.5 }}>
                   ⚠️ {selectedRoom.notes}
+                </div>
+              )}
+              {scheduleNote && (
+                <div style={{ marginTop: 4, fontSize: 11, fontWeight: 700, color: "#b45309", lineHeight: 1.5, background: "#fef3c7", borderRadius: 5, padding: "3px 8px" }}>
+                  📅 {scheduleNote}
                 </div>
               )}
             </div>

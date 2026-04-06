@@ -67,7 +67,13 @@ export default function App() {
   });
 
   // ─── UI state ───
-  const [page, setPage] = useState("booking");
+  const [page, setPage] = useState(() => {
+    try { return localStorage.getItem("qlass_page") || "booking"; } catch { return "booking"; }
+  });
+  const navigateTo = useCallback((p) => {
+    try { localStorage.setItem("qlass_page", p); } catch {}
+    setPage(p);
+  }, []);
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -156,7 +162,7 @@ export default function App() {
   // ─── Redirect if current page not allowed ───
   useEffect(() => {
     if (currentUser && !allowedPages.includes(page)) {
-      setPage(allowedPages[0] || "queue-table");
+      navigateTo(allowedPages[0] || "queue-table");
     }
   }, [currentUser, allowedPages, page]);
 
@@ -186,7 +192,7 @@ export default function App() {
     setCurrentUser(user);
     localStorage.setItem('qlass_user', JSON.stringify(user));
     const pages = ROLES.find((r) => r.value === user.role)?.pages || [];
-    setPage(pages[0] || "queue-table");
+    navigateTo(pages[0] || "queue-table");
     showToast("success", `ยินดีต้อนรับ ${user.nickname || user.name} 👋`);
   }
 
@@ -264,8 +270,8 @@ export default function App() {
   const editQueue = useCallback((q) => {
     setForm({ ...q });
     setEditingQueueId(q.id);
-    setPage("booking");
-  }, []);
+    navigateTo("booking");
+  }, [navigateTo]);
 
   const deleteQueue = useCallback(async (id) => {
     await deleteQueueDB(id);
@@ -519,7 +525,7 @@ export default function App() {
     <div className="app">
       <Sidebar
         currentPage={page}
-        onNavigate={setPage}
+        onNavigate={navigateTo}
         branchCount={filteredBranches.length}
         queueCount={filteredQueues.length}
         currentUser={currentUser}
