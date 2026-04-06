@@ -164,6 +164,7 @@ export default function QueueTablePage({
                         <th>หัตถการ</th>
                         <th>ราคา</th>
                         <th>ประเภท</th>
+                        <th>บันทึกโดย</th>
                         <th>สถานะ</th>
                         <th style={{ textAlign: "center" }}>จัดการ</th>
                       </tr>
@@ -189,14 +190,6 @@ export default function QueueTablePage({
                             <td>
                               <div style={{ fontWeight: 600 }}>{q.name}</div>
                               <div style={{ fontSize: 11, color: "var(--text3)" }}>{q.phone}</div>
-                              {q.recordedBy && (() => {
-                                const recorder = staff?.find((s) => s.id === q.recordedBy);
-                                return recorder ? (
-                                  <div style={{ fontSize: 10, color: "var(--text3)", marginTop: 2 }}>
-                                    📝 {recorder.nickname || recorder.name}
-                                  </div>
-                                ) : null;
-                              })()}
                               {q.statusNote && (
                                 <div style={{ fontSize: 10, color: "var(--text3)", fontStyle: "italic", marginTop: 2 }}>
                                   💬 {q.statusNote}
@@ -211,6 +204,16 @@ export default function QueueTablePage({
                               {q.price ? `฿${Number(q.price).toLocaleString()}` : "—"}
                             </td>
                             <td><span className={`badge ${getCustomerBadgeClass(q.customerType)}`}>{ct?.emoji} {ct?.label}</span></td>
+                            <td style={{ fontSize: 12 }}>
+                              {(() => {
+                                const recorder = staff?.find((s) => s.id === q.recordedBy);
+                                return recorder ? (
+                                  <span style={{ fontWeight: 600, color: "var(--text2)" }}>
+                                    {recorder.nickname || recorder.name}
+                                  </span>
+                                ) : <span style={{ color: "var(--text3)" }}>—</span>;
+                              })()}
+                            </td>
                             <td><StatusBadge status={q.status} /></td>
                             <td>
                               <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
