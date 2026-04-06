@@ -24,6 +24,11 @@ export default function QueueTablePage({
   const [qfDate, setQfDate] = useState(getTodayStr());
   const [qfSearch, setQfSearch] = useState("");
   const [qfStatus, setQfStatus] = useState("all");
+  const [collapsedRooms, setCollapsedRooms] = useState({});
+
+  function toggleRoom(key) {
+    setCollapsedRooms((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
 
   const filteredQueues = useMemo(() => {
     return queues
@@ -142,20 +147,30 @@ export default function QueueTablePage({
               </span>
             </div>
 
-            {branchRooms.map(({ roomId, roomName, roomType, items }) => (
+            {branchRooms.map(({ roomId, roomName, roomType, items }) => {
+              const colKey = `${branchId}_${roomId}`;
+              const isCollapsed = !!collapsedRooms[colKey];
+              return (
               <div className="card" key={roomId} style={{ marginBottom: 10 }}>
-                <div className="card-header">
-                  <h3 style={{ color: roomType === "M" ? "var(--blue)" : roomType === "T" ? "var(--green)" : undefined, fontFamily: "var(--mono)" }}>
+                <div
+                  className="card-header"
+                  onClick={() => toggleRoom(colKey)}
+                  style={{ cursor: "pointer", userSelect: "none" }}
+                >
+                  <h3 style={{ color: roomType === "M" ? "var(--blue)" : roomType === "T" ? "var(--green)" : undefined, fontFamily: "var(--mono)", display: "flex", alignItems: "center", gap: 8 }}>
                     🚪 {roomName}
                     {roomType && (
-                      <span style={{ fontSize: 11, fontWeight: 600, marginLeft: 8, background: roomType === "M" ? "var(--blue-soft)" : "var(--green-soft)", color: roomType === "M" ? "var(--blue)" : "var(--green)", padding: "2px 8px", borderRadius: 10, fontFamily: "var(--body)" }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, background: roomType === "M" ? "var(--blue-soft)" : "var(--green-soft)", color: roomType === "M" ? "var(--blue)" : "var(--green)", padding: "2px 8px", borderRadius: 10, fontFamily: "var(--body)" }}>
                         {roomType === "M" ? "ห้องหมอ" : "ห้องเครื่อง"}
                       </span>
                     )}
                   </h3>
-                  <span style={{ fontSize: 12, color: "var(--text3)" }}>{items.length} คิว</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 12, color: "var(--text3)" }}>{items.length} คิว</span>
+                    <span style={{ fontSize: 16, color: "var(--text3)", transition: "transform 0.2s", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", display: "inline-block" }}>▾</span>
+                  </div>
                 </div>
-                <div style={{ overflowX: "auto" }}>
+                {!isCollapsed && <div style={{ overflowX: "auto" }}>
                   <table className="data-table" style={{ tableLayout: "fixed", width: "100%" }}>
                     <colgroup>
                       <col style={{ width: 70 }} />
@@ -244,9 +259,10 @@ export default function QueueTablePage({
                       })}
                     </tbody>
                   </table>
-                </div>
+                </div>}
               </div>
-            ))}
+              );
+            })}
           </div>
         ))
       )}
