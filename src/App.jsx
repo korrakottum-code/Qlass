@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { initBranches, initProcedures, initRooms, initPromos, initRoomSchedules, initStaff, PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
+import { PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
 import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch } from "./utils/helpers";
 import { 
   getAllStaff, getAllBranches, getAllProcedures, getAllPromos, getAllRooms, getAllRoomSchedules, getAllQueues,
@@ -48,14 +48,14 @@ export default function App() {
   console.log('App component rendering...');
   
   // ─── Master data from Supabase only ───
-  const [branches, setBranches] = useState(initBranches);
-  const [procedures, setProcedures] = useState(initProcedures);
-  const [rooms, setRooms] = useState(initRooms);
-  const [promos, setPromos] = useState(initPromos);
-  const [roomSchedules, setRoomSchedules] = useState(initRoomSchedules);
+  const [branches, setBranches] = useState([]);
+  const [procedures, setProcedures] = useState([]);
+  const [rooms, setRooms] = useState([]);
+  const [promos, setPromos] = useState([]);
+  const [roomSchedules, setRoomSchedules] = useState([]);
   const [queues, setQueues] = useState([]);
   const [categories, setCategories] = useState(PROCEDURE_CATEGORIES);
-  const [staff, setStaff] = useState(initStaff);
+  const [staff, setStaff] = useState([]);
   const [tickets, setTickets] = useState([]);
 
   // ─── Auth (persist across refresh) ───
