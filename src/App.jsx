@@ -691,6 +691,7 @@ export default function App() {
                 procedures={procedures}
                 promos={promos}
                 staff={staff}
+                roomSchedules={roomSchedules}
               />
             )}
 

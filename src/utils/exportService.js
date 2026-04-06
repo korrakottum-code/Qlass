@@ -291,3 +291,35 @@ export function exportStaffData(staff, branches) {
   const filename = `ข้อมูลพนักงาน_${new Date().toISOString().split('T')[0]}.csv`;
   downloadCSV(filename, csvContent);
 }
+
+// ═══════════════════════════════════════════════════════════
+// BACKUP ALL DATA
+// ═══════════════════════════════════════════════════════════
+
+export function backupAllData({ queues, branches, rooms, procedures, promos, staff, roomSchedules }) {
+  const backupPayload = {
+    exportedAt: new Date().toISOString(),
+    version: "1.0",
+    data: {
+      queues: queues || [],
+      branches: branches || [],
+      rooms: rooms || [],
+      procedures: procedures || [],
+      promos: promos || [],
+      staff: staff || [],
+      roomSchedules: roomSchedules || [],
+    },
+  };
+
+  const json = JSON.stringify(backupPayload, null, 2);
+  const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  const date = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  link.setAttribute("href", url);
+  link.setAttribute("download", `Qlass_backup_${date}.json`);
+  link.style.visibility = "hidden";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}

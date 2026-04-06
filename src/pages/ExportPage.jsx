@@ -7,9 +7,10 @@ import {
   exportSummaryData,
   exportBranchesData,
   exportStaffData,
+  backupAllData,
 } from "../utils/exportService";
 
-export default function ExportPage({ queues, branches, rooms, procedures, promos, staff }) {
+export default function ExportPage({ queues, branches, rooms, procedures, promos, staff, roomSchedules }) {
   const [startDate, setStartDate] = useState(getTodayStr());
   const [endDate, setEndDate] = useState(getTodayStr());
 
@@ -146,6 +147,19 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
             {
               label: "Export ข้อมูลพนักงาน",
               onClick: () => exportStaffData(staff, branches),
+            },
+          ]}
+        />
+
+        {/* Backup */}
+        <ExportSection
+          title="💾 Backup ข้อมูลทั้งหมด"
+          description="สำรองข้อมูลทุกอย่าง (คิว, สาขา, ห้อง, หัตถการ, โปร, พนักงาน) เป็นไฟล์ JSON เพื่อเก็บไว้หรือกู้คืนภายหลัง"
+          color="#6b21a8"
+          buttons={[
+            {
+              label: "⬇️ Download Backup (.json)",
+              onClick: () => backupAllData({ queues, branches, rooms, procedures, promos, staff, roomSchedules }),
             },
           ]}
         />
