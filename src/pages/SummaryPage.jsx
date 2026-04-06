@@ -281,51 +281,87 @@ function TopPromoRanking({ title, queues, promos, procedures }) {
 }
 
 export default function SummaryPage({ queues, branches, rooms, procedures, promos }) {
+  const [viewMode, setViewMode] = useState("day"); // day | week | month
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterProcedure, setFilterProcedure] = useState("all");
 
+  // ─── คำนวณ date range ตาม viewMode ───
+  const dateRange = useMemo(() => {
+    const d = new Date(selectedDate);
+    if (viewMode === "day") {
+      return { start: selectedDate, end: selectedDate };
+    } else if (viewMode === "week") {
+      const day = d.getDay(); // 0=Sun
+      const mon = new Date(d); mon.setDate(d.getDate() - ((day + 6) % 7));
+      const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+      return { start: mon.toISOString().slice(0, 10), end: sun.toISOString().slice(0, 10) };
+    } else {
+      const start = `${selectedDate.slice(0, 7)}-01`;
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10);
+      return { start, end };
+    }
+  }, [selectedDate, viewMode]);
+
+  function navigate(dir) {
+    const d = new Date(selectedDate);
+    if (viewMode === "day") d.setDate(d.getDate() + dir);
+    else if (viewMode === "week") d.setDate(d.getDate() + dir * 7);
+    else d.setMonth(d.getMonth() + dir);
+    setSelectedDate(d.toISOString().slice(0, 10));
+  }
+
+  const rangeLabel = useMemo(() => {
+    if (viewMode === "day") return formatThaiDate(selectedDate);
+    const opts = { day: "numeric", month: "short", year: "numeric" };
+    if (viewMode === "week") {
+      const s = new Date(dateRange.start).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+      const e = new Date(dateRange.end).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+      return `${s} – ${e}`;
+    }
+    return new Date(selectedDate).toLocaleDateString("th-TH", { month: "long", year: "numeric" });
+  }, [viewMode, selectedDate, dateRange]);
+
   // Apply filters
   const filteredQueues = useMemo(() => {
     let result = queues;
-    
     if (filterCategory !== "all") {
       result = result.filter(q => {
         const proc = procedures.find(p => p.id === q.procedureId);
         return proc?.category === filterCategory;
       });
     }
-    
     if (filterProcedure !== "all") {
       result = result.filter(q => q.procedureId === filterProcedure);
     }
-    
     return result;
   }, [queues, filterCategory, filterProcedure, procedures]);
 
-  // คิวที่ถูก บันทึก วันนั้น (createdAt)
+  // ─── filter ตาม date range ───
+  const inRange = useCallback((dateStr) => {
+    if (!dateStr) return false;
+    const d = dateStr.slice(0, 10);
+    return d >= dateRange.start && d <= dateRange.end;
+  }, [dateRange]);
+
+  // คิวที่ถูกบันทึกในช่วงนี้ (createdAt)
   const recordedQueues = useMemo(() =>
     filteredQueues
-      .filter((q) => {
-        const created = (q.createdAt || q.date || "").slice(0, 10);
-        return created === selectedDate;
-      })
-      .sort((a, b) => (a.timeBlock || 0) - (b.timeBlock || 0)),
-    [filteredQueues, selectedDate]
+      .filter((q) => inRange((q.createdAt || q.date || "").slice(0, 10)))
+      .sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.timeBlock || 0) - (b.timeBlock || 0)),
+    [filteredQueues, inRange]
   );
 
-  // คิวที่มี appointment วันนั้น (date)
+  // คิวที่มี appointment ในช่วงนี้ (date)
   const appointmentQueues = useMemo(() =>
     filteredQueues
-      .filter((q) => q.date === selectedDate)
-      .sort((a, b) => (a.timeBlock || 0) - (b.timeBlock || 0)),
-    [filteredQueues, selectedDate]
+      .filter((q) => inRange(q.date))
+      .sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.timeBlock || 0) - (b.timeBlock || 0)),
+    [filteredQueues, inRange]
   );
 
-  // คิวที่บันทึกวันนั้น แต่นัดวันอื่น (future bookings made today)
-  const futureFromToday = recordedQueues.filter((q) => q.date !== selectedDate);
-  // คิวที่นัดวันนั้น แต่บันทึกวันก่อนหน้า (advance bookings)
-  const advanceBookings = appointmentQueues.filter((q) => (q.createdAt || q.date || "").slice(0, 10) !== selectedDate);
+  const futureFromToday = recordedQueues.filter((q) => !inRange(q.date));
+  const advanceBookings = appointmentQueues.filter((q) => !inRange((q.createdAt || q.date || "").slice(0, 10)));
 
   const availableCategories = useMemo(() => {
     const cats = new Set(procedures.map(p => p.category).filter(Boolean));
@@ -339,48 +375,60 @@ export default function SummaryPage({ queues, branches, rooms, procedures, promo
 
   return (
     <>
-      {/* Date and Filter selectors */}
-      <div className="filter-bar" style={{ marginBottom: 16, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
-        <div className="form-group">
-          <label className="form-label">เลือกวันที่</label>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-          />
-        </div>
-        <div className="form-group">
-          <label className="form-label">หมวดหมู่</label>
-          <select value={filterCategory} onChange={(e) => {
-            setFilterCategory(e.target.value);
-            setFilterProcedure("all");
-          }}>
-            <option value="all">ทั้งหมด</option>
-            {availableCategories.map(cat => (
-              <option key={cat} value={cat}>{cat}</option>
+      {/* ─── Mode + Navigation + Filters ─── */}
+      <div style={{ marginBottom: 16, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
+        {/* Mode toggle */}
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">พารามิเตอร์</label>
+          <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1.5px solid var(--border)" }}>
+            {[{ v: "day", l: "รายวัน" }, { v: "week", l: "อาทิตย์" }, { v: "month", l: "เดือน" }].map(({ v, l }) => (
+              <button key={v} onClick={() => setViewMode(v)} style={{
+                padding: "6px 16px", fontSize: 13, fontWeight: 700, border: "none", cursor: "pointer",
+                background: viewMode === v ? "var(--accent)" : "var(--surface2)",
+                color: viewMode === v ? "#fff" : "var(--text2)",
+              }}>{l}</button>
             ))}
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">ช่วงเวลา</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={() => navigate(-1)} style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16 }}>‹</button>
+            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}
+              style={{ width: 140 }} />
+            <button onClick={() => navigate(1)} style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16 }}>›</button>
+            <button onClick={() => setSelectedDate(getTodayStr())} style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>วันนี้</button>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">หมวดหมู่</label>
+          <select value={filterCategory} onChange={(e) => { setFilterCategory(e.target.value); setFilterProcedure("all"); }}>
+            <option value="all">ทั้งหมด</option>
+            {availableCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
           </select>
         </div>
-        <div className="form-group">
+        <div className="form-group" style={{ marginBottom: 0 }}>
           <label className="form-label">หัตถการ</label>
           <select value={filterProcedure} onChange={(e) => setFilterProcedure(e.target.value)}>
             <option value="all">ทั้งหมด</option>
-            {availableProcedures.map(proc => (
-              <option key={proc.id} value={proc.id}>{proc.name}</option>
-            ))}
+            {availableProcedures.map(proc => <option key={proc.id} value={proc.id}>{proc.name}</option>)}
           </select>
         </div>
-        <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 4 }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--accent)" }}>
-            {formatThaiDate(selectedDate)}
-          </span>
+
+        {/* Range label */}
+        <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 2 }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--accent)" }}>{rangeLabel}</span>
         </div>
       </div>
 
       {/* ─── Charts ─── */}
       {appointmentQueues.length > 0 && (
         <CollapsibleCard
-          title="📊 ภาพรวมคิวนัดทำวันนี้"
+          title={`📊 ภาพรวมคิวนัด — ${rangeLabel}`}
           subtitle="แยกตามห้อง / หัตถการ / สาขา"
           defaultOpen={true}
         >
@@ -436,8 +484,8 @@ export default function SummaryPage({ queues, branches, rooms, procedures, promo
 
       {/* Section 1: บันทึกวันนั้น */}
       <CollapsibleCard
-        title="📝 คิวที่บันทึกวันนี้"
-        subtitle="ลงทะเบียนเข้าระบบวันนี้ — นัดวันไหนก็ได้"
+        title={`📝 คิวที่บันทึก — ${rangeLabel}`}
+        subtitle="ลงทะเบียนเข้าระบบช่วงนี้ — นัดวันไหนก็ได้"
         badge={
           <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)", background: "var(--surface3)", borderRadius: 10, padding: "2px 10px", color: "var(--text2)" }}>
             {recordedQueues.length} รายการ
@@ -460,8 +508,8 @@ export default function SummaryPage({ queues, branches, rooms, procedures, promo
 
       {/* Section 2: นัดทำวันนั้น */}
       <CollapsibleCard
-        title="📅 คิวนัดทำวันนี้"
-        subtitle="appointment วันนี้ — บันทึกวันไหนก็ได้"
+        title={`📅 คิวนัดทำ — ${rangeLabel}`}
+        subtitle="appointment ช่วงนี้ — บันทึกวันไหนก็ได้"
         badge={
           <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)", background: "var(--surface3)", borderRadius: 10, padding: "2px 10px", color: "var(--text2)" }}>
             {appointmentQueues.length} รายการ
