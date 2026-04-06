@@ -506,12 +506,22 @@ export default function App() {
 
   // ═══════ RENDER ═══════
 
-  // Debug logging
-  console.log('App render state:', { isLoading, currentUser: !!currentUser, staffLength: staff.length, supabaseError });
+  // ยังโหลดข้อมูลอยู่ (และยังไม่มี currentUser จาก localStorage) → แสดง loading แทน
+  if (isLoading && !currentUser) {
+    return (
+      <div style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        gap: 16, color: "#fff",
+      }}>
+        <div style={{ fontSize: 40 }}>⏳</div>
+        <div style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.7)" }}>กำลังโหลดข้อมูล...</div>
+      </div>
+    );
+  }
 
-  // Show login screen if not logged in (temporarily removed loading check)
   if (!currentUser) {
-    console.log('Showing LoginScreen with staff:', staff.length);
     return <LoginScreen staff={staff} onLogin={handleLogin} supabaseError={supabaseError} />;
   }
 
