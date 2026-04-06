@@ -120,15 +120,6 @@ export default function App() {
       } catch (error) {
         console.error('Error loading from Supabase:', error);
         setSupabaseError(error.message);
-        // Fallback to initial data if Supabase fails
-        console.log('Using demo data for preview...');
-        setStaff(initStaff);
-        setBranches(initBranches);
-        setProcedures(initProcedures);
-        setPromos(initPromos);
-        setRooms(initRooms);
-        setRoomSchedules(initRoomSchedules);
-        setQueues([]);
       } finally {
         setIsLoading(false);
       }
