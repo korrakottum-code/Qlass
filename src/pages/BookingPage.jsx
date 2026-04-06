@@ -217,10 +217,11 @@ export default function BookingPage({
                   return <option key={r.id} value={r.id}>[{r.type}] {r.name}</option>;
                 })}
               </select>
-              <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: "#dc2626", lineHeight: 1.5 }}>
-                ⚠️ หมายเหตุ: ห้องหัตถการอาจถูกนัดซ้ำในหลายวัน เช่น หมอ / เครื่อง / อื่นๆ
-                กรุณาตรวจสอบตารางคิวก่อนทุกครั้ง — สามารถตั้งตารางเวลาห้องได้ล่วงหน้าเป็นเดือนๆ
-              </div>
+              {selectedRoom?.notes && (
+                <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: "#dc2626", lineHeight: 1.5 }}>
+                  ⚠️ {selectedRoom.notes}
+                </div>
+              )}
             </div>
 
             {/* หัตถการ + โปร */}
