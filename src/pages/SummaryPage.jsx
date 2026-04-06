@@ -1,6 +1,68 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { CUSTOMER_TYPES, PROCEDURE_CATEGORIES } from "../utils/constants";
 import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass } from "../utils/helpers";
+
+// ─── Mini Bar Chart ───
+function MiniBarChart({ title, data, colorFn }) {
+  if (!data || data.length === 0) return null;
+  const max = Math.max(...data.map((d) => d.value), 1);
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text2)", marginBottom: 8 }}>{title}</div>
+      <div style={{ display: "grid", gap: 5 }}>
+        {data.slice(0, 8).map((d, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 110, fontSize: 11, color: "var(--text2)", textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>
+              {d.label}
+            </div>
+            <div style={{ flex: 1, background: "var(--surface2)", borderRadius: 4, height: 18, position: "relative", overflow: "hidden" }}>
+              <div style={{
+                width: `${(d.value / max) * 100}%`,
+                height: "100%",
+                background: colorFn ? colorFn(i) : "var(--accent)",
+                borderRadius: 4,
+                transition: "width 0.4s ease",
+                minWidth: d.value > 0 ? 4 : 0,
+              }} />
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", minWidth: 32, textAlign: "right" }}>
+              {d.value}
+            </div>
+            {d.revenue !== undefined && (
+              <div style={{ fontSize: 10, color: "var(--green)", fontFamily: "var(--mono)", minWidth: 60, textAlign: "right" }}>
+                ฿{d.revenue.toLocaleString()}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Collapsible Card ───
+function CollapsibleCard({ title, subtitle, badge, children, defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div
+        className="card-header"
+        onClick={() => setOpen((o) => !o)}
+        style={{ cursor: "pointer", userSelect: "none" }}
+      >
+        <h3 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {title}
+          {badge}
+        </h3>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {subtitle && <span style={{ fontSize: 12, color: "var(--text3)" }}>{subtitle}</span>}
+          <span style={{ fontSize: 18, color: "var(--text3)", transition: "transform 0.2s", transform: open ? "rotate(0deg)" : "rotate(-90deg)", display: "inline-block" }}>▾</span>
+        </div>
+      </div>
+      {open && <div className="card-body">{children}</div>}
+    </div>
+  );
+}
 
 function QueueMiniTable({ items, procedures, promos, rooms, branches, emptyText }) {
   if (items.length === 0) {
@@ -315,102 +377,110 @@ export default function SummaryPage({ queues, branches, rooms, procedures, promo
         </div>
       </div>
 
-      {/* Top Promo Rankings */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: 16, marginBottom: 16 }}>
-        <TopPromoRanking
-          title="🏆 โปรยอดนิยม - บันทึกวันนี้"
-          queues={recordedQueues}
-          promos={promos}
-          procedures={procedures}
-        />
-        <TopPromoRanking
-          title="🏆 โปรยอดนิยม - นัดทำวันนี้"
-          queues={appointmentQueues}
-          promos={promos}
-          procedures={procedures}
-        />
-      </div>
+      {/* ─── Charts ─── */}
+      {appointmentQueues.length > 0 && (
+        <CollapsibleCard
+          title="📊 ภาพรวมคิวนัดทำวันนี้"
+          subtitle="แยกตามห้อง / หัตถการ / สาขา"
+          defaultOpen={true}
+        >
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 24 }}>
+            <MiniBarChart
+              title="🏠 สาขา"
+              data={(() => {
+                const map = {};
+                appointmentQueues.forEach((q) => {
+                  const b = branches.find((x) => x.id === q.branchId);
+                  const key = b?.name || "ไม่ระบุ";
+                  if (!map[key]) map[key] = { value: 0, revenue: 0 };
+                  map[key].value++;
+                  map[key].revenue += Number(q.price) || 0;
+                });
+                return Object.entries(map).map(([label, v]) => ({ label, ...v })).sort((a, b) => b.value - a.value);
+              })()}
+              colorFn={(i) => `hsl(${200 + i * 30}, 60%, 55%)`}
+            />
+            <MiniBarChart
+              title="🚪 ห้อง"
+              data={(() => {
+                const map = {};
+                appointmentQueues.forEach((q) => {
+                  const r = rooms.find((x) => x.id === q.roomId);
+                  const key = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ";
+                  if (!map[key]) map[key] = { value: 0, revenue: 0 };
+                  map[key].value++;
+                  map[key].revenue += Number(q.price) || 0;
+                });
+                return Object.entries(map).map(([label, v]) => ({ label, ...v })).sort((a, b) => b.value - a.value);
+              })()}
+              colorFn={(i) => i % 2 === 0 ? "var(--blue)" : "var(--green)"}
+            />
+            <MiniBarChart
+              title="💉 หัตถการ"
+              data={(() => {
+                const map = {};
+                appointmentQueues.forEach((q) => {
+                  const p = procedures.find((x) => x.id === q.procedureId);
+                  const key = p?.name || "ไม่ระบุ";
+                  if (!map[key]) map[key] = { value: 0, revenue: 0 };
+                  map[key].value++;
+                  map[key].revenue += Number(q.price) || 0;
+                });
+                return Object.entries(map).map(([label, v]) => ({ label, ...v })).sort((a, b) => b.value - a.value);
+              })()}
+              colorFn={(i) => `hsl(${340 + i * 25}, 65%, 55%)`}
+            />
+          </div>
+        </CollapsibleCard>
+      )}
 
       {/* Section 1: บันทึกวันนั้น */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-header">
-          <h3>
-            📝 คิวที่บันทึกวันนี้
-            <span style={{
-              marginLeft: 10, fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)",
-              background: "var(--surface3)", borderRadius: 10, padding: "2px 10px",
-              color: "var(--text2)",
-            }}>
-              {recordedQueues.length} รายการ
-            </span>
-          </h3>
-          <span style={{ fontSize: 12, color: "var(--text3)" }}>
-            ลงทะเบียนเข้าระบบวันนี้ — นัดวันไหนก็ได้
+      <CollapsibleCard
+        title="📝 คิวที่บันทึกวันนี้"
+        subtitle="ลงทะเบียนเข้าระบบวันนี้ — นัดวันไหนก็ได้"
+        badge={
+          <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)", background: "var(--surface3)", borderRadius: 10, padding: "2px 10px", color: "var(--text2)" }}>
+            {recordedQueues.length} รายการ
           </span>
-        </div>
-        <div className="card-body">
-          <SectionStats queues={recordedQueues} procedures={procedures} />
-          {futureFromToday.length > 0 && (
-            <div style={{
-              fontSize: 12, color: "var(--blue)", marginBottom: 8,
-              padding: "4px 10px", background: "var(--blue-soft)", borderRadius: 6,
-            }}>
-              📌 ในจำนวนนี้ <strong>{futureFromToday.length}</strong> คิว บันทึกวันนี้แต่นัดวันอื่น (pre-book)
-            </div>
-          )}
-          <QueueMiniTable
-            items={recordedQueues}
-            procedures={procedures} promos={promos} rooms={rooms} branches={branches}
-            emptyText="ยังไม่มีคิวที่บันทึกวันนี้"
-          />
-        </div>
-      </div>
+        }
+        defaultOpen={false}
+      >
+        <SectionStats queues={recordedQueues} procedures={procedures} />
+        {futureFromToday.length > 0 && (
+          <div style={{ fontSize: 12, color: "var(--blue)", marginBottom: 8, padding: "4px 10px", background: "var(--blue-soft)", borderRadius: 6 }}>
+            📌 ในจำนวนนี้ <strong>{futureFromToday.length}</strong> คิว บันทึกวันนี้แต่นัดวันอื่น (pre-book)
+          </div>
+        )}
+        <QueueMiniTable
+          items={recordedQueues}
+          procedures={procedures} promos={promos} rooms={rooms} branches={branches}
+          emptyText="ยังไม่มีคิวที่บันทึกวันนี้"
+        />
+      </CollapsibleCard>
 
       {/* Section 2: นัดทำวันนั้น */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-header">
-          <h3>
-            📅 คิวนัดทำวันนี้
-            <span style={{
-              marginLeft: 10, fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)",
-              background: "var(--surface3)", borderRadius: 10, padding: "2px 10px",
-              color: "var(--text2)",
-            }}>
-              {appointmentQueues.length} รายการ
-            </span>
-          </h3>
-          <span style={{ fontSize: 12, color: "var(--text3)" }}>
-            appointment วันนี้ — บันทึกวันไหนก็ได้
+      <CollapsibleCard
+        title="📅 คิวนัดทำวันนี้"
+        subtitle="appointment วันนี้ — บันทึกวันไหนก็ได้"
+        badge={
+          <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)", background: "var(--surface3)", borderRadius: 10, padding: "2px 10px", color: "var(--text2)" }}>
+            {appointmentQueues.length} รายการ
           </span>
-        </div>
-        <div className="card-body">
-          <SectionStats queues={appointmentQueues} procedures={procedures} showStatus={true} />
-          {advanceBookings.length > 0 && (
-            <div style={{
-              fontSize: 12, color: "var(--amber)", marginBottom: 8,
-              padding: "4px 10px", background: "rgba(245,158,11,0.1)", borderRadius: 6,
-            }}>
-              📌 ในจำนวนนี้ <strong>{advanceBookings.length}</strong> คิว จองล่วงหน้ามาจากวันก่อนหน้า
-            </div>
-          )}
-          <QueueMiniTable
-            items={appointmentQueues}
-            procedures={procedures} promos={promos} rooms={rooms} branches={branches}
-            emptyText="ยังไม่มีคิวนัดวันนี้"
-          />
-        </div>
-      </div>
-
-      {/* Overlap insight */}
-      {recordedQueues.length > 0 && appointmentQueues.length > 0 && (
-        <div style={{
-          fontSize: 12, color: "var(--text3)", textAlign: "right",
-          marginTop: 4,
-        }}>
-          {queues.filter((q) => q.date === selectedDate && (q.createdAt || q.date || "").slice(0, 10) === selectedDate).length} คิว
-          {" "}บันทึกและทำวันเดียวกัน (walk-in / same-day)
-        </div>
-      )}
+        }
+        defaultOpen={true}
+      >
+        <SectionStats queues={appointmentQueues} procedures={procedures} showStatus={true} />
+        {advanceBookings.length > 0 && (
+          <div style={{ fontSize: 12, color: "var(--amber)", marginBottom: 8, padding: "4px 10px", background: "rgba(245,158,11,0.1)", borderRadius: 6 }}>
+            📌 ในจำนวนนี้ <strong>{advanceBookings.length}</strong> คิว จองล่วงหน้ามาจากวันก่อนหน้า
+          </div>
+        )}
+        <QueueMiniTable
+          items={appointmentQueues}
+          procedures={procedures} promos={promos} rooms={rooms} branches={branches}
+          emptyText="ยังไม่มีคิวนัดวันนี้"
+        />
+      </CollapsibleCard>
     </>
   );
 }
