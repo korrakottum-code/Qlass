@@ -2,6 +2,54 @@ import { useState, useMemo } from "react";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
 import { blockToTime, WORK_BLOCKS } from "../../utils/helpers";
 
+const DAY_NAMES = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+const DAY_NAMES_FULL = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัส", "ศุกร์", "เสาร์"];
+
+function generateDates(repeatMode, singleDate, weekStart, monthYear, weekdays) {
+  if (repeatMode === "single") return singleDate ? [singleDate] : [];
+  if (repeatMode === "weekly") {
+    if (!weekStart) return [];
+    const start = new Date(weekStart);
+    const monday = new Date(start);
+    monday.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    const dates = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      dates.push(d.toISOString().split("T")[0]);
+    }
+    return dates;
+  }
+  if (repeatMode === "monthly") {
+    if (!monthYear) return [];
+    const [y, m] = monthYear.split("-").map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const dates = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dd = String(d).padStart(2, "0");
+      const mm = String(m).padStart(2, "0");
+      dates.push(`${y}-${mm}-${dd}`);
+    }
+    return dates;
+  }
+  if (repeatMode === "weekdays") {
+    if (!monthYear || weekdays.length === 0) return [];
+    const [y, m] = monthYear.split("-").map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const dates = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(y, m - 1, d);
+      if (weekdays.includes(date.getDay())) {
+        const dd = String(d).padStart(2, "0");
+        const mm = String(m).padStart(2, "0");
+        dates.push(`${y}-${mm}-${dd}`);
+      }
+    }
+    return dates;
+  }
+  return [];
+}
+
 const STEP = 6; // 30 นาที = 6 บล็อค
 
 function TimeSpinner({ label, value, onChange }) {
@@ -43,7 +91,14 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
   const [selectedRoomIds, setSelectedRoomIds] = useState(
     data?.roomId ? [data.roomId] : []
   );
+  // repeat mode
+  const isEdit = !!data?.id;
+  const [repeatMode, setRepeatMode] = useState("single");
   const [date, setDate] = useState(data?.date || "");
+  const [weekStart, setWeekStart] = useState("");
+  const todayYM = new Date().toISOString().slice(0, 7);
+  const [monthYear, setMonthYear] = useState(todayYM);
+  const [weekdays, setWeekdays] = useState([]);
   const [available, setAvailable] = useState(data?.available !== undefined ? data.available : false);
   const [startBlock, setStartBlock] = useState(data?.startBlock ?? 108); // 09:00
   const [endBlock, setEndBlock] = useState(data?.endBlock ?? 132);       // 11:00
@@ -64,13 +119,22 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
     setSelectedRoomIds(filteredRooms.map((r) => r.id));
   }
 
+  const generatedDates = useMemo(
+    () => generateDates(repeatMode, date, weekStart, monthYear, weekdays),
+    [repeatMode, date, weekStart, monthYear, weekdays]
+  );
+
+  function toggleWeekday(d) {
+    setWeekdays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]);
+  }
+
   function handleSave() {
     if (selectedRoomIds.length === 0) return;
-    // ถ้า edit mode → อัปเดตทีละห้อง, ถ้า add mode → สร้างใหม่ทุกห้องที่เลือก
+    if (generatedDates.length === 0 && !isEdit) return;
     onSave({
       id: data?.id,
       roomIds: selectedRoomIds,
-      date,
+      dates: isEdit ? [date] : generatedDates,
       available,
       startBlock,
       endBlock,
@@ -98,11 +162,88 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
             </select>
           </div>
 
+          {/* repeat mode */}
+          {!isEdit && (
+            <div className="form-group full">
+              <label className="form-label">รูปแบบวันที่</label>
+              <div className="type-options">
+                {[
+                  { value: "single", label: "📅 ทีละวัน" },
+                  { value: "weekly", label: "📆 ทั้งสัปดาห์" },
+                  { value: "monthly", label: "🗓️ ทั้งเดือน" },
+                  { value: "weekdays", label: "🔁 ทุกวัน X ในเดือน" },
+                ].map((m) => (
+                  <button
+                    key={m.value}
+                    className={`type-option ${repeatMode === m.value ? "selected" : ""}`}
+                    onClick={() => setRepeatMode(m.value)}
+                    style={repeatMode === m.value ? { borderColor: "var(--accent)", background: "var(--accent)", color: "#fff" } : {}}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* วันที่ */}
-          <div className="form-group">
-            <label className="form-label">วันที่ (เว้นว่าง = ทุกวัน)</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          </div>
+          {(isEdit || repeatMode === "single") && (
+            <div className="form-group">
+              <label className="form-label">วันที่ (เว้นว่าง = ทุกวัน)</label>
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+          )}
+          {!isEdit && repeatMode === "weekly" && (
+            <div className="form-group">
+              <label className="form-label">เลือกวันในสัปดาห์ที่ต้องการ</label>
+              <input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} />
+              {weekStart && (
+                <span style={{ fontSize: 11, color: "var(--text3)", marginTop: 4, display: "block" }}>
+                  จะสร้างตาราง {generatedDates.length} วัน ({generatedDates[0]} ถึง {generatedDates[generatedDates.length - 1]})
+                </span>
+              )}
+            </div>
+          )}
+          {!isEdit && (repeatMode === "monthly" || repeatMode === "weekdays") && (
+            <div className="form-group">
+              <label className="form-label">เดือน</label>
+              <input type="month" value={monthYear} onChange={(e) => setMonthYear(e.target.value)} />
+            </div>
+          )}
+          {!isEdit && repeatMode === "weekdays" && (
+            <div className="form-group full">
+              <label className="form-label">เลือกวัน</label>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {DAY_NAMES.map((name, i) => (
+                  <button
+                    key={i}
+                    onClick={() => toggleWeekday(i)}
+                    style={{
+                      padding: "5px 12px", borderRadius: 20, fontSize: 13, fontWeight: 700,
+                      border: `1.5px solid ${weekdays.includes(i) ? "var(--accent)" : "var(--border)"}`,
+                      background: weekdays.includes(i) ? "var(--accent)" : "var(--surface2)",
+                      color: weekdays.includes(i) ? "#fff" : "var(--text2)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+              {generatedDates.length > 0 && (
+                <span style={{ fontSize: 11, color: "var(--accent)", marginTop: 4, display: "block", fontWeight: 600 }}>
+                  จะสร้าง {generatedDates.length} วัน ทุกวัน{weekdays.map((d) => DAY_NAMES_FULL[d]).join(", ")} ในเดือนที่เลือก
+                </span>
+              )}
+            </div>
+          )}
+          {!isEdit && repeatMode === "monthly" && monthYear && (
+            <div className="form-group">
+              <span style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>
+                จะสร้างตาราง {generatedDates.length} วัน ครอบทั้งเดือน
+              </span>
+            </div>
+          )}
 
           {/* เลือกห้อง (multi-select checkboxes) */}
           <div className="form-group full">
@@ -234,10 +375,10 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
         <button
           className="btn btn-primary"
           onClick={handleSave}
-          disabled={selectedRoomIds.length === 0}
-          style={{ opacity: selectedRoomIds.length === 0 ? 0.5 : 1 }}
+          disabled={selectedRoomIds.length === 0 || (!isEdit && generatedDates.length === 0)}
+          style={{ opacity: (selectedRoomIds.length === 0 || (!isEdit && generatedDates.length === 0)) ? 0.5 : 1 }}
         >
-          💾 บันทึก {selectedRoomIds.length > 1 ? `(${selectedRoomIds.length} ห้อง)` : ""}
+          💾 บันทึก {!isEdit && generatedDates.length > 1 ? `(${generatedDates.length} วัน × ${selectedRoomIds.length} ห้อง = ${generatedDates.length * selectedRoomIds.length} รายการ)` : selectedRoomIds.length > 1 ? `(${selectedRoomIds.length} ห้อง)` : ""}
         </button>
       </div>
     </>

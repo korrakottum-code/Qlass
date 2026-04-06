@@ -356,16 +356,20 @@ export default function App() {
 
   const saveRoomSchedule = useCallback(async (data) => {
     if (data.id) {
-      const { roomIds, ...rest } = data;
-      const updated = { ...rest, roomId: roomIds[0] };
+      const { roomIds, dates, ...rest } = data;
+      const updated = { ...rest, roomId: roomIds[0], date: dates?.[0] ?? rest.date ?? "" };
       await updateRoomSchedule(data.id, updated);
       showToast("success", "แก้ไขตารางเรียบร้อย");
     } else {
-      const { roomIds, ...rest } = data;
+      const { roomIds, dates, ...rest } = data;
+      let created = 0;
       for (const roomId of roomIds) {
-        await createRoomSchedule({ ...rest, roomId });
+        for (const date of (dates || [""])) {
+          await createRoomSchedule({ ...rest, roomId, date });
+          created++;
+        }
       }
-      showToast("success", `เพิ่มตาราง ${roomIds.length} ห้องเรียบร้อย`);
+      showToast("success", `เพิ่มตาราง ${created} รายการเรียบร้อย 🗓️`);
     }
     const updatedSchedules = await getAllRoomSchedules();
     setRoomSchedules(updatedSchedules || []);
