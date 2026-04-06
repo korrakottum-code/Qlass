@@ -244,7 +244,10 @@ export default function SummaryPage({ queues, branches, rooms, procedures, promo
   // คิวที่ถูก บันทึก วันนั้น (createdAt)
   const recordedQueues = useMemo(() =>
     filteredQueues
-      .filter((q) => (q.createdAt || q.date) === selectedDate)
+      .filter((q) => {
+        const created = (q.createdAt || q.date || "").slice(0, 10);
+        return created === selectedDate;
+      })
       .sort((a, b) => (a.timeBlock || 0) - (b.timeBlock || 0)),
     [filteredQueues, selectedDate]
   );
@@ -260,7 +263,7 @@ export default function SummaryPage({ queues, branches, rooms, procedures, promo
   // คิวที่บันทึกวันนั้น แต่นัดวันอื่น (future bookings made today)
   const futureFromToday = recordedQueues.filter((q) => q.date !== selectedDate);
   // คิวที่นัดวันนั้น แต่บันทึกวันก่อนหน้า (advance bookings)
-  const advanceBookings = appointmentQueues.filter((q) => (q.createdAt || q.date) !== selectedDate);
+  const advanceBookings = appointmentQueues.filter((q) => (q.createdAt || q.date || "").slice(0, 10) !== selectedDate);
 
   const availableCategories = useMemo(() => {
     const cats = new Set(procedures.map(p => p.category).filter(Boolean));
@@ -404,7 +407,7 @@ export default function SummaryPage({ queues, branches, rooms, procedures, promo
           fontSize: 12, color: "var(--text3)", textAlign: "right",
           marginTop: 4,
         }}>
-          {queues.filter((q) => q.date === selectedDate && (q.createdAt || q.date) === selectedDate).length} คิว
+          {queues.filter((q) => q.date === selectedDate && (q.createdAt || q.date || "").slice(0, 10) === selectedDate).length} คิว
           {" "}บันทึกและทำวันเดียวกัน (walk-in / same-day)
         </div>
       )}
