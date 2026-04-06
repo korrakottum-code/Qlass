@@ -46,8 +46,8 @@ CREATE TABLE IF NOT EXISTS room_schedules (
   room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
   date DATE, -- Nullable for regular/everyday schedule
   available BOOLEAN DEFAULT true,
-  start_block INTEGER NOT NULL,
-  end_block INTEGER NOT NULL,
+  start_block INTEGER, -- Nullable for note-only schedules
+  end_block INTEGER,   -- Nullable for note-only schedules
   note TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

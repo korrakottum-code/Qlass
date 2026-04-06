@@ -202,6 +202,7 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
   const [weekdays, setWeekdays] = useState([]);
   const [pickedDates, setPickedDates] = useState([]); // สำหรับ calendar mode
   const [available, setAvailable] = useState(data?.available !== undefined ? data.available : false);
+  const [noteOnly, setNoteOnly] = useState(data?.noteOnly || false);
   const [startBlock, setStartBlock] = useState(data?.startBlock ?? 108); // 09:00
   const [endBlock, setEndBlock] = useState(data?.endBlock ?? 132);       // 11:00
   const [note, setNote] = useState(data?.note || "");
@@ -237,9 +238,10 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
       id: data?.id,
       roomIds: selectedRoomIds,
       dates: isEdit ? [date] : generatedDates,
-      available,
-      startBlock,
-      endBlock,
+      available: noteOnly ? true : available,
+      startBlock: noteOnly ? 0 : startBlock,
+      endBlock: noteOnly ? 0 : endBlock,
+      noteOnly,
       note: note.trim(),
     });
   }
@@ -431,58 +433,73 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
             <label className="form-label">สถานะ</label>
             <div className="type-options">
               <button
-                className={`type-option ${!available ? "selected" : ""}`}
-                onClick={() => setAvailable(false)}
-                style={!available ? { borderColor: "var(--red)", background: "var(--red)", color: "#fff" } : {}}
+                className={`type-option ${!noteOnly && !available ? "selected" : ""}`}
+                onClick={() => { setNoteOnly(false); setAvailable(false); }}
+                style={!noteOnly && !available ? { borderColor: "var(--red)", background: "var(--red)", color: "#fff" } : {}}
               >
                 ⛔ ปิด / ไม่พร้อม
               </button>
               <button
-                className={`type-option ${available ? "selected" : ""}`}
-                onClick={() => setAvailable(true)}
-                style={available ? { borderColor: "var(--green)", background: "var(--green)", color: "#fff" } : {}}
+                className={`type-option ${!noteOnly && available ? "selected" : ""}`}
+                onClick={() => { setNoteOnly(false); setAvailable(true); }}
+                style={!noteOnly && available ? { borderColor: "var(--green)", background: "var(--green)", color: "#fff" } : {}}
               >
                 ✅ เปิด (กำหนดช่วงเวลา)
               </button>
+              <button
+                className={`type-option ${noteOnly ? "selected" : ""}`}
+                onClick={() => setNoteOnly(true)}
+                style={noteOnly ? { borderColor: "#b45309", background: "#b45309", color: "#fff" } : {}}
+              >
+                📝 Note เท่านั้น
+              </button>
             </div>
-          </div>
-
-          {/* Time spinner */}
-          <div className="form-group">
-            <TimeSpinner
-              label={available ? "เวลาเปิดเริ่ม" : "ปิดตั้งแต่"}
-              value={startBlock}
-              onChange={(v) => { setStartBlock(v); if (v >= endBlock) setEndBlock(v + STEP); }}
-            />
-          </div>
-          <div className="form-group">
-            <TimeSpinner
-              label={available ? "เวลาปิด" : "ปิดถึง"}
-              value={endBlock}
-              onChange={(v) => { setEndBlock(v); if (v <= startBlock) setStartBlock(v - STEP); }}
-            />
-          </div>
-
-          {/* Duration summary */}
-          {duration > 0 && (
-            <div className="form-group full">
-              <div style={{
-                padding: "8px 12px", borderRadius: "var(--radius-sm)",
-                background: available ? "var(--green-soft)" : "var(--red-soft)",
-                border: `1px solid ${available ? "rgba(58,125,92,0.2)" : "rgba(192,57,43,0.2)"}`,
-                fontSize: 12, fontWeight: 600,
-                color: available ? "var(--green)" : "var(--red)",
-                display: "flex", gap: 12, alignItems: "center",
-              }}>
-                <span>{available ? "✅ เปิด" : "⛔ ปิด"}</span>
-                <span style={{ fontFamily: "var(--mono)" }}>
-                  {blockToTime(startBlock)} — {blockToTime(endBlock)}
-                </span>
-                <span style={{ color: "var(--text3)", fontWeight: 500 }}>
-                  ({duration * 5} นาที / {duration / STEP} ชั่วโมง)
-                </span>
+            {noteOnly && (
+              <div style={{ marginTop: 6, fontSize: 11, color: "#b45309", fontWeight: 600 }}>
+                ไม่เปลี่ยนช่วงเวลารับคิว — แค่แสดงหมายเหตุในหน้าบันทึกคิว
               </div>
-            </div>
+            )}
+          </div>
+
+          {/* Time spinner — ซ่อนเมื่อ noteOnly */}
+          {!noteOnly && (
+            <>
+              <div className="form-group">
+                <TimeSpinner
+                  label={available ? "เวลาเปิดเริ่ม" : "ปิดตั้งแต่"}
+                  value={startBlock}
+                  onChange={(v) => { setStartBlock(v); if (v >= endBlock) setEndBlock(v + STEP); }}
+                />
+              </div>
+              <div className="form-group">
+                <TimeSpinner
+                  label={available ? "เวลาปิด" : "ปิดถึง"}
+                  value={endBlock}
+                  onChange={(v) => { setEndBlock(v); if (v <= startBlock) setStartBlock(v - STEP); }}
+                />
+              </div>
+              {/* Duration summary */}
+              {duration > 0 && (
+                <div className="form-group full">
+                  <div style={{
+                    padding: "8px 12px", borderRadius: "var(--radius-sm)",
+                    background: available ? "var(--green-soft)" : "var(--red-soft)",
+                    border: `1px solid ${available ? "rgba(58,125,92,0.2)" : "rgba(192,57,43,0.2)"}`,
+                    fontSize: 12, fontWeight: 600,
+                    color: available ? "var(--green)" : "var(--red)",
+                    display: "flex", gap: 12, alignItems: "center",
+                  }}>
+                    <span>{available ? "✅ เปิด" : "⛔ ปิด"}</span>
+                    <span style={{ fontFamily: "var(--mono)" }}>
+                      {blockToTime(startBlock)} — {blockToTime(endBlock)}
+                    </span>
+                    <span style={{ color: "var(--text3)", fontWeight: 500 }}>
+                      ({duration * 5} นาที / {duration / STEP} ชั่วโมง)
+                    </span>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* หมายเหตุ */}

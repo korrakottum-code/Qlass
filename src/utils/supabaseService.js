@@ -296,19 +296,21 @@ export async function fetchRoomSchedules() {
     available: s.available,
     startBlock: s.start_block,
     endBlock: s.end_block,
+    noteOnly: s.start_block === null && s.end_block === null,
     note: s.note || "",
   }));
 }
 
 export async function createRoomSchedule(schedule) {
+  const isNoteOnly = schedule.noteOnly;
   const { data, error } = await supabase
     .from("room_schedules")
     .insert([{
       room_id: schedule.roomId,
       date: schedule.date || null,
-      available: schedule.available,
-      start_block: schedule.startBlock,
-      end_block: schedule.endBlock,
+      available: true,
+      start_block: isNoteOnly ? null : schedule.startBlock,
+      end_block: isNoteOnly ? null : schedule.endBlock,
       note: schedule.note,
     }])
     .select()
@@ -322,19 +324,21 @@ export async function createRoomSchedule(schedule) {
     available: data.available,
     startBlock: data.start_block,
     endBlock: data.end_block,
+    noteOnly: data.start_block === null && data.end_block === null,
     note: data.note || "",
   };
 }
 
 export async function updateRoomSchedule(id, schedule) {
+  const isNoteOnly = schedule.noteOnly;
   const { data, error } = await supabase
     .from("room_schedules")
     .update({
       room_id: schedule.roomId,
       date: schedule.date || null,
-      available: schedule.available,
-      start_block: schedule.startBlock,
-      end_block: schedule.endBlock,
+      available: isNoteOnly ? true : schedule.available,
+      start_block: isNoteOnly ? null : schedule.startBlock,
+      end_block: isNoteOnly ? null : schedule.endBlock,
       note: schedule.note,
     })
     .eq("id", id)
@@ -349,6 +353,7 @@ export async function updateRoomSchedule(id, schedule) {
     available: data.available,
     startBlock: data.start_block,
     endBlock: data.end_block,
+    noteOnly: data.start_block === null && data.end_block === null,
     note: data.note || "",
   };
 }
