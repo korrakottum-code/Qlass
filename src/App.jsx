@@ -152,10 +152,13 @@ export default function App() {
 
   // ─── Redirect if current page not allowed ───
   useEffect(() => {
-    if (currentUser && !allowedPages.includes(page)) {
-      navigateTo(allowedPages[0] || "queue-table");
+    if (currentUser && allowedPages.length > 0 && !allowedPages.includes(page)) {
+      const target = allowedPages[0] || "queue-table";
+      try { localStorage.setItem("qlass_page", target); } catch {}
+      setPage(target);
     }
-  }, [currentUser, allowedPages, page]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, allowedPages]);
 
   // ─── Toast auto-dismiss ───
   useEffect(() => {

@@ -12,6 +12,11 @@ export default function LoginScreen({ staff, onLogin, supabaseError }) {
   const safeStaff = Array.isArray(staff) ? staff : [];
   const activeStaff = safeStaff.filter((s) => s?.active);
 
+  // hooks ต้องอยู่ก่อน early return เสมอ (Rules of Hooks)
+  useEffect(() => {
+    if (!selected) setTimeout(() => inputRef.current?.focus(), 50);
+  }, [selected]);
+
   // Show message if no staff data
   if (safeStaff.length === 0) {
     return (
@@ -71,10 +76,6 @@ export default function LoginScreen({ staff, onLogin, supabaseError }) {
         );
       })
     : [];
-
-  useEffect(() => {
-    if (!selected) setTimeout(() => inputRef.current?.focus(), 50);
-  }, [selected]);
 
   function handleSelectStaff(s) {
     setSelected(s);
