@@ -4,6 +4,107 @@ import { blockToTime, WORK_BLOCKS } from "../../utils/helpers";
 
 const DAY_NAMES = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 const DAY_NAMES_FULL = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัส", "ศุกร์", "เสาร์"];
+const MONTH_NAMES_TH = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+
+function MiniCalendar({ selectedDates, onChange }) {
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth()); // 0-indexed
+
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  function toDateStr(d) {
+    return `${viewYear}-${String(viewMonth + 1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  }
+
+  function toggleDay(d) {
+    const s = toDateStr(d);
+    onChange(selectedDates.includes(s) ? selectedDates.filter(x => x !== s) : [...selectedDates, s]);
+  }
+
+  function selectAll() {
+    const all = [];
+    for (let d = 1; d <= daysInMonth; d++) all.push(toDateStr(d));
+    const existing = selectedDates.filter(s => !s.startsWith(`${viewYear}-${String(viewMonth+1).padStart(2,"0")}`));
+    onChange([...existing, ...all]);
+  }
+
+  function clearMonth() {
+    onChange(selectedDates.filter(s => !s.startsWith(`${viewYear}-${String(viewMonth+1).padStart(2,"0")}`)));
+  }
+
+  function prevMonth() {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
+    else setViewMonth(m => m - 1);
+  }
+  function nextMonth() {
+    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
+    else setViewMonth(m => m + 1);
+  }
+
+  const monthSelectedCount = selectedDates.filter(s => s.startsWith(`${viewYear}-${String(viewMonth+1).padStart(2,"0")}`)).length;
+
+  return (
+    <div style={{ userSelect: "none" }}>
+      {/* header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <button onClick={prevMonth} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--accent)", padding: "0 6px" }}>‹</button>
+        <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>
+          {MONTH_NAMES_TH[viewMonth]} {viewYear + 543}
+        </span>
+        <button onClick={nextMonth} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--accent)", padding: "0 6px" }}>›</button>
+      </div>
+      {/* quick actions */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        <button onClick={selectAll} className="btn btn-sm btn-secondary" style={{ fontSize: 11, padding: "2px 8px" }}>เลือกทั้งเดือน</button>
+        <button onClick={clearMonth} className="btn btn-sm btn-secondary" style={{ fontSize: 11, padding: "2px 8px" }}>ล้างเดือนนี้</button>
+        {monthSelectedCount > 0 && (
+          <span style={{ fontSize: 11, color: "var(--accent)", fontWeight: 700, alignSelf: "center" }}>
+            เลือก {monthSelectedCount} วัน
+          </span>
+        )}
+      </div>
+      {/* day headers */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, marginBottom: 2 }}>
+        {DAY_NAMES.map((n, i) => (
+          <div key={i} style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: i === 0 ? "#dc2626" : i === 6 ? "var(--blue)" : "var(--text3)", padding: "2px 0" }}>{n}</div>
+        ))}
+      </div>
+      {/* cells */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+        {cells.map((d, idx) => {
+          if (!d) return <div key={idx} />;
+          const ds = toDateStr(d);
+          const selected = selectedDates.includes(ds);
+          const isToday = ds === today.toISOString().split("T")[0];
+          const isSun = (idx % 7) === 0;
+          const isSat = (idx % 7) === 6;
+          return (
+            <button
+              key={idx}
+              onClick={() => toggleDay(d)}
+              style={{
+                aspectRatio: "1", width: "100%", minWidth: 0,
+                borderRadius: 6, border: selected ? "2px solid var(--accent)" : isToday ? "2px solid var(--accent)" : "1.5px solid var(--border)",
+                background: selected ? "var(--accent)" : isToday ? "var(--accent-soft)" : "var(--surface)",
+                color: selected ? "#fff" : isSun ? "#dc2626" : isSat ? "var(--blue)" : "var(--text)",
+                fontWeight: selected || isToday ? 700 : 400,
+                fontSize: 12, cursor: "pointer", padding: 0,
+                transition: "all 0.1s",
+              }}
+            >
+              {d}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function generateDates(repeatMode, singleDate, weekStart, monthYear, weekdays) {
   if (repeatMode === "single") return singleDate ? [singleDate] : [];
@@ -99,6 +200,7 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
   const todayYM = new Date().toISOString().slice(0, 7);
   const [monthYear, setMonthYear] = useState(todayYM);
   const [weekdays, setWeekdays] = useState([]);
+  const [pickedDates, setPickedDates] = useState([]); // สำหรับ calendar mode
   const [available, setAvailable] = useState(data?.available !== undefined ? data.available : false);
   const [startBlock, setStartBlock] = useState(data?.startBlock ?? 108); // 09:00
   const [endBlock, setEndBlock] = useState(data?.endBlock ?? 132);       // 11:00
@@ -119,10 +221,10 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
     setSelectedRoomIds(filteredRooms.map((r) => r.id));
   }
 
-  const generatedDates = useMemo(
-    () => generateDates(repeatMode, date, weekStart, monthYear, weekdays),
-    [repeatMode, date, weekStart, monthYear, weekdays]
-  );
+  const generatedDates = useMemo(() => {
+    if (repeatMode === "calendar") return [...pickedDates].sort();
+    return generateDates(repeatMode, date, weekStart, monthYear, weekdays);
+  }, [repeatMode, date, weekStart, monthYear, weekdays, pickedDates]);
 
   function toggleWeekday(d) {
     setWeekdays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]);
@@ -169,9 +271,10 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
               <div className="type-options">
                 {[
                   { value: "single", label: "📅 ทีละวัน" },
+                  { value: "calendar", label: "🗓 เลือกในปฏิทิน" },
                   { value: "weekly", label: "📆 ทั้งสัปดาห์" },
-                  { value: "monthly", label: "🗓️ ทั้งเดือน" },
-                  { value: "weekdays", label: "🔁 ทุกวัน X ในเดือน" },
+                  { value: "monthly", label: "ทั้งเดือน" },
+                  { value: "weekdays", label: "🔁 ทุกวัน X" },
                 ].map((m) => (
                   <button
                     key={m.value}
@@ -183,6 +286,29 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* calendar picker */}
+          {!isEdit && repeatMode === "calendar" && (
+            <div className="form-group full">
+              <label className="form-label">
+                เลือกวันที่ต้องการ
+                {pickedDates.length > 0 && (
+                  <span style={{ marginLeft: 8, fontSize: 11, color: "var(--accent)", fontWeight: 700 }}>
+                    เลือกแล้ว {pickedDates.length} วัน
+                  </span>
+                )}
+                {pickedDates.length > 0 && (
+                  <button
+                    onClick={() => setPickedDates([])}
+                    style={{ marginLeft: 8, fontSize: 11, padding: "1px 7px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", cursor: "pointer", color: "var(--text2)" }}
+                  >
+                    ล้างทั้งหมด
+                  </button>
+                )}
+              </label>
+              <MiniCalendar selectedDates={pickedDates} onChange={setPickedDates} />
             </div>
           )}
 
