@@ -54,7 +54,6 @@ export default function TimelinePage({ queues, branches, rooms, procedures }) {
   }, [filteredRooms, dayQueues, procedures]);
 
   const totalQueues = dayQueues.length;
-  const CELL_W = 120; // ความกว้างแต่ละห้อง
   const ROW_H = 40;  // ความสูงแต่ละ block 5 นาที
   const TIME_COL = 72; // คอลัมน์เวลาซ้าย
 
@@ -89,11 +88,11 @@ export default function TimelinePage({ queues, branches, rooms, procedures }) {
       ) : (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "70vh" }}>
-            <table style={{ borderCollapse: "collapse", minWidth: TIME_COL + filteredRooms.length * CELL_W }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
               {/* Header: ชื่อห้องเป็น column */}
               <thead>
                 <tr style={{ position: "sticky", top: 0, zIndex: 3, background: "var(--surface2)" }}>
-                  <th style={{ width: TIME_COL, minWidth: TIME_COL, padding: "8px 10px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text3)", borderBottom: "2px solid var(--border2)", borderRight: "2px solid var(--border2)" }}>
+                  <th style={{ width: TIME_COL, padding: "8px 10px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text3)", borderBottom: "2px solid var(--border2)", borderRight: "2px solid var(--border2)" }}>
                     เวลา
                   </th>
                   {filteredRooms.map((room) => {
@@ -101,7 +100,6 @@ export default function TimelinePage({ queues, branches, rooms, procedures }) {
                     const cnt = dayQueues.filter((q) => q.roomId === room.id).length;
                     return (
                       <th key={room.id} style={{
-                        width: CELL_W, minWidth: CELL_W,
                         padding: "6px 10px", textAlign: "center",
                         borderBottom: "2px solid var(--border2)",
                         borderRight: "1px solid var(--border)",
@@ -136,7 +134,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures }) {
                       <tr key={b} style={{ borderBottom: isHourStart && bi === 0 ? "2px solid var(--border2)" : "1px solid var(--border)" }}>
                         {/* คอลัมน์เวลา */}
                         <td style={{
-                          width: TIME_COL, minWidth: TIME_COL, padding: "0 8px",
+                          width: TIME_COL, padding: "0 8px",
                           height: ROW_H, verticalAlign: "middle",
                           borderRight: "2px solid var(--border2)",
                           background: isHourStart ? "var(--surface2)" : isHalfHour ? "var(--surface3)" : "transparent",
@@ -161,7 +159,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures }) {
                               key={room.id}
                               title={q ? `${q.name}${q.procName ? ` — ${q.procName}` : ""} (${blockToTime(b)})` : blockToTime(b)}
                               style={{
-                                width: CELL_W, minWidth: CELL_W, height: ROW_H,
+                                height: ROW_H,
                                 background: isBooked ? bookedBg : emptyBg,
                                 borderRight: "1px solid var(--border)",
                                 borderTop: isHourStart ? "2px solid var(--border2)" : undefined,
