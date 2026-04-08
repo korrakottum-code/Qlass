@@ -2,7 +2,6 @@ import { useState, useMemo, useEffect } from "react";
 import { CUSTOMER_TYPES, ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
 import { WORK_BLOCKS, blockToTime, getEmptyBookingForm, getTodayStr } from "../utils/helpers";
 import SmartParseBox from "../components/SmartParseBox";
-import RoomTimeGrid from "../components/RoomTimeGrid";
 
 export default function BookingPage({
   form, setForm, editingQueueId, setEditingQueueId,
@@ -369,33 +368,66 @@ export default function BookingPage({
               />
             </div>
 
-            {/* เลือกเวลา — cinema-style grid */}
+            {/* เลือกเวลา */}
             <div className="form-group full">
-              <label className="form-label" style={{ marginBottom: 8 }}>
-                🎬 เลือกเวลานัด — จิ้มเลย!
+              <label className="form-label">
+                เวลานัด (บล็อค 5 นาที)
                 {selectedProcBlocks > 0 && (
                   <span style={{ fontWeight: 400, color: "var(--accent)", marginLeft: 8 }}>
-                    • {selectedProcBlocks} บล็อค ({selectedProcBlocks * 5} นาที)
-                  </span>
-                )}
-                {form.timeBlock !== null && selectedProcBlocks > 0 && (
-                  <span style={{ marginLeft: 10, fontWeight: 700, color: hasConflict ? "var(--red)" : "var(--green)" }}>
-                    {hasConflict ? "⚠️ ชนกับคิวอื่น!" : `⏱ ${blockToTime(form.timeBlock)} – ${blockToTime(form.timeBlock + selectedProcBlocks)}`}
+                    • ใช้ {selectedProcBlocks} บล็อค ({selectedProcBlocks * 5} นาที)
                   </span>
                 )}
               </label>
-              <RoomTimeGrid
-                branchRooms={branchRooms}
-                queues={queues}
-                procedures={procedures}
-                roomSchedules={roomSchedules}
-                date={form.date}
-                selectedRoomId={form.roomId}
-                selectedTimeBlock={form.timeBlock}
-                selectedProcBlocks={selectedProcBlocks}
-                editingQueueId={editingQueueId}
-                onSelect={(roomId, block) => setForm((f) => ({ ...f, roomId, timeBlock: block }))}
-              />
+              {form.timeBlock !== null && selectedProcBlocks > 0 && (
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "flex", gap: 10 }}>
+                  <span style={{ color: hasConflict ? "var(--red)" : "var(--green)" }}>
+                    {hasConflict ? "⚠️ ชนกับคิวอื่น!" : `⏱ ${blockToTime(form.timeBlock)} — ${blockToTime(form.timeBlock + selectedProcBlocks)}`}
+                  </span>
+                </div>
+              )}
+              {/* Legend */}
+              {form.roomId && (
+                <div style={{ display: "flex", gap: 10, fontSize: 11, marginBottom: 6, flexWrap: "wrap" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 2, background: "var(--accent)", display: "inline-block" }} />
+                    เวลาที่เลือก
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 2, background: "#e8c5bb", display: "inline-block" }} />
+                    มีคิวแล้ว
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 2, background: "var(--surface3)", display: "inline-block" }} />
+                    ปิด / ไม่พร้อม
+                  </span>
+                </div>
+              )}
+              <div className="time-grid">
+                {WORK_BLOCKS.map((b) => {
+                  const isStart = form.timeBlock === b.block;
+                  const isInRange = form.timeBlock !== null && selectedProcBlocks > 0
+                    && b.block > form.timeBlock && b.block < form.timeBlock + selectedProcBlocks;
+                  const isOccupied = occupiedBlocks.has(b.block);
+                  const isClosed = !availableBlocks.find((ab) => ab.block === b.block);
+                  const isDisabled = isOccupied || isClosed;
+                  return (
+                    <div
+                      key={b.block}
+                      className={`time-block ${isStart ? "selected" : ""} ${isInRange ? "in-range" : ""} ${isDisabled ? "disabled" : ""}`}
+                      style={
+                        isOccupied && !isStart
+                          ? { background: "#e8c5bb", borderColor: "#c8957e", color: "var(--accent)", opacity: 0.7 }
+                          : isClosed
+                          ? { background: "var(--surface3)", borderColor: "var(--border2)", color: "var(--text3)" }
+                          : {}
+                      }
+                      onClick={() => !isDisabled && setForm((f) => ({ ...f, timeBlock: b.block }))}
+                    >
+                      {b.time}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* หมายเหตุ */}
