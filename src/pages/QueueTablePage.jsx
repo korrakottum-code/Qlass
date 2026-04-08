@@ -17,7 +17,7 @@ function StatusBadge({ status }) {
 }
 
 export default function QueueTablePage({
-  queues, branches, rooms, procedures, promos, staff,
+  queues, branches, rooms, procedures, promos, staff, roomSchedules,
   onEdit, onDelete, onUpdateStatus,
 }) {
   const [qfBranch, setQfBranch] = useState("all");
@@ -54,6 +54,21 @@ export default function QueueTablePage({
     dayQueues.forEach((q) => { const s = q.status || "pending"; counts[s] = (counts[s] || 0) + 1; });
     return counts;
   }, [queues, qfDate, qfBranch]);
+
+  const roomScheduleNoteByRoomId = useMemo(() => {
+    const noteByRoomId = {};
+    rooms.forEach((room) => {
+      const match = roomSchedules?.find(
+        (s) => s.roomId === room.id && s.date === qfDate && s.note
+      );
+      const fallback = roomSchedules?.find(
+        (s) => s.roomId === room.id && !s.date && s.note
+      );
+      const note = match?.note || fallback?.note || null;
+      if (note) noteByRoomId[room.id] = note;
+    });
+    return noteByRoomId;
+  }, [rooms, roomSchedules, qfDate]);
 
   // จัดกลุ่ม: สาขา → ห้อง → คิว
   const groupedData = useMemo(() => {
@@ -152,6 +167,7 @@ export default function QueueTablePage({
             {branchRooms.map(({ roomId, roomName, roomType, items }) => {
               const colKey = `${branchId}_${roomId}`;
               const isCollapsed = !!collapsedRooms[colKey];
+              const roomScheduleNote = roomScheduleNoteByRoomId[roomId];
               return (
               <div className="card" key={roomId} style={{ marginBottom: 10 }}>
                 <div
@@ -164,6 +180,11 @@ export default function QueueTablePage({
                     {roomType && (
                       <span style={{ fontSize: 11, fontWeight: 600, background: roomType === "M" ? "var(--blue-soft)" : "var(--green-soft)", color: roomType === "M" ? "var(--blue)" : "var(--green)", padding: "2px 8px", borderRadius: 10, fontFamily: "var(--body)" }}>
                         {roomType === "M" ? "ห้องหมอ" : "ห้องเครื่อง"}
+                      </span>
+                    )}
+                    {roomScheduleNote && (
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "#b45309", lineHeight: 1.5, background: "#fef3c7", borderRadius: 6, padding: "2px 8px", fontFamily: "var(--font)" }}>
+                        📅 {roomScheduleNote}
                       </span>
                     )}
                   </h3>
