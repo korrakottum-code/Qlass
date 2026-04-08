@@ -96,6 +96,8 @@ export default function BookingPage({
     if (schedules.length === 0) return baseBlocks;
     return baseBlocks.filter((b) => {
       for (const s of schedules) {
+        // noteOnly = แค่ note ไม่มีผลต่อเวลา ข้ามไป
+        if (s.startBlock === null || s.endBlock === null) continue;
         if (s.available) {
           // เปิดเฉพาะช่วง → นอกช่วง = ปิด
           if (b.block < s.startBlock || b.block >= s.endBlock) return false;
