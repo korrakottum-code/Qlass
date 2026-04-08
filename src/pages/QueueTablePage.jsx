@@ -289,7 +289,7 @@ export default function QueueTablePage({
               onChange={(e) => setDeleteInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && deleteInput.trim() === deleteConfirm.queue.name.trim()) {
-                  onDelete(deleteConfirm.queue.id);
+                  onDelete(deleteConfirm.queue.id, deleteConfirm.queue);
                   setDeleteConfirm(null);
                 }
               }}
@@ -301,7 +301,7 @@ export default function QueueTablePage({
               <button
                 className="btn btn-danger"
                 disabled={deleteInput.trim() !== deleteConfirm.queue.name.trim()}
-                onClick={() => { onDelete(deleteConfirm.queue.id); setDeleteConfirm(null); }}
+                onClick={() => { onDelete(deleteConfirm.queue.id, deleteConfirm.queue); setDeleteConfirm(null); }}
               >ลบ</button>
             </div>
           </div>

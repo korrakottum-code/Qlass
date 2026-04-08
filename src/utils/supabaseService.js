@@ -765,3 +765,40 @@ export const getAllRoomSchedules = fetchRoomSchedules;
 export const getAllStaff = fetchStaff;
 export const getAllQueues = fetchQueues;
 export const getAllCategories = fetchCategories;
+
+// ═══════════════════════════════════════════════════════════
+// ACTIVITY LOGS
+// ═══════════════════════════════════════════════════════════
+
+export async function createActivityLog(log) {
+  const { error } = await supabase
+    .from("activity_logs")
+    .insert([{
+      action: log.action,
+      target_type: log.targetType,
+      target_id: log.targetId,
+      detail: log.detail,
+      performed_by: log.performedBy || null,
+      performed_by_name: log.performedByName || null,
+    }]);
+  if (error) console.error("activity log error:", error);
+}
+
+export async function fetchActivityLogs({ limit = 100 } = {}) {
+  const { data, error } = await supabase
+    .from("activity_logs")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data || []).map((r) => ({
+    id: r.id,
+    action: r.action,
+    targetType: r.target_type,
+    targetId: r.target_id,
+    detail: r.detail,
+    performedBy: r.performed_by,
+    performedByName: r.performed_by_name,
+    createdAt: r.created_at,
+  }));
+}

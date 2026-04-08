@@ -11,7 +11,8 @@ import {
   createStaff, updateStaff, deleteStaff as deleteStaffDB,
   createQueue, updateQueue, deleteQueue as deleteQueueDB,
   getAllCategories, createCategory as createCategoryDB, deleteCategory as deleteCategoryDB,
-  fetchTickets, createTicketDB, updateTicketDB, deleteTicketDB
+  fetchTickets, createTicketDB, updateTicketDB, deleteTicketDB,
+  createActivityLog, fetchActivityLogs
 } from "./utils/supabaseService";
 import { learnFromCorrection } from "./utils/smartParser";
 
@@ -43,6 +44,7 @@ import StaffPage from "./pages/StaffPage";
 import CommissionPage from "./pages/CommissionPage";
 import ExportPage from "./pages/ExportPage";
 import TicketPage from "./pages/TicketPage";
+import ActivityLogPage from "./pages/ActivityLogPage";
 
 export default function App() {
   // Simple test render
@@ -281,12 +283,29 @@ export default function App() {
     navigateTo("booking");
   }, [navigateTo]);
 
-  const deleteQueue = useCallback(async (id) => {
+  const deleteQueue = useCallback(async (id, queueSnapshot) => {
     await deleteQueueDB(id);
+    if (queueSnapshot) {
+      await createActivityLog({
+        action: "delete_queue",
+        targetType: "queue",
+        targetId: id,
+        detail: JSON.stringify({
+          name: queueSnapshot.name,
+          phone: queueSnapshot.phone,
+          date: queueSnapshot.date,
+          timeBlock: queueSnapshot.timeBlock,
+          roomId: queueSnapshot.roomId,
+          procedureId: queueSnapshot.procedureId,
+        }),
+        performedBy: currentUser?.id || null,
+        performedByName: currentUser?.nickname || currentUser?.name || null,
+      });
+    }
     const updatedQueues = await getAllQueues();
     setQueues(updatedQueues || []);
     showToast("success", "ลบคิวแล้ว");
-  }, [showToast]);
+  }, [showToast, currentUser]);
 
   const updateQueueStatus = useCallback(async (id, payload) => {
     await updateQueue(id, { ...payload, statusUpdatedAt: getTodayStr() });
@@ -741,6 +760,13 @@ export default function App() {
                 onCreateTicket={createTicket}
                 onUpdateTicket={updateTicket}
                 onDeleteTicket={deleteTicket}
+              />
+            )}
+
+            {page === "activity-log" && (
+              <ActivityLogPage
+                rooms={rooms}
+                procedures={procedures}
               />
             )}
           </div>

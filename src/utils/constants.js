@@ -115,6 +115,7 @@ export const NAV_ITEMS = [
   { id: "rooms",         label: "จัดการห้อง",           icon: "🚪" },
   { id: "room-schedule", label: "ตารางห้อง/เครื่อง",   icon: "📅" },
   { id: "staff",         label: "จัดการพนักงาน",        icon: "👥" },
+  { id: "activity-log",  label: "ประวัติการลบ",          icon: "🔍" },
 ];
 
 // ─── ROLES & PERMISSIONS ───
@@ -124,14 +125,14 @@ export const ROLES = [
     label: "ผู้ดูแลระบบ",
     color: "#dc2626",
     bg: "rgba(220,38,38,0.1)",
-    pages: ["booking","queue-table","timeline","summary","commission","export","tickets","branches","procedures","promos","rooms","room-schedule","staff"],
+    pages: ["booking","queue-table","timeline","summary","commission","export","tickets","branches","procedures","promos","rooms","room-schedule","staff","activity-log"],
   },
   {
     value: "head_admin",
     label: "หัวหน้าแอดมิน",
     color: "#7c3aed",
     bg: "rgba(124,58,237,0.1)",
-    pages: ["booking","queue-table","timeline","summary","commission","export","tickets","promos","rooms","room-schedule","staff"],
+    pages: ["booking","queue-table","timeline","summary","commission","export","tickets","promos","rooms","room-schedule","staff","activity-log"],
   },
   {
     value: "admin",
