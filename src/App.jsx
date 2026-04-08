@@ -147,6 +147,11 @@ export default function App() {
     return filterByUserBranch(rooms, currentUser, "branchId");
   }, [rooms, currentUser]);
 
+  const filteredRoomSchedules = useMemo(() => {
+    const allowedRoomIds = new Set(filteredRooms.map((r) => r.id));
+    return roomSchedules.filter((s) => allowedRoomIds.has(s.roomId));
+  }, [roomSchedules, filteredRooms]);
+
   const filteredBranches = useMemo(() => {
     if (!currentUser) return [];
     if (canViewAllBranches(currentUser)) return branches;
@@ -584,7 +589,7 @@ export default function App() {
                 rooms={filteredRooms}
                 procedures={procedures}
                 promos={promos}
-                roomSchedules={roomSchedules}
+                roomSchedules={filteredRoomSchedules}
                 queues={filteredQueues}
                 onSubmit={handleBookingSubmit}
                 onQuickAddPromo={quickAddPromo}
@@ -717,7 +722,7 @@ export default function App() {
 
             {page === "room-schedule" && (
               <RoomSchedulePage
-                roomSchedules={roomSchedules}
+                roomSchedules={filteredRoomSchedules}
                 rooms={filteredRooms}
                 branches={filteredBranches}
                 onAdd={() => setModal({ type: "schedule", data: null })}
@@ -755,7 +760,7 @@ export default function App() {
                 procedures={procedures}
                 promos={promos}
                 staff={staff}
-                roomSchedules={roomSchedules}
+                roomSchedules={filteredRoomSchedules}
               />
             )}
 
