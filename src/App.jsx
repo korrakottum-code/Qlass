@@ -208,6 +208,19 @@ export default function App() {
       return;
     }
 
+    // ─── ตรวจสอบคิวซ้ำ (เบอร์ + วันที่ + หัตถการเดิม) ───
+    if (!editingQueueId) {
+      const duplicate = queues.find((q) =>
+        q.phone.trim() === form.phone.trim() &&
+        q.date === form.date &&
+        (form.procedureId ? q.procedureId === form.procedureId : true)
+      );
+      if (duplicate) {
+        showToast("error", `⚠️ ${duplicate.name} (${duplicate.phone}) มีคิววันนี้แล้ว (${duplicate.timeBlock !== null ? blockToTime(duplicate.timeBlock) : "ไม่ระบุเวลา"}) — ถ้าต้องการบันทึกจริง กรุณาตรวจสอบก่อน`);
+        return;
+      }
+    }
+
     // ─── ตรวจสอบเวลาชนกัน ───
     if (form.timeBlock !== null && form.roomId && form.procedureId) {
       const proc = procedures.find((p) => p.id === form.procedureId);
