@@ -1,10 +1,12 @@
 import { useState, useMemo } from "react";
-import { getTodayStr, blockToTime, formatThaiDate } from "../utils/helpers";
+import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm } from "../utils/helpers";
 
-export default function TimelinePage({ queues, branches, rooms, procedures, onBookNew, onEditQueue }) {
+export default function TimelinePage({ queues, branches, rooms, procedures, promos, currentUser, onSubmitBooking, onEditQueue }) {
   const [date, setDate] = useState(getTodayStr());
   const [filterBranch, setFilterBranch] = useState("all");
   const [popup, setPopup] = useState(null); // { q, room, block, x, y }
+  const [bookingForm, setBookingForm] = useState(null); // mini booking popup form
+  const [saving, setSaving] = useState(false);
 
   function navigate(dir) {
     const d = new Date(date);
@@ -162,8 +164,14 @@ export default function TimelinePage({ queues, branches, rooms, procedures, onBo
                                 if (q) {
                                   const rect = e.currentTarget.getBoundingClientRect();
                                   setPopup({ q, room, block: b, x: rect.left, y: rect.bottom });
-                                } else if (onBookNew) {
-                                  onBookNew({ roomId: room.id, branchId: room.branchId, date, timeBlock: b });
+                                } else {
+                                  setBookingForm({
+                                    ...getEmptyBookingForm(),
+                                    roomId: room.id,
+                                    branchId: room.branchId,
+                                    date,
+                                    timeBlock: b,
+                                  });
                                 }
                               }}
                               style={{
@@ -297,6 +305,122 @@ export default function TimelinePage({ queues, branches, rooms, procedures, onBo
           </div>
         </>
       )}
+      {/* ─── Mini Booking Popup ─── */}
+      {bookingForm && (() => {
+        const room = rooms.find((r) => r.id === bookingForm.roomId);
+        const branch = branches.find((b) => b.id === bookingForm.branchId);
+        const roomProcs = procedures.filter((p) => !p.type || p.type === room?.type);
+        const selectedProc = procedures.find((p) => p.id === bookingForm.procedureId);
+        const availablePromos = promos.filter((p) => !p.procedureId || p.procedureId === bookingForm.procedureId);
+        return (
+          <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={() => setBookingForm(null)}>
+            <div style={{ background: "var(--surface1)", borderRadius: 16, padding: "22px 26px", minWidth: 340, maxWidth: 440, width: "94%", boxShadow: "0 8px 40px rgba(0,0,0,0.22)" }}
+              onClick={(e) => e.stopPropagation()}>
+
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <div style={{ fontWeight: 800, fontSize: 15, color: "var(--accent)" }}>📝 บันทึกคิว</div>
+                <button onClick={() => setBookingForm(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--text3)" }}>✕</button>
+              </div>
+
+              {/* Room + Time info */}
+              <div style={{ background: "var(--surface2)", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <span style={{ color: room?.type === "M" ? "var(--blue)" : "var(--green)", fontWeight: 700 }}>
+                  [{room?.type}] {room?.name}
+                </span>
+                <span style={{ color: "var(--text3)" }}>{branch?.name}</span>
+                <span style={{ fontFamily: "var(--mono)", fontWeight: 700 }}>⏰ {blockToTime(bookingForm.timeBlock)}</span>
+                <span style={{ color: "var(--text3)" }}>📅 {bookingForm.date}</span>
+              </div>
+
+              {/* Form fields */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>ชื่อลูกค้า *</label>
+                    <input style={{ width: "100%", fontSize: 13 }} value={bookingForm.name}
+                      onChange={(e) => setBookingForm((f) => ({ ...f, name: e.target.value }))}
+                      placeholder="ชื่อ-นามสกุล" autoFocus />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>เบอร์โทร *</label>
+                    <input style={{ width: "100%", fontSize: 13 }} value={bookingForm.phone}
+                      onChange={(e) => setBookingForm((f) => ({ ...f, phone: e.target.value }))}
+                      placeholder="0xxxxxxxxx" />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>หัตถการ</label>
+                  <select style={{ width: "100%", fontSize: 13 }} value={bookingForm.procedureId}
+                    onChange={(e) => setBookingForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "" }))}>
+                    <option value="">— เลือกหัตถการ —</option>
+                    {roomProcs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+
+                {availablePromos.length > 0 && (
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>โปร/แพ็กเกจ</label>
+                    <select style={{ width: "100%", fontSize: 13 }} value={bookingForm.promoId}
+                      onChange={(e) => {
+                        const promo = promos.find((p) => p.id === e.target.value);
+                        setBookingForm((f) => ({ ...f, promoId: e.target.value, price: promo?.price ?? f.price }));
+                      }}>
+                      <option value="">— ไม่ระบุ —</option>
+                      {availablePromos.map((p) => <option key={p.id} value={p.id}>{p.name}{p.price ? ` (฿${p.price.toLocaleString()})` : ""}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>ราคา (บาท)</label>
+                    <input type="number" style={{ width: "100%", fontSize: 13 }} value={bookingForm.price}
+                      onChange={(e) => setBookingForm((f) => ({ ...f, price: e.target.value }))}
+                      placeholder="0" />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>ประเภทลูกค้า</label>
+                    <select style={{ width: "100%", fontSize: 13 }} value={bookingForm.customerType}
+                      onChange={(e) => setBookingForm((f) => ({ ...f, customerType: e.target.value }))}>
+                      <option value="new">ลูกค้าใหม่</option>
+                      <option value="old">ลูกค้าเก่า</option>
+                      <option value="course">ใช้คอร์ส</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>Note</label>
+                  <input style={{ width: "100%", fontSize: 13 }} value={bookingForm.note}
+                    onChange={(e) => setBookingForm((f) => ({ ...f, note: e.target.value }))}
+                    placeholder="หมายเหตุ (ถ้ามี)" />
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
+                <button className="btn btn-secondary" onClick={() => setBookingForm(null)}>ยกเลิก</button>
+                <button
+                  className="btn btn-primary"
+                  disabled={saving || !bookingForm.name.trim() || !bookingForm.phone.trim()}
+                  onClick={async () => {
+                    if (!onSubmitBooking) return;
+                    setSaving(true);
+                    const ok = await onSubmitBooking(bookingForm);
+                    setSaving(false);
+                    if (ok) setBookingForm(null);
+                  }}
+                >
+                  {saving ? "กำลังบันทึก..." : "✅ บันทึกคิว"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 }

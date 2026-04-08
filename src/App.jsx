@@ -699,14 +699,42 @@ export default function App() {
                 branches={filteredBranches}
                 rooms={filteredRooms}
                 procedures={procedures}
-                onBookNew={(prefill) => {
-                  setForm({ ...getEmptyBookingForm(), ...prefill });
-                  setEditingQueueId(null);
-                  navigateTo("booking");
+                promos={promos}
+                currentUser={currentUser}
+                onSubmitBooking={async (bookingForm) => {
+                  // duplicate check
+                  const dup = queues.find((q) =>
+                    q.phone.trim() === bookingForm.phone.trim() &&
+                    q.date === bookingForm.date &&
+                    (bookingForm.procedureId ? q.procedureId === bookingForm.procedureId : true)
+                  );
+                  if (dup) {
+                    showToast("error", `⚠️ ${dup.name} (${dup.phone}) มีคิววันนี้แล้ว (${dup.timeBlock !== null ? blockToTime(dup.timeBlock) : "ไม่ระบุเวลา"})`);
+                    return false;
+                  }
+                  // conflict check
+                  if (bookingForm.timeBlock !== null && bookingForm.roomId && bookingForm.procedureId) {
+                    const proc = procedures.find((p) => p.id === bookingForm.procedureId);
+                    const dur = proc?.blocks || 0;
+                    const conflict = queues.find((q) => {
+                      if (q.roomId !== bookingForm.roomId) return false;
+                      if (q.date !== bookingForm.date) return false;
+                      if (q.timeBlock === null) return false;
+                      const qDur = procedures.find((p) => p.id === q.procedureId)?.blocks || 1;
+                      return bookingForm.timeBlock < q.timeBlock + qDur && q.timeBlock < bookingForm.timeBlock + dur;
+                    });
+                    if (conflict) {
+                      showToast("error", `เวลาชนกับคิวของ ${conflict.name} (${blockToTime(conflict.timeBlock)})`);
+                      return false;
+                    }
+                  }
+                  await createQueue({ ...bookingForm, createdAt: getTodayStr(), recordedBy: currentUser?.id || null });
+                  const updatedQueues = await getAllQueues();
+                  setQueues(updatedQueues || []);
+                  showToast("success", "บันทึกคิวเรียบร้อย ✓");
+                  return true;
                 }}
-                onEditQueue={(q) => {
-                  editQueue(q);
-                }}
+                onEditQueue={(q) => { editQueue(q); }}
               />
             )}
 
