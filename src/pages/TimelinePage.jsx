@@ -48,7 +48,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
     dayQueues.forEach((q) => {
       if (!map[q.roomId] || q.timeBlock === null) return;
       const proc = procedures.find((p) => p.id === q.procedureId);
-      const dur = proc?.blocks || 1;
+      const dur = q.durationBlocks ?? proc?.blocks ?? 1;
       for (let i = 0; i < dur; i++) {
         map[q.roomId][q.timeBlock + i] = { ...q, procName: proc?.name || "", isStart: i === 0, dur };
       }

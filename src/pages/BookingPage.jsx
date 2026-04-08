@@ -67,6 +67,9 @@ export default function BookingPage({
     return p ? p.blocks : 0;
   }, [form.procedureId, procedures]);
 
+  // Effective duration (override หรือ default จาก procedure)
+  const activeDur = form.durationBlocks ?? selectedProcBlocks;
+
   // Blocks occupied by existing queues in same room+date (ยกเว้นคิวที่กำลังแก้ไข)
   const occupiedBlocks = useMemo(() => {
     const occupied = new Set();
@@ -113,12 +116,12 @@ export default function BookingPage({
 
   // ตรวจสอบ slot ที่เลือกชนกับคิวอื่น
   const hasConflict = useMemo(() => {
-    if (form.timeBlock === null || selectedProcBlocks === 0) return false;
-    for (let i = 0; i < selectedProcBlocks; i++) {
+    if (form.timeBlock === null || activeDur === 0) return false;
+    for (let i = 0; i < activeDur; i++) {
       if (occupiedBlocks.has(form.timeBlock + i)) return true;
     }
     return false;
-  }, [form.timeBlock, selectedProcBlocks, occupiedBlocks]);
+  }, [form.timeBlock, activeDur, occupiedBlocks]);
 
   function handleQuickPromoSave() {
     const trimmed = qpName.trim();
@@ -377,15 +380,27 @@ export default function BookingPage({
               <label className="form-label">
                 เวลานัด (บล็อค 5 นาที)
                 {selectedProcBlocks > 0 && (
-                  <span style={{ fontWeight: 400, color: "var(--accent)", marginLeft: 8 }}>
-                    • ใช้ {selectedProcBlocks} บล็อค ({selectedProcBlocks * 5} นาที)
+                  <span style={{ fontWeight: 400, color: "var(--accent)", marginLeft: 8, display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    • ใช้
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, durationBlocks: Math.max(1, (f.durationBlocks ?? selectedProcBlocks) - 1) }))}
+                      style={{ padding: "1px 7px", borderRadius: 4, border: "1.5px solid var(--border2)", background: "var(--surface2)", cursor: "pointer", fontWeight: 800, fontSize: 14, lineHeight: 1 }}>−</button>
+                    <span style={{ fontWeight: 700, minWidth: 24, textAlign: "center" }}>{activeDur}</span>
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, durationBlocks: (f.durationBlocks ?? selectedProcBlocks) + 1 }))}
+                      style={{ padding: "1px 7px", borderRadius: 4, border: "1.5px solid var(--border2)", background: "var(--surface2)", cursor: "pointer", fontWeight: 800, fontSize: 14, lineHeight: 1 }}>+</button>
+                    บล็อค ({activeDur * 5} นาที)
+                    {form.durationBlocks !== null && form.durationBlocks !== selectedProcBlocks && (
+                      <button type="button" onClick={() => setForm(f => ({ ...f, durationBlocks: null }))}
+                        style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, border: "1.5px solid var(--border2)", background: "transparent", cursor: "pointer", color: "var(--text3)" }}>reset</button>
+                    )}
                   </span>
                 )}
               </label>
-              {form.timeBlock !== null && selectedProcBlocks > 0 && (
+              {form.timeBlock !== null && activeDur > 0 && (
                 <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "flex", gap: 10 }}>
                   <span style={{ color: hasConflict ? "var(--red)" : "var(--green)" }}>
-                    {hasConflict ? "⚠️ ชนกับคิวอื่น!" : `⏱ ${blockToTime(form.timeBlock)} — ${blockToTime(form.timeBlock + selectedProcBlocks)}`}
+                    {hasConflict ? "⚠️ ชนกับคิวอื่น!" : `⏱ ${blockToTime(form.timeBlock)} — ${blockToTime(form.timeBlock + activeDur)}`}
                   </span>
                 </div>
               )}
@@ -409,8 +424,8 @@ export default function BookingPage({
               <div className="time-grid">
                 {WORK_BLOCKS.map((b) => {
                   const isStart = form.timeBlock === b.block;
-                  const isInRange = form.timeBlock !== null && selectedProcBlocks > 0
-                    && b.block > form.timeBlock && b.block < form.timeBlock + selectedProcBlocks;
+                  const isInRange = form.timeBlock !== null && activeDur > 0
+                    && b.block > form.timeBlock && b.block < form.timeBlock + activeDur;
                   const isOccupied = occupiedBlocks.has(b.block);
                   const isClosed = !availableBlocks.find((ab) => ab.block === b.block);
                   const isDisabled = isOccupied || isClosed;

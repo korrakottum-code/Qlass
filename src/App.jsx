@@ -231,7 +231,7 @@ export default function App() {
     // ─── ตรวจสอบเวลาชนกัน ───
     if (form.timeBlock !== null && form.roomId && form.procedureId) {
       const proc = procedures.find((p) => p.id === form.procedureId);
-      const dur = proc?.blocks || 0;
+      const dur = form.durationBlocks ?? proc?.blocks ?? 0;
       const startA = form.timeBlock;
       const endA = startA + dur;
 
@@ -241,14 +241,16 @@ export default function App() {
         if (q.date !== form.date) return false;
         if (q.timeBlock === null) return false;
         const qProc = procedures.find((p) => p.id === q.procedureId);
-        const qDur = qProc?.blocks || 1;
+        const qDur = q.durationBlocks ?? qProc?.blocks ?? 1;
         const startB = q.timeBlock;
         const endB = startB + qDur;
         return startA < endB && startB < endA;
       });
 
       if (conflict) {
-        showToast("error", `เวลาชนกับคิวของ ${conflict.name} (${blockToTime(conflict.timeBlock)}–${blockToTime(conflict.timeBlock + (procedures.find(p => p.id === conflict.procedureId)?.blocks || 0))})`);
+        const cProc = procedures.find(p => p.id === conflict.procedureId);
+        const cDur = conflict.durationBlocks ?? cProc?.blocks ?? 0;
+        showToast("error", `เวลาชนกับคิวของ ${conflict.name} (${blockToTime(conflict.timeBlock)}–${blockToTime(conflict.timeBlock + cDur)})`);
         return;
       }
     }

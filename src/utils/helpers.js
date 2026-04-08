@@ -48,6 +48,7 @@ export function getEmptyBookingForm() {
     customerType: "new",
     date: getTodayStr(),
     timeBlock: null,
+    durationBlocks: null,
     roomId: "",
     status: "pending",
     statusNote: "",

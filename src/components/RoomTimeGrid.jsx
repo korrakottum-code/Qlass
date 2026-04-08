@@ -45,7 +45,7 @@ export default function RoomTimeGrid({
       .forEach((q) => {
         if (!map[q.roomId]) return;
         const proc = procedures.find((p) => p.id === q.procedureId);
-        const dur = proc?.blocks || 1;
+        const dur = q.durationBlocks ?? proc?.blocks ?? 1;
         const isEditing = q.id === editingQueueId;
         for (let i = 0; i < dur; i++) {
           map[q.roomId][q.timeBlock + i] = {

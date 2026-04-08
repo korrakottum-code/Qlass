@@ -39,13 +39,14 @@ export default function StatusModal({ queue, procedures, queues = [], onSave, on
       // ── conflict check ──
       if (nb !== null) {
         const proc = procedures.find((p) => p.id === queue.procedureId);
-        const dur = proc?.blocks || 1;
+        const dur = queue.durationBlocks ?? proc?.blocks ?? 1;
         const conflict = queues.find((q) => {
           if (q.id === queue.id) return false;
           if (q.roomId !== queue.roomId) return false;
           if (q.date !== nd) return false;
           if (q.timeBlock === null) return false;
-          const qDur = procedures.find((p) => p.id === q.procedureId)?.blocks || 1;
+          const qProc = procedures.find((p) => p.id === q.procedureId);
+          const qDur = q.durationBlocks ?? qProc?.blocks ?? 1;
           return nb < q.timeBlock + qDur && q.timeBlock < nb + dur;
         });
         if (conflict) {

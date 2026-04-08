@@ -210,7 +210,7 @@ export default function QueueTablePage({
                               {q.timeBlock !== null ? (
                                 <>
                                   {blockToTime(q.timeBlock)}
-                                  {proc && <div style={{ fontSize: 10, color: "var(--text3)" }}>–{blockToTime(q.timeBlock + proc.blocks)}</div>}
+                                  {proc && <div style={{ fontSize: 10, color: "var(--text3)" }}>–{blockToTime(q.timeBlock + (q.durationBlocks ?? proc.blocks))}</div>}
                                 </>
                               ) : "—"}
                             </td>
