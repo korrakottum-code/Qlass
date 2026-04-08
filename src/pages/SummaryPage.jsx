@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import { CUSTOMER_TYPES, PROCEDURE_CATEGORIES } from "../utils/constants";
-import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass } from "../utils/helpers";
+import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass, canViewAllBranches } from "../utils/helpers";
 
 // ─── Mini Bar Chart ───
 function MiniBarChart({ title, data, colorFn }) {
@@ -280,11 +280,13 @@ function TopPromoRanking({ title, queues, promos, procedures }) {
   );
 }
 
-export default function SummaryPage({ queues, branches, rooms, procedures, promos }) {
+export default function SummaryPage({ queues, allQueues, branches, allBranches, rooms, procedures, promos, currentUser }) {
   const [viewMode, setViewMode] = useState("day"); // day | week | month
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterProcedure, setFilterProcedure] = useState("all");
+  const [filterBranch, setFilterBranch] = useState("all");
+  const isMultiBranch = canViewAllBranches(currentUser);
 
   // ─── คำนวณ date range ตาม viewMode ───
   const dateRange = useMemo(() => {
@@ -325,6 +327,9 @@ export default function SummaryPage({ queues, branches, rooms, procedures, promo
   // Apply filters
   const filteredQueues = useMemo(() => {
     let result = queues;
+    if (isMultiBranch && filterBranch !== "all") {
+      result = result.filter(q => q.branchId === filterBranch);
+    }
     if (filterCategory !== "all") {
       result = result.filter(q => {
         const proc = procedures.find(p => p.id === q.procedureId);
@@ -335,7 +340,7 @@ export default function SummaryPage({ queues, branches, rooms, procedures, promo
       result = result.filter(q => q.procedureId === filterProcedure);
     }
     return result;
-  }, [queues, filterCategory, filterProcedure, procedures]);
+  }, [queues, filterCategory, filterProcedure, filterBranch, isMultiBranch, procedures]);
 
   // ─── filter ตาม date range ───
   const inRange = useCallback((dateStr) => {
@@ -403,6 +408,17 @@ export default function SummaryPage({ queues, branches, rooms, procedures, promo
           </div>
         </div>
 
+        {/* Branch filter — เห็นเฉพาะ admin หลายสาขา */}
+        {isMultiBranch && (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">สาขา</label>
+            <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)} style={{ minWidth: 140 }}>
+              <option value="all">ทุกสาขา</option>
+              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label className="form-label">หมวดหมู่</label>
@@ -425,66 +441,9 @@ export default function SummaryPage({ queues, branches, rooms, procedures, promo
         </div>
       </div>
 
-      {/* ─── Charts ─── */}
-      {appointmentQueues.length > 0 && (
-        <CollapsibleCard
-          title={`📊 ภาพรวมคิวนัด — ${rangeLabel}`}
-          subtitle="แยกตามห้อง / หัตถการ / สาขา"
-          defaultOpen={true}
-        >
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 24 }}>
-            <MiniBarChart
-              title="🏠 สาขา"
-              data={(() => {
-                const map = {};
-                appointmentQueues.forEach((q) => {
-                  const b = branches.find((x) => x.id === q.branchId);
-                  const key = b?.name || "ไม่ระบุ";
-                  if (!map[key]) map[key] = { value: 0, revenue: 0 };
-                  map[key].value++;
-                  map[key].revenue += Number(q.price) || 0;
-                });
-                return Object.entries(map).map(([label, v]) => ({ label, ...v })).sort((a, b) => b.value - a.value);
-              })()}
-              colorFn={(i) => `hsl(${200 + i * 30}, 60%, 55%)`}
-            />
-            <MiniBarChart
-              title="🚪 ห้อง"
-              data={(() => {
-                const map = {};
-                appointmentQueues.forEach((q) => {
-                  const r = rooms.find((x) => x.id === q.roomId);
-                  const key = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ";
-                  if (!map[key]) map[key] = { value: 0, revenue: 0 };
-                  map[key].value++;
-                  map[key].revenue += Number(q.price) || 0;
-                });
-                return Object.entries(map).map(([label, v]) => ({ label, ...v })).sort((a, b) => b.value - a.value);
-              })()}
-              colorFn={(i) => i % 2 === 0 ? "var(--blue)" : "var(--green)"}
-            />
-            <MiniBarChart
-              title="💉 หัตถการ"
-              data={(() => {
-                const map = {};
-                appointmentQueues.forEach((q) => {
-                  const p = procedures.find((x) => x.id === q.procedureId);
-                  const key = p?.name || "ไม่ระบุ";
-                  if (!map[key]) map[key] = { value: 0, revenue: 0 };
-                  map[key].value++;
-                  map[key].revenue += Number(q.price) || 0;
-                });
-                return Object.entries(map).map(([label, v]) => ({ label, ...v })).sort((a, b) => b.value - a.value);
-              })()}
-              colorFn={(i) => `hsl(${340 + i * 25}, 65%, 55%)`}
-            />
-          </div>
-        </CollapsibleCard>
-      )}
-
       {/* Section 1: บันทึกวันนั้น */}
       <CollapsibleCard
-        title={`📝 คิวที่บันทึก — ${rangeLabel}`}
+        title={`� คิวที่บันทึก — ${rangeLabel}`}
         subtitle="ลงทะเบียนเข้าระบบช่วงนี้ — นัดวันไหนก็ได้"
         badge={
           <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)", background: "var(--surface3)", borderRadius: 10, padding: "2px 10px", color: "var(--text2)" }}>
@@ -499,16 +458,18 @@ export default function SummaryPage({ queues, branches, rooms, procedures, promo
             📌 ในจำนวนนี้ <strong>{futureFromToday.length}</strong> คิว บันทึกวันนี้แต่นัดวันอื่น (pre-book)
           </div>
         )}
-        <QueueMiniTable
-          items={recordedQueues}
-          procedures={procedures} promos={promos} rooms={rooms} branches={branches}
-          emptyText="ยังไม่มีคิวที่บันทึกวันนี้"
-        />
+        {recordedQueues.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginTop: 12 }}>
+            {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; recordedQueues.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} />}
+            <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; recordedQueues.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} />
+            <MiniBarChart title="💉 หัตถการ" data={(() => { const m = {}; recordedQueues.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} />
+          </div>
+        )}
       </CollapsibleCard>
 
       {/* Section 2: นัดทำวันนั้น */}
       <CollapsibleCard
-        title={`📅 คิวนัดทำ — ${rangeLabel}`}
+        title={`� คิวนัดทำ — ${rangeLabel}`}
         subtitle="appointment ช่วงนี้ — บันทึกวันไหนก็ได้"
         badge={
           <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)", background: "var(--surface3)", borderRadius: 10, padding: "2px 10px", color: "var(--text2)" }}>
@@ -523,11 +484,13 @@ export default function SummaryPage({ queues, branches, rooms, procedures, promo
             📌 ในจำนวนนี้ <strong>{advanceBookings.length}</strong> คิว จองล่วงหน้ามาจากวันก่อนหน้า
           </div>
         )}
-        <QueueMiniTable
-          items={appointmentQueues}
-          procedures={procedures} promos={promos} rooms={rooms} branches={branches}
-          emptyText="ยังไม่มีคิวนัดวันนี้"
-        />
+        {appointmentQueues.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginTop: 12 }}>
+            {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; appointmentQueues.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} />}
+            <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; appointmentQueues.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} />
+            <MiniBarChart title="💉 หัตถการ" data={(() => { const m = {}; appointmentQueues.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} />
+          </div>
+        )}
       </CollapsibleCard>
     </>
   );

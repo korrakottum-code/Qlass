@@ -741,10 +741,13 @@ export default function App() {
             {page === "summary" && (
               <SummaryPage
                 queues={filteredQueues}
+                allQueues={queues}
                 branches={filteredBranches}
+                allBranches={branches}
                 rooms={filteredRooms}
                 procedures={procedures}
                 promos={promos}
+                currentUser={currentUser}
               />
             )}
 
