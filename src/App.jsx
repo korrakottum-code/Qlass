@@ -314,13 +314,31 @@ export default function App() {
 
   const updateQueueStatus = useCallback(async (id, payload) => {
     await updateQueue(id, { ...payload, statusUpdatedAt: getTodayStr() });
+
+    // เมื่อเลื่อนนัด → สร้างคิวใหม่ที่วันใหม่ สถานะ rescheduled_in
+    if (payload.status === "rescheduled" && (payload.date || payload.timeBlock !== undefined)) {
+      const orig = queues.find((q) => q.id === id);
+      if (orig) {
+        const { id: _id, createdAt: _ca, status: _st, statusNote: _sn, statusUpdatedAt: _su, ...rest } = orig;
+        await createQueue({
+          ...rest,
+          date: payload.date || orig.date,
+          timeBlock: payload.timeBlock !== undefined ? payload.timeBlock : orig.timeBlock,
+          status: "rescheduled_in",
+          statusNote: payload.statusNote || "",
+          createdAt: getTodayStr(),
+          recordedBy: currentUser?.id || null,
+        });
+      }
+    }
+
     const updatedQueues = await getAllQueues();
     setQueues(updatedQueues || []);
     setModal(null);
     const st = payload.status;
-    const labels = { confirmed:"ยืนยันแล้ว ✅", rescheduled:"เลื่อนนัดแล้ว 📅", no_show:"บันทึก: ไม่มาตามนัด 🚫", cancelled:"ยกเลิกแล้ว ❌", done:"เสร็จสิ้น 🎉", follow1:"บันทึก: โทรตาม ×1", follow2:"บันทึก: โทรตาม ×2", follow3:"บันทึก: โทรตาม ×3 📞" };
+    const labels = { confirmed:"ยืนยันแล้ว ✅", rescheduled:"เลื่อนออก 📤", rescheduled_in:"เลื่อนมา (ใหม่) �", no_show:"บันทึก: ไม่มาตามนัด 🚫", cancelled:"ยกเลิกแล้ว ❌", done:"เสร็จสิ้น 🎉", follow1:"บันทึก: โทรตาม ×1", follow2:"บันทึก: โทรตาม ×2", follow3:"บันทึก: โทรตาม ×3 📞" };
     showToast("success", labels[st] || "อัปเดตสถานะแล้ว");
-  }, [showToast]);
+  }, [showToast, queues, currentUser]);
 
   // ═══════ CRUD HELPERS ═══════
   const saveBranch = useCallback(async (data) => {
@@ -836,7 +854,7 @@ export default function App() {
             <ScheduleModal data={modal.data} rooms={filteredRooms} branches={filteredBranches} onSave={saveRoomSchedule} onClose={() => setModal(null)} />
           )}
           {modal.type === "status" && (
-            <StatusModal data={modal.data} queue={modal.data} procedures={procedures} onSave={updateQueueStatus} onClose={() => setModal(null)} />
+            <StatusModal data={modal.data} queue={modal.data} procedures={procedures} queues={queues} onSave={updateQueueStatus} onClose={() => setModal(null)} />
           )}
           {modal.type === "staff" && (
             <StaffModal data={modal.data} branches={branches} onSave={saveStaff} onClose={() => setModal(null)} />

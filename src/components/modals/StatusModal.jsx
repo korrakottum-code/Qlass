@@ -7,7 +7,7 @@ import { blockToTime, formatThaiDate } from "../../utils/helpers";
 //       any → rescheduled | cancelled
 const FOLLOW_NEXT = { pending: "follow1", follow1: "follow2", follow2: "follow3" };
 
-export default function StatusModal({ queue, procedures, onSave, onClose }) {
+export default function StatusModal({ queue, procedures, queues = [], onSave, onClose }) {
   const proc = procedures.find((p) => p.id === queue.procedureId);
   const currentStatus = queue.status || "pending";
   const [status, setStatus] = useState(currentStatus);
@@ -25,13 +25,35 @@ export default function StatusModal({ queue, procedures, onSave, onClose }) {
     return h * 12 + Math.floor(m / 5);
   }
 
+  const [conflictError, setConflictError] = useState("");
+
   function handleSave() {
     const payload = { status, statusNote: statusNote.trim() };
     if (status === "rescheduled") {
-      if (newDate) payload.date = newDate;
-      if (newTime) payload.timeBlock = timeToBlock(newTime);
-      // reset to pending after reschedule so front desk re-confirms
+      const nb = newTime ? timeToBlock(newTime) : queue.timeBlock;
+      const nd = newDate || queue.date;
+      if (newDate) payload.date = nd;
+      if (newTime) payload.timeBlock = nb;
       payload.status = "rescheduled";
+
+      // ── conflict check ──
+      if (nb !== null) {
+        const proc = procedures.find((p) => p.id === queue.procedureId);
+        const dur = proc?.blocks || 1;
+        const conflict = queues.find((q) => {
+          if (q.id === queue.id) return false;
+          if (q.roomId !== queue.roomId) return false;
+          if (q.date !== nd) return false;
+          if (q.timeBlock === null) return false;
+          const qDur = procedures.find((p) => p.id === q.procedureId)?.blocks || 1;
+          return nb < q.timeBlock + qDur && q.timeBlock < nb + dur;
+        });
+        if (conflict) {
+          setConflictError(`⚠️ เวลา ${blockToTime(nb)} ชนกับคิวของ ${conflict.name} (${blockToTime(conflict.timeBlock)})`);
+          return;
+        }
+      }
+      setConflictError("");
     }
     onSave(queue.id, payload);
   }
@@ -45,6 +67,7 @@ export default function StatusModal({ queue, procedures, onSave, onClose }) {
   const mainActions = QUEUE_STATUSES.filter((s) =>
     ["confirmed", "rescheduled", "no_show", "cancelled", "done"].includes(s.value)
   );
+  // rescheduled_in is set automatically, not selectable by user
 
   return (
     <>
@@ -135,7 +158,7 @@ export default function StatusModal({ queue, procedures, onSave, onClose }) {
             marginBottom: 14,
           }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed", marginBottom: 10 }}>
-              📅 วันและเวลาใหม่ที่เลื่อนไป
+              � วันและเวลาใหม่ที่เลื่อนไป
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <div style={{ flex: "1 1 140px" }}>
@@ -158,6 +181,11 @@ export default function StatusModal({ queue, procedures, onSave, onClose }) {
                 />
               </div>
             </div>
+            {conflictError && (
+              <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(220,38,38,0.1)", borderRadius: 6, fontSize: 12, color: "#dc2626", fontWeight: 600 }}>
+                {conflictError}
+              </div>
+            )}
           </div>
         )}
 

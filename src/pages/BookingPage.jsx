@@ -469,7 +469,7 @@ export default function BookingPage({
         const promo = promos.find((p) => p.id === form.promoId);
         return (
           <div
-            style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
+            style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={() => setConfirmOpen(false)}
           >
             <div
