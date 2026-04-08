@@ -8,6 +8,7 @@ export default function LoginScreen({ staff, onLogin, supabaseError }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
   const inputRef = useRef(null);
+  const loginBackground = "linear-gradient(135deg, #000000 0%, #022c22 45%, #064e3b 100%)";
 
   const safeStaff = Array.isArray(staff) ? staff : [];
   const activeStaff = safeStaff.filter((s) => s?.active);
@@ -22,7 +23,7 @@ export default function LoginScreen({ staff, onLogin, supabaseError }) {
     return (
       <div style={{
         position: "fixed", inset: 0, zIndex: 9999,
-        background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
+        background: loginBackground,
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
         fontFamily: "var(--font, sans-serif)", color: "#fff", textAlign: "center", padding: 20,
       }}>
@@ -111,7 +112,7 @@ export default function LoginScreen({ staff, onLogin, supabaseError }) {
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 9999,
-      background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
+      background: loginBackground,
       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
       fontFamily: "var(--font, sans-serif)",
     }}>
