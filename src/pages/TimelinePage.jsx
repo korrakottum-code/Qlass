@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { getTodayStr, blockToTime, formatThaiDate } from "../utils/helpers";
 
-export default function TimelinePage({ queues, branches, rooms, procedures }) {
+export default function TimelinePage({ queues, branches, rooms, procedures, onBookNew, onEditQueue }) {
   const [date, setDate] = useState(getTodayStr());
   const [filterBranch, setFilterBranch] = useState("all");
   const [popup, setPopup] = useState(null); // { q, room, block, x, y }
@@ -159,9 +159,12 @@ export default function TimelinePage({ queues, branches, rooms, procedures }) {
                             <td
                               key={room.id}
                               onClick={(e) => {
-                                if (!q) return;
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                setPopup({ q, room, block: b, x: rect.left, y: rect.bottom });
+                                if (q) {
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  setPopup({ q, room, block: b, x: rect.left, y: rect.bottom });
+                                } else if (onBookNew) {
+                                  onBookNew({ roomId: room.id, branchId: room.branchId, date, timeBlock: b });
+                                }
                               }}
                               style={{
                                 height: ROW_H,
@@ -170,7 +173,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures }) {
                                 borderTop: isHourStart ? "2px solid var(--border2)" : undefined,
                                 position: "relative", overflow: "hidden",
                                 transition: "background 0.1s",
-                                cursor: isBooked ? "pointer" : "default",
+                                cursor: "pointer",
                               }}
                             >
                               {/* ชื่อ + หัตถการ — เฟ้นที่ขึ้นใน block เริ่มต้น */}
@@ -208,7 +211,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures }) {
                 <span style={{ width: 12, height: 12, borderRadius: 3, background: c, border: "1px solid var(--border)", display: "inline-block" }} />{l}
               </span>
             ))}
-            <span style={{ fontSize: 11, color: "var(--text3)", marginLeft: "auto" }}>hover ที่ช่องเพื่อดูรายละเอียด</span>
+            <span style={{ fontSize: 11, color: "var(--text3)", marginLeft: "auto" }}>กดช่องว่าง = บันทึกคิว • กดช่องคิว = ดูรายละเอียด</span>
           </div>
         </div>
       )}
@@ -282,6 +285,15 @@ export default function TimelinePage({ queues, branches, rooms, procedures }) {
                 </span>
               </div>
             </div>
+            {onEditQueue && (
+              <button
+                className="btn btn-primary"
+                style={{ width: "100%", marginTop: 10, fontSize: 13 }}
+                onClick={() => { setPopup(null); onEditQueue(popup.q); }}
+              >
+                ✏️ แก้ไขคิวนี้
+              </button>
+            )}
           </div>
         </>
       )}

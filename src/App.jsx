@@ -694,6 +694,14 @@ export default function App() {
                 branches={filteredBranches}
                 rooms={filteredRooms}
                 procedures={procedures}
+                onBookNew={(prefill) => {
+                  setForm({ ...getEmptyBookingForm(), ...prefill });
+                  setEditingQueueId(null);
+                  navigateTo("booking");
+                }}
+                onEditQueue={(q) => {
+                  editQueue(q);
+                }}
               />
             )}
 

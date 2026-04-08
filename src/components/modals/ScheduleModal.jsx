@@ -234,13 +234,14 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
   function handleSave() {
     if (selectedRoomIds.length === 0) return;
     if (generatedDates.length === 0 && !isEdit) return;
+    const isClosedAllDay = !noteOnly && !available;
     onSave({
       id: data?.id,
       roomIds: selectedRoomIds,
       dates: isEdit ? [date] : generatedDates,
       available: noteOnly ? true : available,
-      startBlock: noteOnly ? 0 : startBlock,
-      endBlock: noteOnly ? 0 : endBlock,
+      startBlock: (noteOnly || isClosedAllDay) ? null : startBlock,
+      endBlock: (noteOnly || isClosedAllDay) ? null : endBlock,
       noteOnly,
       note: note.trim(),
     });
@@ -461,8 +462,8 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
             )}
           </div>
 
-          {/* Time spinner — ซ่อนเมื่อ noteOnly */}
-          {!noteOnly && (
+          {/* Time spinner — ซ่อนเมื่อ noteOnly หรือ ปิดทั้งวัน */}
+          {!noteOnly && available && (
             <>
               <div className="form-group">
                 <TimeSpinner
