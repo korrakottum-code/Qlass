@@ -23,6 +23,8 @@ export default function QueueTablePage({
   const [qfBranch, setQfBranch] = useState("all");
   const [qfDate, setQfDate] = useState(getTodayStr());
   const [qfSearch, setQfSearch] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // { queue }
+  const [deleteInput, setDeleteInput] = useState("");
   const [qfStatus, setQfStatus] = useState("all");
   const [collapsedRooms, setCollapsedRooms] = useState({});
 
@@ -251,7 +253,7 @@ export default function QueueTablePage({
                                   📋
                                 </button>
                                 <button className="btn btn-sm btn-secondary" onClick={() => onEdit(q)}>✏️</button>
-                                <button className="btn btn-sm btn-danger" onClick={() => onDelete(q.id)}>🗑️</button>
+                                <button className="btn btn-sm btn-danger" onClick={() => { setDeleteConfirm({ queue: q }); setDeleteInput(""); }}>🗑️</button>
                               </div>
                             </td>
                           </tr>
@@ -270,6 +272,41 @@ export default function QueueTablePage({
       <div style={{ fontSize: 12, color: "var(--text3)", textAlign: "right", marginTop: 8 }}>
         แสดง {filteredQueues.length} คิว • {formatThaiDate(qfDate)}
       </div>
+
+      {/* ── Delete Confirm Modal ── */}
+      {deleteConfirm && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => setDeleteConfirm(null)}>
+          <div style={{ background: "var(--surface1)", borderRadius: 14, padding: "24px 28px", minWidth: 320, maxWidth: 400, boxShadow: "0 8px 32px rgba(0,0,0,0.2)" }}
+            onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6, color: "var(--red)" }}>🗑️ ยืนยันการลบคิว</div>
+            <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 14 }}>
+              พิมพ์ชื่อลูกค้า <strong style={{ color: "var(--text1)" }}>{deleteConfirm.queue.name}</strong> เพื่อยืนยัน
+            </div>
+            <input
+              autoFocus
+              value={deleteInput}
+              onChange={(e) => setDeleteInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && deleteInput.trim() === deleteConfirm.queue.name.trim()) {
+                  onDelete(deleteConfirm.queue.id);
+                  setDeleteConfirm(null);
+                }
+              }}
+              placeholder="พิมพ์ชื่อลูกค้า..."
+              style={{ width: "100%", marginBottom: 14, fontSize: 13 }}
+            />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>ยกเลิก</button>
+              <button
+                className="btn btn-danger"
+                disabled={deleteInput.trim() !== deleteConfirm.queue.name.trim()}
+                onClick={() => { onDelete(deleteConfirm.queue.id); setDeleteConfirm(null); }}
+              >ลบ</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
