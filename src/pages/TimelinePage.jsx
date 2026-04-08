@@ -1,19 +1,9 @@
 import { useState, useMemo } from "react";
 import { getTodayStr, blockToTime, formatThaiDate } from "../utils/helpers";
 
-function heatColor(count, max) {
-  if (count === 0) return "var(--surface2)";
-  const ratio = count / Math.max(max, 1);
-  if (ratio < 0.25) return "#bbf7d0";
-  if (ratio < 0.5)  return "#86efac";
-  if (ratio < 0.75) return "#fde68a";
-  return "#fca5a5";
-}
-
 export default function TimelinePage({ queues, branches, rooms, procedures }) {
   const [date, setDate] = useState(getTodayStr());
   const [filterBranch, setFilterBranch] = useState("all");
-  const [selectedRoomId, setSelectedRoomId] = useState(null);
 
   function navigate(dir) {
     const d = new Date(date);
@@ -26,85 +16,51 @@ export default function TimelinePage({ queues, branches, rooms, procedures }) {
     return rooms.filter((r) => r.branchId === filterBranch);
   }, [rooms, filterBranch]);
 
-  // auto-select first room when branch changes
-  const activeRoom = useMemo(() => {
-    if (selectedRoomId && filteredRooms.find((r) => r.id === selectedRoomId)) {
-      return filteredRooms.find((r) => r.id === selectedRoomId);
-    }
-    return filteredRooms[0] || null;
-  }, [selectedRoomId, filteredRooms]);
-
   const dayQueues = useMemo(() =>
     queues.filter((q) => q.date === date),
     [queues, date]
   );
 
-  // time range ของห้องที่เลือก
+  // หา time range จากทุกห้อง
   const { minBlock, maxBlock } = useMemo(() => {
-    const r = activeRoom;
-    return {
-      minBlock: r?.openBlock ?? 132,
-      maxBlock: r?.closeBlock ?? 240,
-    };
-  }, [activeRoom]);
+    let mn = 132, mx = 240;
+    filteredRooms.forEach((r) => {
+      if ((r.openBlock ?? 132) < mn) mn = r.openBlock ?? 132;
+      if ((r.closeBlock ?? 240) > mx) mx = r.closeBlock ?? 240;
+    });
+    return { minBlock: mn, maxBlock: mx };
+  }, [filteredRooms]);
 
-  const hours = useMemo(() => {
-    const h = [];
-    for (let b = minBlock; b < maxBlock; b += 12) h.push(b);
-    return h;
-  }, [minBlock, maxBlock]);
-
-  const blocks = useMemo(() => {
+  // แสดงทุกชั่วโมง (12 บล็อค = 1 ชม.) เป็น row
+  const hourBlocks = useMemo(() => {
     const arr = [];
-    for (let b = minBlock; b < maxBlock; b++) arr.push(b);
+    for (let b = minBlock; b < maxBlock; b += 12) arr.push(b);
     return arr;
   }, [minBlock, maxBlock]);
 
-  // คิวของห้องที่เลือก → { block → queue info }
-  const occupied = useMemo(() => {
+  // map roomId → { block → queue }
+  const roomOccupied = useMemo(() => {
     const map = {};
-    if (!activeRoom) return map;
-    dayQueues
-      .filter((q) => q.roomId === activeRoom.id && q.timeBlock !== null)
-      .forEach((q) => {
-        const proc = procedures.find((p) => p.id === q.procedureId);
-        const dur = proc?.blocks || 1;
-        for (let i = 0; i < dur; i++) {
-          map[q.timeBlock + i] = { ...q, procName: proc?.name || "", isStart: i === 0 };
-        }
-      });
-    return map;
-  }, [activeRoom, dayQueues, procedures]);
-
-  // heat per hour ของห้องนี้
-  const hourHeat = useMemo(() => {
-    const h = {};
-    hours.forEach((hb) => {
-      let cnt = 0;
-      for (let b = hb; b < hb + 12; b++) if (occupied[b]) cnt++;
-      h[hb] = cnt;
-    });
-    return h;
-  }, [hours, occupied]);
-
-  const maxHeat = Math.max(...Object.values(hourHeat), 1);
-
-  // สถิติรวมทุกห้องในวันนี้
-  const totalStats = useMemo(() => {
-    const byStatus = {};
+    filteredRooms.forEach((r) => { map[r.id] = {}; });
     dayQueues.forEach((q) => {
-      const s = q.status || "waiting";
-      byStatus[s] = (byStatus[s] || 0) + 1;
+      if (!map[q.roomId] || q.timeBlock === null) return;
+      const proc = procedures.find((p) => p.id === q.procedureId);
+      const dur = proc?.blocks || 1;
+      for (let i = 0; i < dur; i++) {
+        map[q.roomId][q.timeBlock + i] = { ...q, procName: proc?.name || "", isStart: i === 0, dur };
+      }
     });
-    return { total: dayQueues.length, byStatus };
-  }, [dayQueues]);
+    return map;
+  }, [filteredRooms, dayQueues, procedures]);
 
-  const CELL_W = 40;
-  const CELL_H = 56;
+  const totalQueues = dayQueues.length;
+  const CELL_W = 120; // ความกว้างแต่ละห้อง
+  const ROW_H = 40;  // ความสูงแต่ละ block 5 นาที
+  const TIME_COL = 72; // คอลัมน์เวลาซ้าย
 
   return (
     <>
-      {/* ─── Controls ─── */}
+      {/* Controls */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end", marginBottom: 16 }}>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label className="form-label">วันที่</label>
@@ -117,137 +73,138 @@ export default function TimelinePage({ queues, branches, rooms, procedures }) {
         </div>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label className="form-label">สาขา</label>
-          <select value={filterBranch} onChange={(e) => { setFilterBranch(e.target.value); setSelectedRoomId(null); }}>
+          <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)}>
             <option value="all">ทุกสาขา</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}>{formatThaiDate(date)}</span>
-          <span style={{ background: "var(--surface3)", borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 700 }}>{totalStats.total} คิว</span>
-          {totalStats.byStatus.done > 0 && <span style={{ background: "#d1fae5", color: "#065f46", borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 700 }}>✅ {totalStats.byStatus.done}</span>}
-          {totalStats.byStatus.waiting > 0 && <span style={{ background: "#fef3c7", color: "#92400e", borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 700 }}>⏳ {totalStats.byStatus.waiting}</span>}
+          <span style={{ background: "var(--surface3)", borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 700 }}>{totalQueues} คิว</span>
         </div>
       </div>
 
       {filteredRooms.length === 0 ? (
         <div className="card"><div className="empty"><div className="e-icon">🚪</div><p>ไม่พบห้อง</p></div></div>
       ) : (
-        <div style={{ display: "flex", gap: 0, border: "1.5px solid var(--border)", borderRadius: 10, overflow: "hidden", background: "var(--surface1)" }}>
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "70vh" }}>
+            <table style={{ borderCollapse: "collapse", minWidth: TIME_COL + filteredRooms.length * CELL_W }}>
+              {/* Header: ชื่อห้องเป็น column */}
+              <thead>
+                <tr style={{ position: "sticky", top: 0, zIndex: 3, background: "var(--surface2)" }}>
+                  <th style={{ width: TIME_COL, minWidth: TIME_COL, padding: "8px 10px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text3)", borderBottom: "2px solid var(--border2)", borderRight: "2px solid var(--border2)" }}>
+                    เวลา
+                  </th>
+                  {filteredRooms.map((room) => {
+                    const branch = branches.find((b) => b.id === room.branchId);
+                    const cnt = dayQueues.filter((q) => q.roomId === room.id).length;
+                    return (
+                      <th key={room.id} style={{
+                        width: CELL_W, minWidth: CELL_W,
+                        padding: "6px 10px", textAlign: "center",
+                        borderBottom: "2px solid var(--border2)",
+                        borderRight: "1px solid var(--border)",
+                        background: room.type === "M" ? "#eff6ff" : "#f0fdf4",
+                      }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: room.type === "M" ? "var(--blue)" : "var(--green)" }}>
+                          {room.name}
+                        </div>
+                        <div style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>
+                          [{room.type}]{branch ? ` • ${branch.name}` : ""}
+                        </div>
+                        {cnt > 0 && (
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", marginTop: 2 }}>{cnt} คิว</div>
+                        )}
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
 
-          {/* ─── แท็บห้อง (แนวตั้งซ้าย) ─── */}
-          <div style={{ display: "flex", flexDirection: "column", minWidth: 120, borderRight: "2px solid var(--border2)", background: "var(--surface2)", flexShrink: 0 }}>
-            <div style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, color: "var(--text3)", borderBottom: "1px solid var(--border)" }}>ห้อง</div>
-            {filteredRooms.map((room) => {
-              const isActive = activeRoom?.id === room.id;
-              const roomQueues = dayQueues.filter((q) => q.roomId === room.id).length;
-              return (
-                <button
-                  key={room.id}
-                  onClick={() => setSelectedRoomId(room.id)}
-                  style={{
-                    display: "flex", flexDirection: "column", alignItems: "flex-start",
-                    padding: "10px 12px", border: "none", borderBottom: "1px solid var(--border)",
-                    cursor: "pointer", textAlign: "left", gap: 2,
-                    background: isActive ? "var(--accent-soft,#fff0ee)" : "transparent",
-                    borderLeft: isActive ? "3px solid var(--accent)" : "3px solid transparent",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  <span style={{ fontSize: 11, fontWeight: 800, color: room.type === "M" ? "var(--blue)" : "var(--green)" }}>
-                    [{room.type}] {room.name}
-                  </span>
-                  <span style={{ fontSize: 10, color: "var(--text3)" }}>
-                    {roomQueues > 0 ? `${roomQueues} คิว` : "ว่าง"}
-                  </span>
-                </button>
-              );
-            })}
+              {/* Body: แต่ละชั่วโมงเป็นกลุ่ม แต่ละ 5 นาทีเป็น row */}
+              <tbody>
+                {hourBlocks.map((hb) => {
+                  // แต่ละชั่วโมงมี 12 block (= 12 เอ็น 5นาที = 60 นาที)
+                  const rowBlocks = [];
+                  for (let b = hb; b < hb + 12 && b < maxBlock; b++) rowBlocks.push(b);
+
+                  return rowBlocks.map((b, bi) => {
+                    const isHourStart = bi === 0;
+                    const isHalfHour = b % 6 === 0;
+                    return (
+                      <tr key={b} style={{ borderBottom: isHourStart && bi === 0 ? "2px solid var(--border2)" : "1px solid var(--border)" }}>
+                        {/* คอลัมน์เวลา */}
+                        <td style={{
+                          width: TIME_COL, minWidth: TIME_COL, padding: "0 8px",
+                          height: ROW_H, verticalAlign: "middle",
+                          borderRight: "2px solid var(--border2)",
+                          background: isHourStart ? "var(--surface2)" : isHalfHour ? "var(--surface3)" : "transparent",
+                          fontFamily: "var(--mono)", fontWeight: isHourStart ? 800 : isHalfHour ? 600 : 400,
+                          fontSize: isHourStart ? 13 : isHalfHour ? 11 : 10,
+                          color: isHourStart ? "var(--text1)" : "var(--text3)",
+                          whiteSpace: "nowrap",
+                        }}>
+                          {(isHourStart || isHalfHour) ? blockToTime(b) : ""}
+                        </td>
+
+                        {/* เซลล์แต่ละห้อง */}
+                        {filteredRooms.map((room) => {
+                          const q = roomOccupied[room.id]?.[b];
+                          const isBooked = !!q;
+                          const isM = room.type === "M";
+                          const bookedBg = isM ? "#fde8e8" : "#dcfce7";
+                          const emptyBg = isHourStart ? "rgba(0,0,0,0.02)" : "transparent";
+
+                          return (
+                            <td
+                              key={room.id}
+                              title={q ? `${q.name}${q.procName ? ` — ${q.procName}` : ""} (${blockToTime(b)})` : blockToTime(b)}
+                              style={{
+                                width: CELL_W, minWidth: CELL_W, height: ROW_H,
+                                background: isBooked ? bookedBg : emptyBg,
+                                borderRight: "1px solid var(--border)",
+                                borderTop: isHourStart ? "2px solid var(--border2)" : undefined,
+                                position: "relative", overflow: "hidden",
+                                transition: "background 0.1s",
+                              }}
+                            >
+                              {/* ชื่อ + หัตถการ — เฟ้นที่ขึ้นใน block เริ่มต้น */}
+                              {q?.isStart && (
+                                <div style={{
+                                  position: "absolute", inset: "2px 4px",
+                                  display: "flex", flexDirection: "column", justifyContent: "center",
+                                  overflow: "hidden",
+                                }}>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: isM ? "#991b1b" : "#166534", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {q.name}
+                                  </div>
+                                  {q.procName && (
+                                    <div style={{ fontSize: 9, color: isM ? "#b91c1c" : "#166534", opacity: 0.8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                      {q.procName}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  });
+                })}
+              </tbody>
+            </table>
           </div>
 
-          {/* ─── Timeline ของห้องที่เลือก ─── */}
-          <div style={{ flex: 1, overflowX: "auto", minWidth: 0 }}>
-            {!activeRoom ? (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 120, color: "var(--text3)", fontSize: 13 }}>เลือกห้อง</div>
-            ) : (
-              <>
-                {/* ─ Heat bar ─ */}
-                <div style={{ display: "flex", borderBottom: "2px solid var(--border2)", background: "var(--surface2)", position: "sticky", top: 0, zIndex: 2 }}>
-                  {hours.map((hb) => {
-                    const cnt = hourHeat[hb] || 0;
-                    const bg = heatColor(cnt, maxHeat);
-                    return (
-                      <div key={hb} style={{ width: CELL_W * 12, minWidth: CELL_W * 12, flexShrink: 0, borderRight: "2px solid var(--border2)", padding: "6px 8px", display: "flex", flexDirection: "column", gap: 2 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontSize: 12, fontWeight: 800, fontFamily: "var(--mono)", color: "var(--text1)" }}>{blockToTime(hb)}</span>
-                          <span style={{ width: 28, height: 16, borderRadius: 4, background: bg, border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: cnt ? "#374151" : "var(--text3)" }}>{cnt || ""}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* ─ Block row ─ */}
-                <div style={{ display: "flex", minHeight: CELL_H }}>
-                  {blocks.map((b) => {
-                    const q = occupied[b];
-                    const isHour = b % 12 === 0;
-                    const bg = q
-                      ? (activeRoom.type === "M" ? "#fde8e8" : "#dcfce7")
-                      : "transparent";
-                    return (
-                      <div
-                        key={b}
-                        title={q ? `${q.name}${q.procName ? ` — ${q.procName}` : ""}  ${blockToTime(b)}` : blockToTime(b)}
-                        style={{
-                          width: CELL_W, minWidth: CELL_W, height: CELL_H,
-                          background: bg,
-                          borderRight: isHour ? "2px solid var(--border2)" : "1px solid var(--border)",
-                          flexShrink: 0, position: "relative", overflow: "hidden",
-                          transition: "background 0.1s",
-                        }}
-                      >
-                        {/* เวลาทุก 30 นาที */}
-                        {b % 6 === 0 && (
-                          <div style={{ position: "absolute", top: 2, left: 2, fontSize: 8, color: "var(--text3)", fontFamily: "var(--mono)", pointerEvents: "none" }}>
-                            {blockToTime(b).slice(0, 5)}
-                          </div>
-                        )}
-                        {/* ชื่อลูกค้า */}
-                        {q?.isStart && (
-                          <div style={{
-                            position: "absolute", left: 3, right: 3, bottom: 4,
-                            fontSize: 10, fontWeight: 700, lineHeight: 1.2,
-                            color: activeRoom.type === "M" ? "#991b1b" : "#166534",
-                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                          }}>
-                            {q.name}
-                          </div>
-                        )}
-                        {q?.isStart && q.procName && (
-                          <div style={{
-                            position: "absolute", left: 3, right: 3, bottom: 16,
-                            fontSize: 9, fontWeight: 400, color: activeRoom.type === "M" ? "#b91c1c" : "#166534",
-                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", opacity: 0.8,
-                          }}>
-                            {q.procName}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* ─ Legend ─ */}
-                <div style={{ display: "flex", gap: 12, padding: "6px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap" }}>
-                  {[[activeRoom.type === "M" ? "#fde8e8" : "#dcfce7", "มีคิว"],["var(--surface2)","ว่าง"],["#bbf7d0","น้อย"],["#fde68a","มาก"],["#fca5a5","เต็ม"]].map(([c, l]) => (
-                    <span key={l} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text2)" }}>
-                      <span style={{ width: 12, height: 12, borderRadius: 3, background: c, border: "1px solid var(--border)", display: "inline-block" }} />{l}
-                    </span>
-                  ))}
-                </div>
-              </>
-            )}
+          {/* Legend */}
+          <div style={{ display: "flex", gap: 12, padding: "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap" }}>
+            {[["#fde8e8","มีคิว (M)"],["#dcfce7","มีคิว (T)"],["transparent","ว่าง"]].map(([c, l]) => (
+              <span key={l} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text2)" }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: c, border: "1px solid var(--border)", display: "inline-block" }} />{l}
+              </span>
+            ))}
+            <span style={{ fontSize: 11, color: "var(--text3)", marginLeft: "auto" }}>hover ที่ช่องเพื่อดูรายละเอียด</span>
           </div>
         </div>
       )}
