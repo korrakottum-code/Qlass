@@ -4,6 +4,7 @@ import { getTodayStr, blockToTime, formatThaiDate } from "../utils/helpers";
 export default function TimelinePage({ queues, branches, rooms, procedures }) {
   const [date, setDate] = useState(getTodayStr());
   const [filterBranch, setFilterBranch] = useState("all");
+  const [popup, setPopup] = useState(null); // { q, room, block, x, y }
 
   function navigate(dir) {
     const d = new Date(date);
@@ -157,7 +158,11 @@ export default function TimelinePage({ queues, branches, rooms, procedures }) {
                           return (
                             <td
                               key={room.id}
-                              title={q ? `${q.name}${q.procName ? ` — ${q.procName}` : ""} (${blockToTime(b)})` : blockToTime(b)}
+                              onClick={(e) => {
+                                if (!q) return;
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setPopup({ q, room, block: b, x: rect.left, y: rect.bottom });
+                              }}
                               style={{
                                 height: ROW_H,
                                 background: isBooked ? bookedBg : emptyBg,
@@ -165,6 +170,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures }) {
                                 borderTop: isHourStart ? "2px solid var(--border2)" : undefined,
                                 position: "relative", overflow: "hidden",
                                 transition: "background 0.1s",
+                                cursor: isBooked ? "pointer" : "default",
                               }}
                             >
                               {/* ชื่อ + หัตถการ — เฟ้นที่ขึ้นใน block เริ่มต้น */}
@@ -205,6 +211,79 @@ export default function TimelinePage({ queues, branches, rooms, procedures }) {
             <span style={{ fontSize: 11, color: "var(--text3)", marginLeft: "auto" }}>hover ที่ช่องเพื่อดูรายละเอียด</span>
           </div>
         </div>
+      )}
+
+      {/* ─── Popup รายละเอียดคิว ─── */}
+      {popup && (
+        <>
+          <div
+            onClick={() => setPopup(null)}
+            style={{ position: "fixed", inset: 0, zIndex: 999 }}
+          />
+          <div style={{
+            position: "fixed",
+            left: Math.min(popup.x, window.innerWidth - 280),
+            top: Math.min(popup.y + 4, window.innerHeight - 240),
+            zIndex: 1000,
+            background: "var(--surface1)",
+            border: "1.5px solid var(--border2)",
+            borderRadius: 12,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+            padding: "16px 18px",
+            minWidth: 240,
+            maxWidth: 300,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+              <div style={{ fontWeight: 800, fontSize: 15 }}>{popup.q.name}</div>
+              <button
+                onClick={() => setPopup(null)}
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "var(--text3)", lineHeight: 1, padding: 0, marginLeft: 8 }}
+              >✕</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
+              {popup.q.phone && (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <span style={{ color: "var(--text3)", minWidth: 56 }}>โทร</span>
+                  <span style={{ fontWeight: 600 }}>{popup.q.phone}</span>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <span style={{ color: "var(--text3)", minWidth: 56 }}>ห้อง</span>
+                <span style={{ fontWeight: 600, color: popup.room.type === "M" ? "var(--blue)" : "var(--green)" }}>
+                  [{popup.room.type}] {popup.room.name}
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <span style={{ color: "var(--text3)", minWidth: 56 }}>เวลา</span>
+                <span style={{ fontWeight: 600, fontFamily: "var(--mono)" }}>
+                  {blockToTime(popup.q.timeBlock)}
+                  {popup.q.dur > 0 && ` — ${blockToTime(popup.q.timeBlock + popup.q.dur)}`}
+                </span>
+              </div>
+              {popup.q.procName && (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <span style={{ color: "var(--text3)", minWidth: 56 }}>หัตถการ</span>
+                  <span style={{ fontWeight: 600 }}>{popup.q.procName}</span>
+                </div>
+              )}
+              {popup.q.note && (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <span style={{ color: "var(--text3)", minWidth: 56 }}>Note</span>
+                  <span style={{ color: "var(--text2)" }}>{popup.q.note}</span>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <span style={{ color: "var(--text3)", minWidth: 56 }}>สถานะ</span>
+                <span style={{
+                  fontWeight: 700,
+                  color: popup.q.status === "done" ? "var(--green)" : popup.q.status === "cancelled" ? "var(--red)" : "var(--amber,#d97706)",
+                }}>
+                  {popup.q.status === "done" ? "✅ เสร็จ" : popup.q.status === "cancelled" ? "❌ ยกเลิก" : "⏳ รอ"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </>
   );
