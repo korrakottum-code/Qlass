@@ -14,6 +14,7 @@ export default function BookingPage({
   const [qpName, setQpName] = useState("");
   const [qpPrice, setQpPrice] = useState("");
   const [qpProcedureId, setQpProcedureId] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
   // Rooms for selected branch
   const branchRooms = useMemo(() => {
     if (!form.branchId) return [];
@@ -451,12 +452,58 @@ export default function BookingPage({
               </span>
             )}
             <button className="btn btn-secondary" onClick={handleClear}>ล้างฟอร์ม</button>
-            <button className="btn btn-primary" onClick={onSubmit}>
+            <button className="btn btn-primary" onClick={() => setConfirmOpen(true)}>
               {editingQueueId ? "💾 บันทึกการแก้ไข" : "✅ บันทึกคิว"}
             </button>
           </div>
         </div>
       </div>
+
+      {/* ── Confirm Booking Popup ── */}
+      {confirmOpen && (() => {
+        const branch = branches.find((b) => b.id === form.branchId);
+        const room = rooms.find((r) => r.id === form.roomId);
+        const procedure = procedures.find((p) => p.id === form.procedureId);
+        const promo = promos.find((p) => p.id === form.promoId);
+        return (
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={() => setConfirmOpen(false)}
+          >
+            <div
+              style={{ background: "var(--surface1)", borderRadius: 16, padding: "24px 28px", minWidth: 320, maxWidth: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.22)", width: "90%" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 16, color: "var(--accent)" }}>✅ ยืนยันการบันทึกคิว</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13, marginBottom: 20 }}>
+                {[
+                  ["👤 ชื่อ",        form.name || "—"],
+                  ["📞 เบอร์",       form.phone || "—"],
+                  ["🏢 สาขา",      branch?.name || "—"],
+                  ["🚪 ห้อง",       room ? `[${room.type}] ${room.name}` : "—"],
+                  ["📅 วันที่",     form.date || "—"],
+                  ["⏰ เวลา",       form.timeBlock !== null ? blockToTime(form.timeBlock) : "—"],
+                  ["💉 หัตถการ",  procedure?.name || "—"],
+                  ["🏷️ โปร/แพ็ก",  promo?.name || "—"],
+                  ["💰 ราคา",      form.price ? `฿${Number(form.price).toLocaleString()}` : "—"],
+                  ["📝 Note",       form.note || "—"],
+                ].map(([label, value]) => (
+                  <div key={label} style={{ display: "flex", gap: 8 }}>
+                    <span style={{ color: "var(--text3)", minWidth: 90 }}>{label}</span>
+                    <span style={{ fontWeight: value === "—" ? 400 : 600, color: value === "—" ? "var(--text3)" : "var(--text1)" }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button className="btn btn-secondary" onClick={() => setConfirmOpen(false)}>แก้ไข</button>
+                <button className="btn btn-primary" onClick={() => { setConfirmOpen(false); onSubmit(); }}>
+                  {editingQueueId ? "💾 ยืนยันแก้ไข" : "✅ ยืนยันบันทึก"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Quick stats */}
       <div className="stats-row">
