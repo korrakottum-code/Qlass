@@ -474,7 +474,7 @@ export default function BookingPage({
             onClick={() => setConfirmOpen(false)}
           >
             <div
-              style={{ background: "var(--surface1)", borderRadius: 16, padding: "24px 28px", minWidth: 320, maxWidth: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.36)", width: "90%" }}
+              style={{ background: "var(--surface)", borderRadius: 16, padding: "24px 28px", minWidth: 320, maxWidth: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.36)", width: "90%" }}
               onClick={(e) => e.stopPropagation()}
             >
               <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 16, color: "var(--accent)" }}>✅ ยืนยันการบันทึกคิว</div>
