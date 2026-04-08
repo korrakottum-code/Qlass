@@ -8,7 +8,7 @@ export default function LoginScreen({ staff, onLogin, supabaseError }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
   const inputRef = useRef(null);
-  const loginBackground = "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)";
+  const loginBackground = "linear-gradient(135deg, #064e3b 0%, #065f46 50%, #047857 100%)";
 
   const safeStaff = Array.isArray(staff) ? staff : [];
   const activeStaff = safeStaff.filter((s) => s?.active);
