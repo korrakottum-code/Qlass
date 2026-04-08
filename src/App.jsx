@@ -38,6 +38,7 @@ import PromosPage from "./pages/PromosPage";
 import RoomsPage from "./pages/RoomsPage";
 import RoomSchedulePage from "./pages/RoomSchedulePage";
 import SummaryPage from "./pages/SummaryPage";
+import TimelinePage from "./pages/TimelinePage";
 import StaffPage from "./pages/StaffPage";
 import CommissionPage from "./pages/CommissionPage";
 import ExportPage from "./pages/ExportPage";
@@ -652,6 +653,15 @@ export default function App() {
                 onBulkAdd={() => setModal({ type: "room", data: null, bulkMode: true })}
                 onEdit={(r) => setModal({ type: "room", data: r })}
                 onDelete={deleteRoom}
+              />
+            )}
+
+            {page === "timeline" && (
+              <TimelinePage
+                queues={filteredQueues}
+                branches={filteredBranches}
+                rooms={filteredRooms}
+                procedures={procedures}
               />
             )}
 
