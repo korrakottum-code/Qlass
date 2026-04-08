@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { CUSTOMER_TYPES, ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
 import { WORK_BLOCKS, blockToTime, getEmptyBookingForm, getTodayStr } from "../utils/helpers";
 import SmartParseBox from "../components/SmartParseBox";
@@ -467,13 +468,13 @@ export default function BookingPage({
         const room = rooms.find((r) => r.id === form.roomId);
         const procedure = procedures.find((p) => p.id === form.procedureId);
         const promo = promos.find((p) => p.id === form.promoId);
-        return (
+        return createPortal(
           <div
             style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={() => setConfirmOpen(false)}
           >
             <div
-              style={{ background: "var(--surface1)", borderRadius: 16, padding: "24px 28px", minWidth: 320, maxWidth: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.22)", width: "90%" }}
+              style={{ background: "var(--surface1)", borderRadius: 16, padding: "24px 28px", minWidth: 320, maxWidth: 420, boxShadow: "0 8px 40px rgba(0,0,0,0.36)", width: "90%" }}
               onClick={(e) => e.stopPropagation()}
             >
               <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 16, color: "var(--accent)" }}>✅ ยืนยันการบันทึกคิว</div>
@@ -503,7 +504,8 @@ export default function BookingPage({
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         );
       })()}
 

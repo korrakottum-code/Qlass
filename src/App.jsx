@@ -313,12 +313,17 @@ export default function App() {
   }, [showToast, currentUser]);
 
   const updateQueueStatus = useCallback(async (id, payload) => {
-    await updateQueue(id, { ...payload, statusUpdatedAt: getTodayStr() });
+    if (payload.status === "rescheduled") {
+      // คิวเดิม: เปลี่ยนแค่ status + statusNote ไม่แตะ date/timeBlock
+      await updateQueue(id, {
+        status: "rescheduled",
+        statusNote: payload.statusNote || "",
+        statusUpdatedAt: getTodayStr(),
+      });
 
-    // เมื่อเลื่อนนัด → สร้างคิวใหม่ที่วันใหม่ สถานะ rescheduled_in
-    if (payload.status === "rescheduled" && (payload.date || payload.timeBlock !== undefined)) {
+      // สร้างคิวใหม่ที่วันใหม่ สถานะ rescheduled_in
       const orig = queues.find((q) => q.id === id);
-      if (orig) {
+      if (orig && (payload.date || payload.timeBlock !== undefined)) {
         const { id: _id, createdAt: _ca, status: _st, statusNote: _sn, statusUpdatedAt: _su, ...rest } = orig;
         await createQueue({
           ...rest,
@@ -330,6 +335,8 @@ export default function App() {
           recordedBy: currentUser?.id || null,
         });
       }
+    } else {
+      await updateQueue(id, { ...payload, statusUpdatedAt: getTodayStr() });
     }
 
     const updatedQueues = await getAllQueues();
