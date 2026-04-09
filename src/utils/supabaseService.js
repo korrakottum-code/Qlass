@@ -484,10 +484,21 @@ export async function deleteStaff(id) {
 // ═══════════════════════════════════════════════════════════
 
 export async function fetchQueues() {
+  const today = new Date();
+  const pastDate = new Date(today);
+  pastDate.setDate(today.getDate() - 60);
+  const futureDate = new Date(today);
+  futureDate.setDate(today.getDate() + 30);
+  const fromStr = pastDate.toISOString().slice(0, 10);
+  const toStr = futureDate.toISOString().slice(0, 10);
+
   const { data, error } = await supabase
     .from("queues")
     .select("*")
-    .order("created_at", { ascending: false });
+    .gte("date", fromStr)
+    .lte("date", toStr)
+    .order("date", { ascending: false })
+    .order("time_block", { ascending: true });
   
   if (error) throw error;
   return data.map(q => ({
