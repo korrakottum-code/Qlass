@@ -67,8 +67,8 @@ export default function BookingPage({
     return p ? p.blocks : 0;
   }, [form.procedureId, procedures]);
 
-  // Effective duration (override หรือ default จาก procedure)
-  const activeDur = form.durationBlocks ?? selectedProcBlocks;
+  // Effective duration (override หรือ default จาก procedure) — 0 เมื่อไม่มี procedure
+  const activeDur = selectedProcBlocks > 0 ? (form.durationBlocks ?? selectedProcBlocks) : 0;
 
   // Blocks occupied by existing queues in same room+date (ยกเว้นคิวที่กำลังแก้ไข)
   const occupiedBlocks = useMemo(() => {
