@@ -526,7 +526,8 @@ export async function fetchQueues() {
     from += PAGE_SIZE;
   }
 
-  return allData.map(mapQueueRow);
+  const unique = Array.from(new Map(allData.map((q) => [q.id, q])).values());
+  return unique.map(mapQueueRow);
 }
 
 export async function createQueue(queue) {
