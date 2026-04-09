@@ -305,7 +305,11 @@ export default function App() {
       const baseQueue = { ...form, createdAt: getTodayStr(), recordedBy: currentUser?.id || null };
       await createQueue(baseQueue);
       if (form.secondRoomId) {
-        await createQueue({ ...baseQueue, roomId: form.secondRoomId });
+        if (!form.secondTimeBlock) {
+          showToast("error", "กรุณาเลือกเวลานัดสำหรับห้องที่ 2");
+          return;
+        }
+        await createQueue({ ...baseQueue, roomId: form.secondRoomId, timeBlock: form.secondTimeBlock });
         showToast("success", "บันทึก 2 คิว (2 ห้อง) เรียบร้อย ✓");
       } else {
         showToast("success", "บันทึกคิวเรียบร้อย ✓");

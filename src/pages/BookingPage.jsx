@@ -86,6 +86,27 @@ export default function BookingPage({
     return occupied;
   }, [form.roomId, form.date, queues, editingQueueId, procedures]);
 
+  // Occupied blocks ของห้องที่ 2
+  const occupiedBlocks2 = useMemo(() => {
+    const occupied = new Set();
+    if (!form.secondRoomId || !form.date) return occupied;
+    queues
+      .filter((q) => q.roomId === form.secondRoomId && q.date === form.date && q.id !== editingQueueId)
+      .forEach((q) => {
+        if (q.timeBlock !== null) {
+          const proc = procedures.find((p) => p.id === q.procedureId);
+          const dur = q.durationBlocks ?? proc?.blocks ?? 1;
+          for (let i = 0; i < dur; i++) occupied.add(q.timeBlock + i);
+        }
+      });
+    return occupied;
+  }, [form.secondRoomId, form.date, queues, editingQueueId, procedures]);
+
+  const selectedRoom2 = useMemo(() => {
+    if (!form.secondRoomId) return null;
+    return rooms.find((r) => r.id === form.secondRoomId) || null;
+  }, [form.secondRoomId, rooms]);
+
   // Blocks available ตาม roomSchedules (ปิด/เปิดพิเศษ) + default hours ของห้อง
   const availableBlocks = useMemo(() => {
     // เริ่มจาก default hours ของห้อง (openBlock/closeBlock)
@@ -113,6 +134,36 @@ export default function BookingPage({
       return true;
     });
   }, [form.roomId, form.date, roomSchedules, selectedRoom]);
+
+  const availableBlocks2 = useMemo(() => {
+    const openB = selectedRoom2?.openBlock ?? WORK_START_BLOCK;
+    const closeB = selectedRoom2?.closeBlock ?? WORK_END_BLOCK;
+    const baseBlocks = WORK_BLOCKS.filter((b) => b.block >= openB && b.block < closeB);
+    if (!form.secondRoomId || !form.date) return baseBlocks;
+    const schedules = roomSchedules.filter(
+      (s) => s.roomId === form.secondRoomId && (s.date === form.date || s.date === "")
+    );
+    if (schedules.length === 0) return baseBlocks;
+    return baseBlocks.filter((b) => {
+      for (const s of schedules) {
+        if (s.startBlock === null || s.endBlock === null) continue;
+        if (s.available) {
+          if (b.block < s.startBlock || b.block >= s.endBlock) return false;
+        } else {
+          if (b.block >= s.startBlock && b.block < s.endBlock) return false;
+        }
+      }
+      return true;
+    });
+  }, [form.secondRoomId, form.date, roomSchedules, selectedRoom2]);
+
+  const hasConflict2 = useMemo(() => {
+    if (form.secondTimeBlock === null || activeDur === 0) return false;
+    for (let i = 0; i < activeDur; i++) {
+      if (occupiedBlocks2.has(form.secondTimeBlock + i)) return true;
+    }
+    return false;
+  }, [form.secondTimeBlock, activeDur, occupiedBlocks2]);
 
   // ตรวจสอบ slot ที่เลือกชนกับคิวอื่น
   const hasConflict = useMemo(() => {
@@ -485,6 +536,65 @@ export default function BookingPage({
                 })}
               </div>
             </div>
+
+            {/* เวลานัด ห้องที่ 2 */}
+            {form.secondRoomId && (
+              <div className="form-group full">
+                <label className="form-label">
+                  เวลานัด ห้องที่ 2 ({selectedRoom2?.name}) — บล็อค 5 นาที
+                  <span style={{ fontWeight: 400, fontSize: 11, color: "var(--red)", marginLeft: 8 }}>* ต้องเลือกคนละเวลากับห้องที่ 1</span>
+                </label>
+                {form.secondTimeBlock !== null && activeDur > 0 && (
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+                    <span style={{ color: hasConflict2 ? "var(--red)" : "var(--green)" }}>
+                      {hasConflict2 ? "⚠️ ชนกับคิวอื่น!" : `⏱ ${blockToTime(form.secondTimeBlock)} — ${blockToTime(form.secondTimeBlock + activeDur)}`}
+                    </span>
+                  </div>
+                )}
+                <div className="time-grid">
+                  {WORK_BLOCKS.map((b) => {
+                    const isStart = form.secondTimeBlock === b.block;
+                    const isInRange = form.secondTimeBlock !== null && activeDur > 0
+                      && b.block > form.secondTimeBlock && b.block < form.secondTimeBlock + activeDur;
+                    const isOccupied = occupiedBlocks2.has(b.block);
+                    const isClosed = !availableBlocks2.find((ab) => ab.block === b.block);
+                    const isSameAsRoom1 = form.timeBlock !== null && activeDur > 0
+                      && b.block >= form.timeBlock && b.block < form.timeBlock + activeDur;
+                    const isDisabled = isOccupied || isClosed || isSameAsRoom1;
+                    return (
+                      <div
+                        key={b.block}
+                        className={`time-block ${isStart ? "selected" : ""} ${isInRange ? "in-range" : ""} ${isDisabled ? "disabled" : ""}`}
+                        style={
+                          isInRange ? {}
+                          : isSameAsRoom1 && !isStart
+                          ? { background: "var(--amber-soft)", borderColor: "var(--amber)", color: "var(--amber)", opacity: 0.7 }
+                          : isOccupied && !isStart
+                          ? { background: "#e8c5bb", borderColor: "#c8957e", color: "var(--accent)", opacity: 0.7 }
+                          : isClosed
+                          ? { background: "var(--surface3)", borderColor: "var(--border2)", color: "var(--text3)" }
+                          : {}
+                        }
+                        title={isSameAsRoom1 && !isStart ? "เวลาเดียวกับห้องที่ 1 — กั๊กห้อง" : isOccupied && !isStart ? "เวลานี้มีคิวแล้ว" : isClosed ? "ห้องปิด/ไม่พร้อม" : ""}
+                        onClick={() => {
+                          if (isSameAsRoom1 && !isStart) {
+                            showToast?.("error", `⚠️ ${b.time} ตรงกับเวลาห้องที่ 1 กรุณาเลือกเวลาอื่น`);
+                            return;
+                          }
+                          if (isOccupied && !isStart) {
+                            showToast?.("error", `⚠️ ${b.time} มีคิวอยู่แล้ว กรุณาเลือกเวลาอื่น`);
+                            return;
+                          }
+                          if (!isDisabled) setForm((f) => ({ ...f, secondTimeBlock: b.block }));
+                        }}
+                      >
+                        {b.time}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* หมายเหตุ */}
             <div className="form-group full">
