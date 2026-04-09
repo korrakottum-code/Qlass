@@ -9,7 +9,7 @@ export default function BookingPage({
   branches, rooms, procedures, promos,
   roomSchedules, queues,
   onSubmit, onQuickAddPromo, onSmartApply, onBulkBooking, parseHints, todayStats,
-  currentUser,
+  currentUser, showToast,
 }) {
   const [showQuickPromo, setShowQuickPromo] = useState(false);
   const [qpName, setQpName] = useState("");
@@ -67,8 +67,8 @@ export default function BookingPage({
     return p ? p.blocks : 0;
   }, [form.procedureId, procedures]);
 
-  // Effective duration (override หรือ default จาก procedure)
-  const activeDur = form.durationBlocks ?? selectedProcBlocks;
+  // Effective duration (override หรือ default จาก procedure) — 0 เมื่อไม่มี procedure
+  const activeDur = selectedProcBlocks > 0 ? (form.durationBlocks ?? selectedProcBlocks) : 0;
 
   // Blocks occupied by existing queues in same room+date (ยกเว้นคิวที่กำลังแก้ไข)
   const occupiedBlocks = useMemo(() => {
@@ -79,7 +79,7 @@ export default function BookingPage({
       .forEach((q) => {
         if (q.timeBlock !== null) {
           const proc = procedures.find((p) => p.id === q.procedureId);
-          const dur = proc?.blocks || 1;
+          const dur = q.durationBlocks ?? proc?.blocks ?? 1;
           for (let i = 0; i < dur; i++) occupied.add(q.timeBlock + i);
         }
       });
@@ -254,7 +254,7 @@ export default function BookingPage({
               <label className="form-label">หัตถการหลักที่สนใจ</label>
               <select
                 value={form.procedureId}
-                onChange={(e) => setForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "" }))}
+                onChange={(e) => setForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "", durationBlocks: null, timeBlock: null }))}
               >
                 <option value="">-- เลือกหัตถการ --</option>
                 {filteredProcedures.map((p) => (
@@ -398,10 +398,15 @@ export default function BookingPage({
                 )}
               </label>
               {form.timeBlock !== null && activeDur > 0 && (
-                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "flex", gap: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "flex", flexDirection: "column", gap: 4 }}>
                   <span style={{ color: hasConflict ? "var(--red)" : "var(--green)" }}>
                     {hasConflict ? "⚠️ ชนกับคิวอื่น!" : `⏱ ${blockToTime(form.timeBlock)} — ${blockToTime(form.timeBlock + activeDur)}`}
                   </span>
+                  {form.durationBlocks !== null && form.durationBlocks !== selectedProcBlocks && (
+                    <span style={{ fontSize: 11, fontWeight: 600, color: "var(--amber)", display: "flex", alignItems: "center", gap: 4 }}>
+                      ⚡ ระยะเวลา override: {activeDur} บล็อค ({activeDur * 5} นาที) — ค่าปกติ {selectedProcBlocks} บล็อค ({selectedProcBlocks * 5} นาที)
+                    </span>
+                  )}
                 </div>
               )}
               {/* Legend */}
@@ -434,13 +439,22 @@ export default function BookingPage({
                       key={b.block}
                       className={`time-block ${isStart ? "selected" : ""} ${isInRange ? "in-range" : ""} ${isDisabled ? "disabled" : ""}`}
                       style={
-                        isOccupied && !isStart
+                        isInRange
+                          ? {}
+                          : isOccupied && !isStart
                           ? { background: "#e8c5bb", borderColor: "#c8957e", color: "var(--accent)", opacity: 0.7 }
                           : isClosed
                           ? { background: "var(--surface3)", borderColor: "var(--border2)", color: "var(--text3)" }
                           : {}
                       }
-                      onClick={() => !isDisabled && setForm((f) => ({ ...f, timeBlock: b.block }))}
+                      title={isOccupied && !isStart ? "เวลานี้มีคิวแล้ว" : isClosed ? "ห้องปิด/ไม่พร้อม" : ""}
+                      onClick={() => {
+                        if (isOccupied && !isStart) {
+                          showToast?.("error", `⚠️ ${b.time} มีคิวอยู่แล้ว กรุณาเลือกเวลาอื่น`);
+                          return;
+                        }
+                        if (!isDisabled) setForm((f) => ({ ...f, timeBlock: b.block }));
+                      }}
                     >
                       {b.time}
                     </div>
@@ -500,7 +514,9 @@ export default function BookingPage({
                   ["🏢 สาขา",      branch?.name || "—"],
                   ["🚪 ห้อง",       room ? `[${room.type}] ${room.name}` : "—"],
                   ["📅 วันที่",     form.date || "—"],
-                  ["⏰ เวลา",       form.timeBlock !== null ? blockToTime(form.timeBlock) : "—"],
+                  ["⏰ เวลา",       form.timeBlock !== null
+                    ? `${blockToTime(form.timeBlock)} — ${blockToTime(form.timeBlock + (form.durationBlocks ?? procedure?.blocks ?? 0))} (${(form.durationBlocks ?? procedure?.blocks ?? 0) * 5} นาที${form.durationBlocks !== null && form.durationBlocks !== procedure?.blocks ? " ⚡ override" : ""})`
+                    : "—"],
                   ["💉 หัตถการ",  procedure?.name || "—"],
                   ["🏷️ โปร/แพ็ก",  promo?.name || "—"],
                   ["💰 ราคา",      form.price ? `฿${Number(form.price).toLocaleString()}` : "—"],
