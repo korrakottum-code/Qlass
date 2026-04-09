@@ -46,13 +46,15 @@ export default function RoomSchedulePage({ roomSchedules, rooms, branches, onAdd
                       <td style={{ fontSize: 12, color: "var(--text2)" }}>{branch?.name || "—"}</td>
                       <td>{s.date ? formatThaiDate(s.date) : "ทุกวัน"}</td>
                       <td>
-                        {s.available
+                        {s.noteOnly
+                          ? <span className="sched-tag" style={{ background: "var(--amber-soft,#fef9c3)", color: "var(--amber,#b45309)" }}>📝 Note เท่านั้น</span>
+                          : s.available
                           ? <span className="sched-tag sched-on">✓ เปิดให้บริการ</span>
                           : <span className="sched-tag sched-off">✕ ปิด/ไม่พร้อม</span>
                         }
                       </td>
                       <td style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
-                        {blockToTime(s.startBlock)} - {blockToTime(s.endBlock)}
+                        {s.noteOnly ? "—" : `${blockToTime(s.startBlock)} - ${blockToTime(s.endBlock)}`}
                       </td>
                       <td style={{ fontSize: 12 }}>{s.note || "—"}</td>
                       <td>
