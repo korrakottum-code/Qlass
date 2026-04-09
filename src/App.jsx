@@ -12,8 +12,10 @@ import {
   createQueue, updateQueue, deleteQueue as deleteQueueDB,
   getAllCategories, createCategory as createCategoryDB, deleteCategory as deleteCategoryDB,
   fetchTickets, createTicketDB, updateTicketDB, deleteTicketDB,
-  createActivityLog, fetchActivityLogs
+  createActivityLog, fetchActivityLogs,
+  mapQueueRow
 } from "./utils/supabaseService";
+import { supabase } from "./utils/supabaseClient";
 import { learnFromCorrection } from "./utils/smartParser";
 
 import Sidebar from "./components/Sidebar";
@@ -128,6 +130,39 @@ export default function App() {
       }
     }
     loadFromSupabase();
+  }, []);
+
+  // ─── Realtime subscription for queues ───
+  useEffect(() => {
+    const channel = supabase
+      .channel("queues-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "queues" }, (payload) => {
+        try {
+          const newQueue = mapQueueRow(payload.new);
+          setQueues((prev) => {
+            if (prev.find((q) => q.id === newQueue.id)) return prev;
+            return [...prev, newQueue];
+          });
+        } catch (e) { console.error("realtime INSERT error", e); }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "queues" }, (payload) => {
+        try {
+          const updated = mapQueueRow(payload.new);
+          setQueues((prev) => prev.map((q) => q.id === updated.id ? updated : q));
+        } catch (e) { console.error("realtime UPDATE error", e); }
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "queues" }, (payload) => {
+        try {
+          setQueues((prev) => prev.filter((q) => q.id !== payload.old.id));
+        } catch (e) { console.error("realtime DELETE error", e); }
+      })
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR") {
+          console.warn("Realtime channel error — falling back to manual fetch");
+        }
+      });
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   // Note: All data is now stored in Supabase only, no localStorage
