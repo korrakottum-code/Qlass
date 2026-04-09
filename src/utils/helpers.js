@@ -50,6 +50,7 @@ export function getEmptyBookingForm() {
     timeBlock: null,
     durationBlocks: null,
     roomId: "",
+    secondRoomId: "",
     status: "pending",
     statusNote: "",
   };

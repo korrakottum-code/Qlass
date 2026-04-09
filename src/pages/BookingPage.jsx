@@ -249,6 +249,27 @@ export default function BookingPage({
               )}
             </div>
 
+            {/* ห้องที่ 2 (optional) */}
+            {form.roomId && (
+              <div className="form-group">
+                <label className="form-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  ห้องที่ 2 (ถ้ามี)
+                  {form.secondRoomId && (
+                    <span style={{ fontSize: 11, color: "var(--text2)", fontWeight: 400 }}>จะสร้าง 2 คิวพร้อมกัน</span>
+                  )}
+                </label>
+                <select
+                  value={form.secondRoomId}
+                  onChange={(e) => setForm((f) => ({ ...f, secondRoomId: e.target.value }))}
+                >
+                  <option value="">-- ไม่เลือก (ห้องเดียว) --</option>
+                  {branchRooms.filter((r) => r.id !== form.roomId).map((r) => (
+                    <option key={r.id} value={r.id}>[{r.type}] {r.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* หัตถการ + โปร */}
             <div className="form-group">
               <label className="form-label">หัตถการหลักที่สนใจ</label>
