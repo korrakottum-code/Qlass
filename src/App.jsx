@@ -12,8 +12,10 @@ import {
   createQueue, updateQueue, deleteQueue as deleteQueueDB,
   getAllCategories, createCategory as createCategoryDB, deleteCategory as deleteCategoryDB,
   fetchTickets, createTicketDB, updateTicketDB, deleteTicketDB,
-  createActivityLog, fetchActivityLogs
+  createActivityLog, fetchActivityLogs,
+  mapQueueRow
 } from "./utils/supabaseService";
+import { supabase } from "./utils/supabaseClient";
 import { learnFromCorrection } from "./utils/smartParser";
 
 import Sidebar from "./components/Sidebar";
@@ -47,8 +49,6 @@ import TicketPage from "./pages/TicketPage";
 import ActivityLogPage from "./pages/ActivityLogPage";
 
 export default function App() {
-  // Simple test render
-  console.log('App component rendering...');
   
   // ─── Master data from Supabase only ───
   const [branches, setBranches] = useState([]);
@@ -128,6 +128,44 @@ export default function App() {
       }
     }
     loadFromSupabase();
+  }, []);
+
+  // ─── Realtime subscription for queues ───
+  useEffect(() => {
+    const channel = supabase
+      .channel("queues-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "queues" }, (payload) => {
+        try {
+          const newQueue = mapQueueRow(payload.new);
+          setQueues((prev) => {
+            if (prev.some((q) => q.id === newQueue.id)) return prev;
+            return [...prev, newQueue];
+          });
+        } catch (e) { console.error("realtime INSERT error", e); }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "queues" }, (payload) => {
+        try {
+          const updated = mapQueueRow(payload.new);
+          setQueues((prev) => {
+            const exists = prev.some((q) => q.id === updated.id);
+            if (!exists) return [...prev, updated];
+            return prev.map((q) => q.id === updated.id ? updated : q);
+          });
+        } catch (e) { console.error("realtime UPDATE error", e); }
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "queues" }, (payload) => {
+        try {
+          setQueues((prev) => prev.filter((q) => q.id !== payload.old.id));
+        } catch (e) { console.error("realtime DELETE error", e); }
+      })
+      .subscribe((status) => {
+        console.log("[Realtime] status:", status);
+        if (status === "CHANNEL_ERROR") {
+          console.warn("Realtime channel error — falling back to manual fetch");
+        }
+      });
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   // Note: All data is now stored in Supabase only, no localStorage
@@ -257,8 +295,6 @@ export default function App() {
 
     if (editingQueueId) {
       await updateQueue(editingQueueId, form);
-      const updatedQueues = await getAllQueues();
-      setQueues(updatedQueues || []);
       showToast("success", "แก้ไขคิวเรียบร้อย");
       setEditingQueueId(null);
     } else {
@@ -267,8 +303,6 @@ export default function App() {
         createdAt: getTodayStr(),
         recordedBy: currentUser?.id || null,
       });
-      const updatedQueues = await getAllQueues();
-      setQueues(updatedQueues || []);
       showToast("success", "บันทึกคิวเรียบร้อย ✓");
     }
 
@@ -309,8 +343,6 @@ export default function App() {
         performedByName: currentUser?.nickname || currentUser?.name || null,
       });
     }
-    const updatedQueues = await getAllQueues();
-    setQueues(updatedQueues || []);
     showToast("success", "ลบคิวแล้ว");
   }, [showToast, currentUser]);
 
@@ -341,8 +373,6 @@ export default function App() {
       await updateQueue(id, { ...payload, statusUpdatedAt: getTodayStr() });
     }
 
-    const updatedQueues = await getAllQueues();
-    setQueues(updatedQueues || []);
     setModal(null);
     const st = payload.status;
     const labels = { confirmed:"ยืนยันแล้ว ✅", rescheduled:"เลื่อนออก 📤", rescheduled_in:"เลื่อนมา (ใหม่) �", no_show:"บันทึก: ไม่มาตามนัด 🚫", cancelled:"ยกเลิกแล้ว ❌", done:"เสร็จสิ้น 🎉", follow1:"บันทึก: โทรตาม ×1", follow2:"บันทึก: โทรตาม ×2", follow3:"บันทึก: โทรตาม ×3 📞" };
@@ -653,8 +683,6 @@ export default function App() {
                     }
                   }
                   if (created > 0) {
-                    const updatedQueues = await getAllQueues();
-                    setQueues(updatedQueues || []);
                     showToast("success", `🚀 สร้าง ${created} คิวเรียบร้อย!`);
                   }
                 }}
@@ -758,8 +786,6 @@ export default function App() {
                     }
                   }
                   await createQueue({ ...bookingForm, createdAt: getTodayStr(), recordedBy: currentUser?.id || null });
-                  const updatedQueues = await getAllQueues();
-                  setQueues(updatedQueues || []);
                   showToast("success", "บันทึกคิวเรียบร้อย ✓");
                   return true;
                 }}

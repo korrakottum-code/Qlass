@@ -483,6 +483,29 @@ export async function deleteStaff(id) {
 // QUEUES
 // ═══════════════════════════════════════════════════════════
 
+export function mapQueueRow(q) {
+  return {
+    id: q.id,
+    name: q.name,
+    phone: q.phone,
+    branchId: q.branch_id,
+    procedureId: q.procedure_id,
+    promoId: q.promo_id,
+    price: q.price ? parseFloat(q.price) : "",
+    note: q.note || "",
+    customerType: q.customer_type,
+    date: q.date,
+    timeBlock: q.time_block,
+    durationBlocks: q.duration_blocks ?? null,
+    roomId: q.room_id,
+    status: q.status,
+    statusNote: q.status_note || "",
+    recordedBy: q.recorded_by,
+    createdAt: q.created_at,
+    statusUpdatedAt: q.status_updated_at,
+  };
+}
+
 export async function fetchQueues() {
   const PAGE_SIZE = 1000;
   let allData = [];
@@ -503,26 +526,8 @@ export async function fetchQueues() {
     from += PAGE_SIZE;
   }
 
-  return allData.map(q => ({
-    id: q.id,
-    name: q.name,
-    phone: q.phone,
-    branchId: q.branch_id,
-    procedureId: q.procedure_id,
-    promoId: q.promo_id,
-    price: q.price ? parseFloat(q.price) : "",
-    note: q.note || "",
-    customerType: q.customer_type,
-    date: q.date,
-    timeBlock: q.time_block,
-    durationBlocks: q.duration_blocks ?? null,
-    roomId: q.room_id,
-    status: q.status,
-    statusNote: q.status_note || "",
-    recordedBy: q.recorded_by,
-    createdAt: q.created_at,
-    statusUpdatedAt: q.status_updated_at,
-  }));
+  const unique = Array.from(new Map(allData.map((q) => [q.id, q])).values());
+  return unique.map(mapQueueRow);
 }
 
 export async function createQueue(queue) {
