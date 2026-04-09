@@ -484,24 +484,26 @@ export async function deleteStaff(id) {
 // ═══════════════════════════════════════════════════════════
 
 export async function fetchQueues() {
-  const today = new Date();
-  const pastDate = new Date(today);
-  pastDate.setDate(today.getDate() - 60);
-  const futureDate = new Date(today);
-  futureDate.setDate(today.getDate() + 30);
-  const fromStr = pastDate.toISOString().slice(0, 10);
-  const toStr = futureDate.toISOString().slice(0, 10);
+  const PAGE_SIZE = 1000;
+  let allData = [];
+  let from = 0;
 
-  const { data, error } = await supabase
-    .from("queues")
-    .select("*")
-    .gte("date", fromStr)
-    .lte("date", toStr)
-    .order("date", { ascending: false })
-    .order("time_block", { ascending: true });
-  
-  if (error) throw error;
-  return data.map(q => ({
+  while (true) {
+    const { data, error } = await supabase
+      .from("queues")
+      .select("*")
+      .order("date", { ascending: false })
+      .order("time_block", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allData = allData.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+
+  return allData.map(q => ({
     id: q.id,
     name: q.name,
     phone: q.phone,
