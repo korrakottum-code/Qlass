@@ -79,7 +79,7 @@ export default function BookingPage({
       .forEach((q) => {
         if (q.timeBlock !== null) {
           const proc = procedures.find((p) => p.id === q.procedureId);
-          const dur = proc?.blocks || 1;
+          const dur = q.durationBlocks ?? proc?.blocks ?? 1;
           for (let i = 0; i < dur; i++) occupied.add(q.timeBlock + i);
         }
       });
