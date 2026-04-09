@@ -262,6 +262,7 @@ export default function App() {
       );
       if (duplicate) {
         showToast("error", `⚠️ ${duplicate.name} (${duplicate.phone}) มีคิววันนี้แล้ว (${duplicate.timeBlock !== null ? blockToTime(duplicate.timeBlock) : "ไม่ระบุเวลา"})`);
+        await new Promise((r) => setTimeout(r, 2600));
       }
     }
 
