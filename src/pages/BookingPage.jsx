@@ -254,7 +254,7 @@ export default function BookingPage({
               <label className="form-label">หัตถการหลักที่สนใจ</label>
               <select
                 value={form.procedureId}
-                onChange={(e) => setForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "" }))}
+                onChange={(e) => setForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "", durationBlocks: null, timeBlock: null }))}
               >
                 <option value="">-- เลือกหัตถการ --</option>
                 {filteredProcedures.map((p) => (
