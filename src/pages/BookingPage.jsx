@@ -9,7 +9,7 @@ export default function BookingPage({
   branches, rooms, procedures, promos,
   roomSchedules, queues,
   onSubmit, onQuickAddPromo, onSmartApply, onBulkBooking, parseHints, todayStats,
-  currentUser,
+  currentUser, showToast,
 }) {
   const [showQuickPromo, setShowQuickPromo] = useState(false);
   const [qpName, setQpName] = useState("");
@@ -447,7 +447,14 @@ export default function BookingPage({
                           ? { background: "var(--surface3)", borderColor: "var(--border2)", color: "var(--text3)" }
                           : {}
                       }
-                      onClick={() => !isDisabled && setForm((f) => ({ ...f, timeBlock: b.block }))}
+                      title={isOccupied && !isStart ? "เวลานี้มีคิวแล้ว" : isClosed ? "ห้องปิด/ไม่พร้อม" : ""}
+                      onClick={() => {
+                        if (isOccupied && !isStart) {
+                          showToast?.("error", `⚠️ ${b.time} มีคิวอยู่แล้ว กรุณาเลือกเวลาอื่น`);
+                          return;
+                        }
+                        if (!isDisabled) setForm((f) => ({ ...f, timeBlock: b.block }));
+                      }}
                     >
                       {b.time}
                     </div>

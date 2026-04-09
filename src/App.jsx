@@ -660,6 +660,7 @@ export default function App() {
                 }}
                 todayStats={todayStats}
                 currentUser={currentUser}
+                showToast={showToast}
               />
             )}
 
