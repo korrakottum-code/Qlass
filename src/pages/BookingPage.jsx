@@ -434,7 +434,9 @@ export default function BookingPage({
                       key={b.block}
                       className={`time-block ${isStart ? "selected" : ""} ${isInRange ? "in-range" : ""} ${isDisabled ? "disabled" : ""}`}
                       style={
-                        isOccupied && !isStart
+                        isInRange
+                          ? {}
+                          : isOccupied && !isStart
                           ? { background: "#e8c5bb", borderColor: "#c8957e", color: "var(--accent)", opacity: 0.7 }
                           : isClosed
                           ? { background: "var(--surface3)", borderColor: "var(--border2)", color: "var(--text3)" }
