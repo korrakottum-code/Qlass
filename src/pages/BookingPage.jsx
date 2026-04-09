@@ -398,10 +398,15 @@ export default function BookingPage({
                 )}
               </label>
               {form.timeBlock !== null && activeDur > 0 && (
-                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "flex", gap: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, display: "flex", flexDirection: "column", gap: 4 }}>
                   <span style={{ color: hasConflict ? "var(--red)" : "var(--green)" }}>
                     {hasConflict ? "⚠️ ชนกับคิวอื่น!" : `⏱ ${blockToTime(form.timeBlock)} — ${blockToTime(form.timeBlock + activeDur)}`}
                   </span>
+                  {form.durationBlocks !== null && form.durationBlocks !== selectedProcBlocks && (
+                    <span style={{ fontSize: 11, fontWeight: 600, color: "var(--amber)", display: "flex", alignItems: "center", gap: 4 }}>
+                      ⚡ ระยะเวลา override: {activeDur} บล็อค ({activeDur * 5} นาที) — ค่าปกติ {selectedProcBlocks} บล็อค ({selectedProcBlocks * 5} นาที)
+                    </span>
+                  )}
                 </div>
               )}
               {/* Legend */}
@@ -500,7 +505,9 @@ export default function BookingPage({
                   ["🏢 สาขา",      branch?.name || "—"],
                   ["🚪 ห้อง",       room ? `[${room.type}] ${room.name}` : "—"],
                   ["📅 วันที่",     form.date || "—"],
-                  ["⏰ เวลา",       form.timeBlock !== null ? blockToTime(form.timeBlock) : "—"],
+                  ["⏰ เวลา",       form.timeBlock !== null
+                    ? `${blockToTime(form.timeBlock)} — ${blockToTime(form.timeBlock + (form.durationBlocks ?? procedure?.blocks ?? 0))} (${(form.durationBlocks ?? procedure?.blocks ?? 0) * 5} นาที${form.durationBlocks !== null && form.durationBlocks !== procedure?.blocks ? " ⚡ override" : ""})`
+                    : "—"],
                   ["💉 หัตถการ",  procedure?.name || "—"],
                   ["🏷️ โปร/แพ็ก",  promo?.name || "—"],
                   ["💰 ราคา",      form.price ? `฿${Number(form.price).toLocaleString()}` : "—"],
