@@ -270,19 +270,21 @@ export default function BookingPage({
             <div className="form-group">
               <label className="form-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 โปร/แพ็กเกจที่เลือก
-                <button
-                  type="button"
-                  onClick={() => { setShowQuickPromo((v) => !v); setQpName(""); setQpPrice(""); setQpProcedureId(form.procedureId || ""); }}
-                  style={{
-                    fontSize: 11, fontWeight: 600, padding: "2px 8px",
-                    borderRadius: 6, border: "1.5px solid var(--accent)",
-                    background: showQuickPromo ? "var(--accent)" : "transparent",
-                    color: showQuickPromo ? "#fff" : "var(--accent)",
-                    cursor: "pointer", lineHeight: 1.4,
-                  }}
-                >
-                  {showQuickPromo ? "✕ ยกเลิก" : "➕ เพิ่มโปรด่วน"}
-                </button>
+                {["superadmin", "head_admin"].includes(currentUser?.role) && (
+                  <button
+                    type="button"
+                    onClick={() => { setShowQuickPromo((v) => !v); setQpName(""); setQpPrice(""); setQpProcedureId(form.procedureId || ""); }}
+                    style={{
+                      fontSize: 11, fontWeight: 600, padding: "2px 8px",
+                      borderRadius: 6, border: "1.5px solid var(--accent)",
+                      background: showQuickPromo ? "var(--accent)" : "transparent",
+                      color: showQuickPromo ? "#fff" : "var(--accent)",
+                      cursor: "pointer", lineHeight: 1.4,
+                    }}
+                  >
+                    {showQuickPromo ? "✕ ยกเลิก" : "➕ เพิ่มโปรด่วน"}
+                  </button>
+                )}
               </label>
               <select
                 value={form.promoId}
