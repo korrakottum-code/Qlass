@@ -261,39 +261,34 @@ export default function App() {
         (form.procedureId ? q.procedureId === form.procedureId : true)
       );
       if (duplicate) {
-        showToast("error", `⚠️ ${duplicate.name} (${duplicate.phone}) มีคิววันนี้แล้ว (${duplicate.timeBlock !== null ? blockToTime(duplicate.timeBlock) : "ไม่ระบุเวลา"}) — ถ้าต้องการบันทึกจริง กรุณาตรวจสอบก่อน`);
-        return;
+        showToast("error", `⚠️ ${duplicate.name} (${duplicate.phone}) มีคิววันนี้แล้ว (${duplicate.timeBlock !== null ? blockToTime(duplicate.timeBlock) : "ไม่ระบุเวลา"})`);
       }
     }
 
     // ─── ตรวจสอบเวลาชนกัน ───
-    if (form.timeBlock !== null && form.procedureId) {
+    if (form.timeBlock !== null && form.roomId && form.procedureId) {
       const proc = procedures.find((p) => p.id === form.procedureId);
       const dur = form.durationBlocks ?? proc?.blocks ?? 0;
       const startA = form.timeBlock;
       const endA = startA + dur;
 
-      const roomsToCheck = [form.roomId, form.secondRoomId].filter(Boolean);
-      for (const roomId of roomsToCheck) {
-        const conflict = queues.find((q) => {
-          if (q.id === editingQueueId) return false;
-          if (q.roomId !== roomId) return false;
-          if (q.date !== form.date) return false;
-          if (q.timeBlock === null) return false;
-          const qProc = procedures.find((p) => p.id === q.procedureId);
-          const qDur = q.durationBlocks ?? qProc?.blocks ?? 1;
-          const startB = q.timeBlock;
-          const endB = startB + qDur;
-          return startA < endB && startB < endA;
-        });
+      const conflict = queues.find((q) => {
+        if (q.id === editingQueueId) return false;
+        if (q.roomId !== form.roomId) return false;
+        if (q.date !== form.date) return false;
+        if (q.timeBlock === null) return false;
+        const qProc = procedures.find((p) => p.id === q.procedureId);
+        const qDur = q.durationBlocks ?? qProc?.blocks ?? 1;
+        const startB = q.timeBlock;
+        const endB = startB + qDur;
+        return startA < endB && startB < endA;
+      });
 
-        if (conflict) {
-          const conflictRoom = rooms.find((r) => r.id === roomId);
-          const cProc = procedures.find(p => p.id === conflict.procedureId);
-          const cDur = conflict.durationBlocks ?? cProc?.blocks ?? 0;
-          showToast("error", `ห้อง ${conflictRoom?.name || roomId}: เวลาชนกับคิวของ ${conflict.name} (${blockToTime(conflict.timeBlock)}–${blockToTime(conflict.timeBlock + cDur)})`);
-          return;
-        }
+      if (conflict) {
+        const cProc = procedures.find(p => p.id === conflict.procedureId);
+        const cDur = conflict.durationBlocks ?? cProc?.blocks ?? 0;
+        showToast("error", `เวลาชนกับคิวของ ${conflict.name} (${blockToTime(conflict.timeBlock)}–${blockToTime(conflict.timeBlock + cDur)})`);
+        return;
       }
     }
 
@@ -302,18 +297,12 @@ export default function App() {
       showToast("success", "แก้ไขคิวเรียบร้อย");
       setEditingQueueId(null);
     } else {
-      const baseQueue = { ...form, createdAt: getTodayStr(), recordedBy: currentUser?.id || null };
-      await createQueue(baseQueue);
-      if (form.secondRoomId) {
-        if (!form.secondTimeBlock) {
-          showToast("error", "กรุณาเลือกเวลานัดสำหรับห้องที่ 2");
-          return;
-        }
-        await createQueue({ ...baseQueue, roomId: form.secondRoomId, timeBlock: form.secondTimeBlock });
-        showToast("success", "บันทึก 2 คิว (2 ห้อง) เรียบร้อย ✓");
-      } else {
-        showToast("success", "บันทึกคิวเรียบร้อย ✓");
-      }
+      await createQueue({
+        ...form,
+        createdAt: getTodayStr(),
+        recordedBy: currentUser?.id || null,
+      });
+      showToast("success", "บันทึกคิวเรียบร้อย ✓");
     }
 
     if (lastParseSnapshot) {
