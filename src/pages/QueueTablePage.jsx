@@ -55,19 +55,21 @@ export default function QueueTablePage({
     return counts;
   }, [queues, qfDate, qfBranch]);
 
-  const roomScheduleNoteByRoomId = useMemo(() => {
-    const noteByRoomId = {};
+  const roomScheduleNotesByRoomId = useMemo(() => {
+    const notesByRoomId = {};
     rooms.forEach((room) => {
-      const match = roomSchedules?.find(
-        (s) => s.roomId === room.id && s.date === qfDate && s.note
-      );
-      const fallback = roomSchedules?.find(
-        (s) => s.roomId === room.id && !s.date && s.note
-      );
-      const note = match?.note || fallback?.note || null;
-      if (note) noteByRoomId[room.id] = note;
+      const exactNotes = (roomSchedules || [])
+        .filter((s) => s.roomId === room.id && s.date === qfDate && s.note)
+        .map((s) => s.note);
+
+      const fallbackNotes = (roomSchedules || [])
+        .filter((s) => s.roomId === room.id && !s.date && s.note)
+        .map((s) => s.note);
+
+      const notes = exactNotes.length > 0 ? exactNotes : fallbackNotes;
+      if (notes.length > 0) notesByRoomId[room.id] = notes;
     });
-    return noteByRoomId;
+    return notesByRoomId;
   }, [rooms, roomSchedules, qfDate]);
 
   // จัดกลุ่ม: สาขา → ห้อง → คิว
@@ -167,7 +169,7 @@ export default function QueueTablePage({
             {branchRooms.map(({ roomId, roomName, roomType, items }) => {
               const colKey = `${branchId}_${roomId}`;
               const isCollapsed = !!collapsedRooms[colKey];
-              const roomScheduleNote = roomScheduleNoteByRoomId[roomId];
+              const roomScheduleNotes = roomScheduleNotesByRoomId[roomId] || [];
               return (
               <div className="card" key={roomId} style={{ marginBottom: 10 }}>
                 <div
@@ -175,16 +177,20 @@ export default function QueueTablePage({
                   onClick={() => toggleRoom(colKey)}
                   style={{ cursor: "pointer", userSelect: "none" }}
                 >
-                  <h3 style={{ color: roomType === "M" ? "var(--blue)" : roomType === "T" ? "var(--green)" : undefined, fontFamily: "var(--mono)", display: "flex", alignItems: "center", gap: 8 }}>
+                  <h3 style={{ color: roomType === "M" ? "var(--blue)" : roomType === "T" ? "var(--green)" : undefined, fontFamily: "var(--mono)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     🚪 {roomName}
                     {roomType && (
                       <span style={{ fontSize: 11, fontWeight: 600, background: roomType === "M" ? "var(--blue-soft)" : "var(--green-soft)", color: roomType === "M" ? "var(--blue)" : "var(--green)", padding: "2px 8px", borderRadius: 10, fontFamily: "var(--body)" }}>
                         {roomType === "M" ? "ห้องหมอ" : "ห้องเครื่อง"}
                       </span>
                     )}
-                    {roomScheduleNote && (
-                      <span style={{ fontSize: 11, fontWeight: 700, color: "#b45309", lineHeight: 1.5, background: "#fef3c7", borderRadius: 6, padding: "2px 8px", fontFamily: "var(--font)" }}>
-                        📅 {roomScheduleNote}
+                    {roomScheduleNotes.length > 0 && (
+                      <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                        {roomScheduleNotes.map((note, idx) => (
+                          <span key={`${note}_${idx}`} style={{ fontSize: 11, fontWeight: 700, color: "#b45309", lineHeight: 1.5, background: "#fef3c7", borderRadius: 6, padding: "2px 8px", fontFamily: "var(--font)" }}>
+                            📅 {note}
+                          </span>
+                        ))}
                       </span>
                     )}
                   </h3>

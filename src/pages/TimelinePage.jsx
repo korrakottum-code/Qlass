@@ -24,19 +24,21 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
     [queues, date]
   );
 
-  const roomScheduleNoteByRoomId = useMemo(() => {
-    const noteByRoomId = {};
+  const roomScheduleNotesByRoomId = useMemo(() => {
+    const notesByRoomId = {};
     filteredRooms.forEach((room) => {
-      const match = roomSchedules.find(
-        (s) => s.roomId === room.id && s.date === date && s.note
-      );
-      const fallback = roomSchedules.find(
-        (s) => s.roomId === room.id && !s.date && s.note
-      );
-      const note = match?.note || fallback?.note || null;
-      if (note) noteByRoomId[room.id] = note;
+      const exactNotes = (roomSchedules || [])
+        .filter((s) => s.roomId === room.id && s.date === date && s.note)
+        .map((s) => s.note);
+
+      const fallbackNotes = (roomSchedules || [])
+        .filter((s) => s.roomId === room.id && !s.date && s.note)
+        .map((s) => s.note);
+
+      const notes = exactNotes.length > 0 ? exactNotes : fallbackNotes;
+      if (notes.length > 0) notesByRoomId[room.id] = notes;
     });
-    return noteByRoomId;
+    return notesByRoomId;
   }, [filteredRooms, roomSchedules, date]);
 
   // หา time range จากทุกห้อง
@@ -116,7 +118,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                   {filteredRooms.map((room) => {
                     const branch = branches.find((b) => b.id === room.branchId);
                     const cnt = dayQueues.filter((q) => q.roomId === room.id).length;
-                    const roomScheduleNote = roomScheduleNoteByRoomId[room.id];
+                    const roomScheduleNotes = roomScheduleNotesByRoomId[room.id] || [];
                     return (
                       <th key={room.id} style={{
                         padding: "6px 10px", textAlign: "center",
@@ -130,11 +132,13 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                         <div style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>
                           [{room.type}]{branch ? ` • ${branch.name}` : ""}
                         </div>
-                        {roomScheduleNote && (
-                          <div style={{ marginTop: 3 }}>
-                            <span style={{ fontSize: 11, fontWeight: 800, color: "#ffffff", lineHeight: 1.5, background: "#dc2626", border: "1px solid #b91c1c", borderRadius: 6, padding: "2px 8px" }}>
-                              📅 {roomScheduleNote}
-                            </span>
+                        {roomScheduleNotes.length > 0 && (
+                          <div style={{ marginTop: 3, display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 6 }}>
+                            {roomScheduleNotes.map((note, idx) => (
+                              <span key={`${note}_${idx}`} style={{ fontSize: 11, fontWeight: 800, color: "#ffffff", lineHeight: 1.5, background: "#dc2626", border: "1px solid #b91c1c", borderRadius: 6, padding: "2px 8px" }}>
+                                📅 {note}
+                              </span>
+                            ))}
                           </div>
                         )}
                         {cnt > 0 && (
