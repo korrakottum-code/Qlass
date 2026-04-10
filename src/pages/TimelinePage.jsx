@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm } from "../utils/helpers";
 
-export default function TimelinePage({ queues, branches, rooms, procedures, promos, currentUser, onSubmitBooking, onEditQueue }) {
+export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], currentUser, onSubmitBooking, onEditQueue }) {
   const [date, setDate] = useState(getTodayStr());
   const [filterBranch, setFilterBranch] = useState("all");
   const [popup, setPopup] = useState(null); // { q, room, block, x, y }
@@ -23,6 +23,21 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
     queues.filter((q) => q.date === date),
     [queues, date]
   );
+
+  const roomScheduleNoteByRoomId = useMemo(() => {
+    const noteByRoomId = {};
+    filteredRooms.forEach((room) => {
+      const match = roomSchedules.find(
+        (s) => s.roomId === room.id && s.date === date && s.note
+      );
+      const fallback = roomSchedules.find(
+        (s) => s.roomId === room.id && !s.date && s.note
+      );
+      const note = match?.note || fallback?.note || null;
+      if (note) noteByRoomId[room.id] = note;
+    });
+    return noteByRoomId;
+  }, [filteredRooms, roomSchedules, date]);
 
   // หา time range จากทุกห้อง
   const { minBlock, maxBlock } = useMemo(() => {
@@ -101,6 +116,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                   {filteredRooms.map((room) => {
                     const branch = branches.find((b) => b.id === room.branchId);
                     const cnt = dayQueues.filter((q) => q.roomId === room.id).length;
+                    const roomScheduleNote = roomScheduleNoteByRoomId[room.id];
                     return (
                       <th key={room.id} style={{
                         padding: "6px 10px", textAlign: "center",
@@ -114,6 +130,13 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                         <div style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>
                           [{room.type}]{branch ? ` • ${branch.name}` : ""}
                         </div>
+                        {roomScheduleNote && (
+                          <div style={{ marginTop: 3 }}>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: "#ffffff", lineHeight: 1.5, background: "#dc2626", border: "1px solid #b91c1c", borderRadius: 6, padding: "2px 8px" }}>
+                              📅 {roomScheduleNote}
+                            </span>
+                          </div>
+                        )}
                         {cnt > 0 && (
                           <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", marginTop: 2 }}>{cnt} คิว</div>
                         )}

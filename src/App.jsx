@@ -757,6 +757,7 @@ export default function App() {
                 rooms={filteredRooms}
                 procedures={procedures}
                 promos={promos}
+                roomSchedules={filteredRoomSchedules}
                 currentUser={currentUser}
                 onSubmitBooking={async (bookingForm) => {
                   // duplicate check
