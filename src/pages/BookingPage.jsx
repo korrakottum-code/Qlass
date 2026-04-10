@@ -47,17 +47,19 @@ export default function BookingPage({
     }
   }, [form.promoId, promos, setForm]);
 
-  // หา note ของ room schedule ที่ตรงกับห้อง + วันที่เลือก
-  const scheduleNote = useMemo(() => {
-    if (!form.roomId || !form.date) return null;
-    const match = roomSchedules?.find(
-      (s) => s.roomId === form.roomId && s.date === form.date && s.note
-    );
-    if (match) return match.note;
-    const fallback = roomSchedules?.find(
-      (s) => s.roomId === form.roomId && !s.date && s.note
-    );
-    return fallback?.note || null;
+  // หา note ของ room schedule ที่ตรงกับห้อง + วันที่เลือก (รองรับหลาย note)
+  const scheduleNotes = useMemo(() => {
+    if (!form.roomId || !form.date) return [];
+
+    const exactNotes = (roomSchedules || [])
+      .filter((s) => s.roomId === form.roomId && s.date === form.date && s.note)
+      .map((s) => s.note);
+
+    if (exactNotes.length > 0) return exactNotes;
+
+    return (roomSchedules || [])
+      .filter((s) => s.roomId === form.roomId && !s.date && s.note)
+      .map((s) => s.note);
   }, [form.roomId, form.date, roomSchedules]);
 
   // Selected procedure's block count
@@ -242,9 +244,13 @@ export default function BookingPage({
                   ⚠️ {selectedRoom.notes}
                 </div>
               )}
-              {scheduleNote && (
-                <div style={{ marginTop: 4, fontSize: 11, fontWeight: 700, color: "#b45309", lineHeight: 1.5, background: "#fef3c7", borderRadius: 5, padding: "3px 8px" }}>
-                  📅 {scheduleNote}
+              {scheduleNotes.length > 0 && (
+                <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {scheduleNotes.map((note, idx) => (
+                    <span key={`${note}_${idx}`} style={{ fontSize: 11, fontWeight: 700, color: "#b45309", lineHeight: 1.5, background: "#fef3c7", borderRadius: 5, padding: "3px 8px" }}>
+                      📅 {note}
+                    </span>
+                  ))}
                 </div>
               )}
             </div>
