@@ -256,9 +256,7 @@ export default function App() {
     // ─── ตรวจสอบคิวซ้ำ (เบอร์ + วันที่ + หัตถการเดิม) ───
     if (!editingQueueId) {
       const duplicate = queues.find((q) =>
-        q.phone.trim() === form.phone.trim() &&
-        q.date === form.date &&
-        (form.procedureId ? q.procedureId === form.procedureId : true)
+        q.phone.trim() === form.phone.trim() && q.date === form.date
       );
       if (duplicate) {
         showToast("error", `⚠️ ${duplicate.name} (${duplicate.phone}) มีคิววันนี้แล้ว (${duplicate.timeBlock !== null ? blockToTime(duplicate.timeBlock) : "ไม่ระบุเวลา"})`);
