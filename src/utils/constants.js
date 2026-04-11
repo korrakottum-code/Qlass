@@ -140,7 +140,7 @@ export const ROLES = [
     label: "แอดมิน",
     color: "#2563eb",
     bg: "rgba(37,99,235,0.1)",
-    pages: ["booking","queue-table","timeline","summary","commission","export","tickets"],
+    pages: ["booking","queue-table","timeline","summary","commission","export","tickets","room-schedule"],
   },
   {
     value: "branch_manager",
