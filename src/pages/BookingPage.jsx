@@ -100,6 +100,9 @@ export default function BookingPage({
       (s) => s.roomId === form.roomId && (s.date === form.date || s.date === "")
     );
     if (schedules.length === 0) return baseBlocks;
+    // ปิดทั้งวัน (available=false, ไม่มี block range) → ไม่มี slot เลย
+    const isClosedAllDay = schedules.some((s) => !s.available && !s.noteOnly && s.startBlock === null);
+    if (isClosedAllDay) return [];
     return baseBlocks.filter((b) => {
       for (const s of schedules) {
         // noteOnly = แค่ note ไม่มีผลต่อเวลา ข้ามไป

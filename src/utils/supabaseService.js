@@ -296,7 +296,7 @@ export async function fetchRoomSchedules() {
     available: s.available,
     startBlock: s.start_block,
     endBlock: s.end_block,
-    noteOnly: s.start_block === null && s.end_block === null,
+    noteOnly: s.start_block === null && s.end_block === null && s.available === true,
     note: s.note || "",
   }));
 }
@@ -308,7 +308,7 @@ export async function createRoomSchedule(schedule) {
     .insert([{
       room_id: schedule.roomId,
       date: schedule.date || null,
-      available: true,
+      available: schedule.available,
       start_block: isNoteOnly ? null : schedule.startBlock,
       end_block: isNoteOnly ? null : schedule.endBlock,
       note: schedule.note,
@@ -324,7 +324,7 @@ export async function createRoomSchedule(schedule) {
     available: data.available,
     startBlock: data.start_block,
     endBlock: data.end_block,
-    noteOnly: data.start_block === null && data.end_block === null,
+    noteOnly: data.start_block === null && data.end_block === null && data.available === true,
     note: data.note || "",
   };
 }
@@ -353,7 +353,7 @@ export async function updateRoomSchedule(id, schedule) {
     available: data.available,
     startBlock: data.start_block,
     endBlock: data.end_block,
-    noteOnly: data.start_block === null && data.end_block === null,
+    noteOnly: data.start_block === null && data.end_block === null && data.available === true,
     note: data.note || "",
   };
 }
