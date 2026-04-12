@@ -253,6 +253,18 @@ export default function App() {
       return;
     }
 
+    // ─── ตรวจสอบห้องปิดรับคิว ───
+    if (form.roomId && form.date) {
+      const roomScheds = roomSchedules.filter(
+        (s) => s.roomId === form.roomId && (s.date === form.date || s.date === "")
+      );
+      const isRoomClosed = roomScheds.some((s) => !s.available && !s.noteOnly && s.startBlock === null);
+      if (isRoomClosed) {
+        showToast("error", "❌ ห้องนี้ปิดรับคิวในวันที่เลือก ไม่สามารถลงคิวได้");
+        return;
+      }
+    }
+
     // ─── ตรวจสอบคิวซ้ำ (เบอร์ + วันที่ + หัตถการเดิม) ───
     if (!editingQueueId) {
       const duplicate = queues.find((q) =>
@@ -452,9 +464,14 @@ export default function App() {
   const saveRoomSchedule = useCallback(async (data) => {
     if (data.id) {
       const { roomIds, dates, ...rest } = data;
-      const updated = { ...rest, roomId: roomIds[0], date: dates?.[0] ?? rest.date ?? "" };
-      await updateRoomSchedule(data.id, updated);
-      showToast("success", "แก้ไขตารางเรียบร้อย");
+      const sharedDate = dates?.[0] ?? rest.date ?? "";
+      await updateRoomSchedule(data.id, { ...rest, roomId: roomIds[0], date: sharedDate });
+      let created = 0;
+      for (const roomId of roomIds.slice(1)) {
+        await createRoomSchedule({ ...rest, roomId, date: sharedDate });
+        created++;
+      }
+      showToast("success", created > 0 ? `แก้ไขตารางเรียบร้อย (+${created} ห้องใหม่)` : "แก้ไขตารางเรียบร้อย");
     } else {
       const { roomIds, dates, ...rest } = data;
       let created = 0;
