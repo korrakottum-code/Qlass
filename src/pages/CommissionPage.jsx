@@ -34,7 +34,7 @@ export default function CommissionPage({ queues, staff, branches, procedures, pr
   const doneQueues = useMemo(() => {
     return queues.filter((q) => {
       if ((q.status || "pending") !== "done") return false;
-      const d = q.statusUpdatedAt || q.date;
+      const d = q.date;
       if (fromDate && d < fromDate) return false;
       if (toDate && d > toDate) return false;
       if (filterBranch !== "all" && q.branchId !== filterBranch) return false;
