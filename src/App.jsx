@@ -643,7 +643,7 @@ export default function App() {
         currentPage={page}
         onNavigate={navigateTo}
         branchCount={filteredBranches.length}
-        queueCount={filteredQueues.length}
+        queueCount={filteredQueues.filter(q => q.date?.startsWith(new Date().toISOString().slice(0,7)) && ["new","old"].includes(q.customerType)).length}
         currentUser={currentUser}
         onLogout={handleLogout}
       />
