@@ -29,11 +29,12 @@ function downloadCSV(filename, csvContent) {
 // EXPORT COMMISSION DATA
 // ═══════════════════════════════════════════════════════════
 
-export function exportCommissionData(queues, staff, branches, procedures, promos, startDate, endDate) {
+export function exportCommissionData(queues, staff, branches, procedures, promos, startDate, endDate, branchId = "all") {
   const filteredQueues = queues.filter(q => {
     if (!q.date) return false;
     if (startDate && q.date < startDate) return false;
     if (endDate && q.date > endDate) return false;
+    if (branchId !== "all" && q.branchId !== branchId) return false;
     return q.status === "done";
   });
 
@@ -67,7 +68,8 @@ export function exportCommissionData(queues, staff, branches, procedures, promos
   });
 
   const csvContent = rows.map(row => row.map(escapeCSV).join(",")).join("\n");
-  const filename = `ค่าคอมมิชชั่น_${startDate || "ทั้งหมด"}_${endDate || "ทั้งหมด"}.csv`;
+  const branchLabel = branchId !== "all" ? `_${branches.find(b => b.id === branchId)?.name || branchId}` : "";
+  const filename = `ค่าคอมมิชชั่น${branchLabel}_${startDate || "ทั้งหมด"}_${endDate || "ทั้งหมด"}.csv`;
   downloadCSV(filename, csvContent);
 }
 
@@ -75,11 +77,12 @@ export function exportCommissionData(queues, staff, branches, procedures, promos
 // EXPORT COMMISSION SUMMARY BY STAFF
 // ═══════════════════════════════════════════════════════════
 
-export function exportCommissionSummary(queues, staff, branches, startDate, endDate) {
+export function exportCommissionSummary(queues, staff, branches, startDate, endDate, branchId = "all") {
   const filteredQueues = queues.filter(q => {
     if (!q.date) return false;
     if (startDate && q.date < startDate) return false;
     if (endDate && q.date > endDate) return false;
+    if (branchId !== "all" && q.branchId !== branchId) return false;
     return q.status === "done";
   });
 
@@ -117,7 +120,8 @@ export function exportCommissionSummary(queues, staff, branches, startDate, endD
   });
 
   const csvContent = rows.map(row => row.map(escapeCSV).join(",")).join("\n");
-  const filename = `สรุปค่าคอมพนักงาน_${startDate || "ทั้งหมด"}_${endDate || "ทั้งหมด"}.csv`;
+  const branchLabel = branchId !== "all" ? `_${branches.find(b => b.id === branchId)?.name || branchId}` : "";
+  const filename = `สรุปค่าคอมพนักงาน${branchLabel}_${startDate || "ทั้งหมด"}_${endDate || "ทั้งหมด"}.csv`;
   downloadCSV(filename, csvContent);
 }
 
@@ -125,11 +129,12 @@ export function exportCommissionSummary(queues, staff, branches, startDate, endD
 // EXPORT QUEUE DATA
 // ═══════════════════════════════════════════════════════════
 
-export function exportQueueData(queues, branches, rooms, procedures, promos, staff, startDate, endDate) {
+export function exportQueueData(queues, branches, rooms, procedures, promos, staff, startDate, endDate, branchId = "all") {
   const filteredQueues = queues.filter(q => {
     if (!q.date) return false;
     if (startDate && q.date < startDate) return false;
     if (endDate && q.date > endDate) return false;
+    if (branchId !== "all" && q.branchId !== branchId) return false;
     return true;
   });
 
@@ -177,7 +182,8 @@ export function exportQueueData(queues, branches, rooms, procedures, promos, sta
   });
 
   const csvContent = rows.map(row => row.map(escapeCSV).join(",")).join("\n");
-  const filename = `ข้อมูลคิว_${startDate || "ทั้งหมด"}_${endDate || "ทั้งหมด"}.csv`;
+  const branchLabel = branchId !== "all" ? `_${branches.find(b => b.id === branchId)?.name || branchId}` : "";
+  const filename = `ข้อมูลคิว${branchLabel}_${startDate || "ทั้งหมด"}_${endDate || "ทั้งหมด"}.csv`;
   downloadCSV(filename, csvContent);
 }
 
@@ -185,11 +191,12 @@ export function exportQueueData(queues, branches, rooms, procedures, promos, sta
 // EXPORT SUMMARY DATA
 // ═══════════════════════════════════════════════════════════
 
-export function exportSummaryData(queues, branches, procedures, startDate, endDate) {
+export function exportSummaryData(queues, branches, procedures, startDate, endDate, branchId = "all") {
   const filteredQueues = queues.filter(q => {
     if (!q.date) return false;
     if (startDate && q.date < startDate) return false;
     if (endDate && q.date > endDate) return false;
+    if (branchId !== "all" && q.branchId !== branchId) return false;
     return true;
   });
 
@@ -197,7 +204,8 @@ export function exportSummaryData(queues, branches, procedures, startDate, endDa
     ["สาขา", "หัตถการ", "ลูกค้าใหม่", "ลูกค้าเก่า", "ใช้คอร์ส", "รวมคิว", "รวมรายได้"]
   ];
 
-  branches.forEach(branch => {
+  const filteredBranches = branchId !== "all" ? branches.filter(b => b.id === branchId) : branches;
+  filteredBranches.forEach(branch => {
     const branchQueues = filteredQueues.filter(q => q.branchId === branch.id && q.status === "done");
     
     procedures.forEach(procedure => {
@@ -223,7 +231,8 @@ export function exportSummaryData(queues, branches, procedures, startDate, endDa
   });
 
   const csvContent = rows.map(row => row.map(escapeCSV).join(",")).join("\n");
-  const filename = `สรุปรายได้_${startDate || "ทั้งหมด"}_${endDate || "ทั้งหมด"}.csv`;
+  const branchLabel = branchId !== "all" ? `_${branches.find(b => b.id === branchId)?.name || branchId}` : "";
+  const filename = `สรุปรายได้${branchLabel}_${startDate || "ทั้งหมด"}_${endDate || "ทั้งหมด"}.csv`;
   downloadCSV(filename, csvContent);
 }
 
