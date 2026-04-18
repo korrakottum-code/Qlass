@@ -2,6 +2,56 @@ import { useState, useMemo, useCallback } from "react";
 import { CUSTOMER_TYPES, PROCEDURE_CATEGORIES } from "../utils/constants";
 import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass, canViewAllBranches } from "../utils/helpers";
 
+// ─── Date Distribution Bar Chart ───
+const DOW_SHORT = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+
+function DateDistributionChart({ title, queues }) {
+  const data = useMemo(() => {
+    const m = {};
+    queues.forEach(q => {
+      if (q.date) m[q.date] = (m[q.date] || 0) + 1;
+    });
+    return Object.entries(m)
+      .map(([date, count]) => {
+        const d = new Date(date);
+        const dow = DOW_SHORT[d.getDay()];
+        const day = parseInt(date.slice(8));
+        const month = d.getMonth() + 1;
+        return { date, label: `${dow} ${day}/${month}`, count };
+      })
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [queues]);
+
+  if (data.length === 0) return null;
+  const max = Math.max(...data.map(d => d.count), 1);
+  const today = getTodayStr();
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text2)", marginBottom: 8 }}>{title}</div>
+      <div style={{ display: "flex", gap: 4, alignItems: "flex-end", flexWrap: "wrap" }}>
+        {data.map(({ date, label, count }) => {
+          const isToday = date === today;
+          const heightPct = Math.max(12, (count / max) * 80);
+          return (
+            <div key={date} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 36 }}>
+              <span style={{ fontSize: 10, fontWeight: 800, color: "var(--accent)" }}>{count}</span>
+              <div style={{
+                width: 32,
+                height: heightPct,
+                background: isToday ? "var(--accent)" : `rgba(185,94,66,${0.3 + 0.7 * (count / max)})`,
+                borderRadius: "4px 4px 0 0",
+                border: isToday ? "2px solid var(--accent)" : "none",
+              }} />
+              <span style={{ fontSize: 9, color: isToday ? "var(--accent)" : "var(--text3)", fontWeight: isToday ? 800 : 400, textAlign: "center", whiteSpace: "nowrap" }}>{label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Mini Bar Chart ───
 function MiniBarChart({ title, data, colorFn }) {
   if (!data || data.length === 0) return null;
@@ -10,7 +60,7 @@ function MiniBarChart({ title, data, colorFn }) {
     <div style={{ marginBottom: 16 }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text2)", marginBottom: 8 }}>{title}</div>
       <div style={{ display: "grid", gap: 5 }}>
-        {data.slice(0, 8).map((d, i) => (
+        {data.map((d, i) => (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{ width: 110, fontSize: 11, color: "var(--text2)", textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>
               {d.label}
@@ -286,6 +336,7 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterProcedure, setFilterProcedure] = useState("all");
   const [filterBranch, setFilterBranch] = useState("all");
+  const [filterCustomerType, setFilterCustomerType] = useState("all");
   const isMultiBranch = canViewAllBranches(currentUser);
 
   // ─── คำนวณ date range ตาม viewMode ───
@@ -339,8 +390,13 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
     if (filterProcedure !== "all") {
       result = result.filter(q => q.procedureId === filterProcedure);
     }
+    if (filterCustomerType === "new+old") {
+      result = result.filter(q => q.customerType === "new" || q.customerType === "old");
+    } else if (filterCustomerType !== "all") {
+      result = result.filter(q => q.customerType === filterCustomerType);
+    }
     return result;
-  }, [queues, filterCategory, filterProcedure, filterBranch, isMultiBranch, procedures]);
+  }, [queues, filterCategory, filterProcedure, filterBranch, filterCustomerType, isMultiBranch, procedures]);
 
   // ─── filter ตาม date range ───
   const inRange = useCallback((dateStr) => {
@@ -435,6 +491,18 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
           </select>
         </div>
 
+        {/* Customer Type filter */}
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">ประเภทลูกค้า</label>
+          <select value={filterCustomerType} onChange={(e) => setFilterCustomerType(e.target.value)} style={{ minWidth: 140 }}>
+            <option value="all">ทั้งหมด</option>
+            <option value="new+old">ลูกใหม่+เก่า</option>
+            <option value="new">ลูกค้าใหม่</option>
+            <option value="old">ลูกค้าเก่า</option>
+            <option value="course">ใช้คอร์ส</option>
+          </select>
+        </div>
+
         {/* Range label */}
         <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 2 }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: "var(--accent)" }}>{rangeLabel}</span>
@@ -459,11 +527,14 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
           </div>
         )}
         {recordedQueues.length > 0 && (
+          <>
+          <DateDistributionChart title="📅 คิวไปนัดวันไหนบ้าง" queues={recordedQueues} />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginTop: 12 }}>
             {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; recordedQueues.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} />}
             <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; recordedQueues.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} />
             <MiniBarChart title="💉 หัตถการ" data={(() => { const m = {}; recordedQueues.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} />
           </div>
+          </>
         )}
       </CollapsibleCard>
 
@@ -485,11 +556,14 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
           </div>
         )}
         {appointmentQueues.length > 0 && (
+          <>
+          <DateDistributionChart title="📅 คิวไปนัดวันไหนบ้าง" queues={appointmentQueues} />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginTop: 12 }}>
             {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; appointmentQueues.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} />}
             <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; appointmentQueues.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} />
             <MiniBarChart title="💉 หัตถการ" data={(() => { const m = {}; appointmentQueues.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} />
           </div>
+          </>
         )}
       </CollapsibleCard>
     </>
