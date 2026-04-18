@@ -819,18 +819,33 @@ export default function AiChatPage({ queues, branches, procedures, promos, staff
   return <AiChatInner queues={queues} branches={branches} procedures={procedures} promos={promos} staff={staff} rooms={rooms} />;
 }
 
+const MEMORY_KEY = "ai_chat_memory_v1";
+function loadMemory() {
+  try { return JSON.parse(localStorage.getItem(MEMORY_KEY) || "[]"); } catch { return []; }
+}
+function saveMemory(list) {
+  try { localStorage.setItem(MEMORY_KEY, JSON.stringify(list)); } catch {}
+}
+
 function AiChatInner({ queues, branches, procedures, promos, staff, rooms }) {
   const [messages, setMessages] = useState([
-    { role: "assistant", text: "สวัสดีครับ! ถามได้เลยเกี่ยวกับข้อมูลคิว สาขา หัตถการ หรือสถิติต่างๆ ครับ 😊" }
+    { role: "assistant", text: "สวัสดีครับ! ถามได้เลย หรือสอนผมได้ เช่น 'จำไว้นะว่า...' 'ครั้งหน้าอย่า...' 😊" }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [memory, setMemory] = useState(() => loadMemory());
+  const [showMemory, setShowMemory] = useState(false);
   const bottomRef = useRef(null);
   const today = getTodayStr();
 
   const context = useMemo(
-    () => buildContext(queues, branches, procedures, promos, staff, rooms, today),
-    [queues, branches, procedures, promos, staff, rooms, today]
+    () => {
+      const baseCtx = buildContext(queues, branches, procedures, promos, staff, rooms, today);
+      const memBlock = memory.length === 0 ? "" : `\n\n════════════════════════════════════════════════\n=== 🧠 สิ่งที่ผู้ใช้สอนไว้ (จำไว้เสมอ, มี priority สูงสุด เหนือกฎอื่น) ===\n${memory.map((m,i) => `${i+1}. ${m.rule}`).join("\n")}\n════════════════════════════════════════════════\n`;
+      const teachInstr = `\n\n⚠️ ระบบเรียนรู้อัตโนมัติ (IMPORTANT):\nถ้าผู้ใช้บอกให้คุณจำกฎ/ความชอบ/นิยามคำศัพท์ (เช่น "จำไว้", "ครั้งหน้าอย่า", "ห้าม...", "ต้อง...เสมอ", "เข้าใจไว้ว่า", "สอนไว้ว่า") ให้ลงท้ายคำตอบด้วยบรรทัดพิเศษ:\n<<<MEMORIZE>>>[กฎที่สรุปแล้วเป็นประโยคเดียว ชัดเจน ใช้ซ้ำได้]<<<END>>>\nห้ามโชว์แท็กนี้ให้ผู้ใช้เห็น ใส่ท้ายสุดเท่านั้น — ระบบจะ strip ออกก่อนแสดง\nถ้าผู้ใช้ขอให้ลืม/ลบกฎที่เคยสอน ให้ตอบแนะนำให้กดปุ่ม 🧠 ด้านบนเพื่อลบ`;
+      return baseCtx + teachInstr + memBlock;
+    },
+    [queues, branches, procedures, promos, staff, rooms, today, memory]
   );
 
   useEffect(() => {
@@ -861,7 +876,30 @@ function AiChatInner({ queues, branches, procedures, promos, staff, rooms }) {
       });
 
       const data = await res.json();
-      const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "ขออภัย ไม่สามารถตอบได้ในขณะนี้";
+      let reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "ขออภัย ไม่สามารถตอบได้ในขณะนี้";
+
+      // ─── Detect MEMORIZE tag and auto-save ───
+      const memMatches = [...reply.matchAll(/<<<MEMORIZE>>>([\s\S]*?)<<<END>>>/g)];
+      if (memMatches.length > 0) {
+        const newRules = memMatches.map(m => ({
+          id: `m${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
+          rule: m[1].trim(),
+          createdAt: new Date().toISOString(),
+        })).filter(r => r.rule.length > 0);
+        if (newRules.length > 0) {
+          setMemory(prev => {
+            const updated = [...prev, ...newRules];
+            saveMemory(updated);
+            return updated;
+          });
+        }
+      }
+      // strip tags from display
+      reply = reply.replace(/<<<MEMORIZE>>>[\s\S]*?<<<END>>>/g, "").trim();
+      if (memMatches.length > 0) {
+        reply += `\n\n✨ จำไว้แล้ว ${memMatches.length} ข้อ (กด 🧠 ด้านบนเพื่อดู/ลบ)`;
+      }
+
       setMessages(prev => [...prev, { role: "assistant", text: reply }]);
     } catch (e) {
       setMessages(prev => [...prev, { role: "assistant", text: "❌ เกิดข้อผิดพลาด กรุณาลองใหม่" }]);
@@ -876,7 +914,42 @@ function AiChatInner({ queues, branches, procedures, promos, staff, rooms }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 120px)", maxWidth: 800, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 16, color: "#1a1a2e" }}>🤖 AI ผู้ช่วย</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 800, color: "#1a1a2e", margin: 0 }}>🤖 AI ผู้ช่วย</h1>
+        <button onClick={() => setShowMemory(s => !s)} style={{
+          padding: "6px 12px", borderRadius: 10, border: "1.5px solid var(--accent)",
+          background: memory.length > 0 ? "var(--accent)" : "transparent",
+          color: memory.length > 0 ? "#fff" : "var(--accent)",
+          fontSize: 12, fontWeight: 600, cursor: "pointer"
+        }}>🧠 ความจำ ({memory.length})</button>
+      </div>
+
+      {showMemory && (
+        <div style={{ background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: 12, padding: 12, marginBottom: 12, maxHeight: 200, overflowY: "auto" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "#1a1a2e" }}>📚 กฎที่ AI จำไว้</div>
+          {memory.length === 0 ? (
+            <div style={{ fontSize: 12, color: "#9ca3af", textAlign: "center", padding: 12 }}>
+              ยังไม่มี — สอน AI ได้โดยพิมพ์ "จำไว้นะว่า..." หรือ "ห้าม..."
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {memory.map((m) => (
+                <div key={m.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: 8, background: "#f9fafb", borderRadius: 8, fontSize: 12 }}>
+                  <div style={{ flex: 1, lineHeight: 1.5 }}>{m.rule}</div>
+                  <button onClick={() => {
+                    const updated = memory.filter(x => x.id !== m.id);
+                    setMemory(updated);
+                    saveMemory(updated);
+                  }} style={{ background: "transparent", border: "none", color: "#dc2626", cursor: "pointer", fontSize: 14, padding: "0 4px" }}>✕</button>
+                </div>
+              ))}
+              <button onClick={() => {
+                if (confirm("ลบความจำทั้งหมด?")) { setMemory([]); saveMemory([]); }
+              }} style={{ marginTop: 4, padding: "4px 8px", fontSize: 11, background: "transparent", border: "1px solid #dc2626", color: "#dc2626", borderRadius: 6, cursor: "pointer" }}>ลบทั้งหมด</button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Chat area */}
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, padding: "4px 0", marginBottom: 16 }}>
