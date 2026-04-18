@@ -51,6 +51,16 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
   const adminClosedYesterdayByStaff = adminClosedByStaff(adminClosedYesterday);
   const adminClosedMonthByStaff = adminClosedByStaff(adminClosedMonth);
 
+  // ─── ตารางรายวัน 60 วันย้อนหลัง (admin closed ต่อวัน + breakdown by admin) ───
+  const adminClosedDaily = [];
+  for (let i = 0; i < 60; i++) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    const dStr = d.toISOString().slice(0,10);
+    const list = queues.filter(q => recordedDateOf(q) === dStr && isAdminClosed(q));
+    const by = adminClosedByStaff(list);
+    adminClosedDaily.push({ date: dStr, total: list.length, byAdmin: by });
+  }
+
   // วันที่ 7 วันย้อนหลัง (รวมวันนี้)
   const last7Days = [];
   for (let i = 6; i >= 0; i--) {
@@ -498,9 +508,16 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
   }).join(", ");
 
   // จำกัด 90 วัน (past 60 + future 30) เพื่อประหยัด token
+  // รวมถ้า date หรือ createdAt อยู่ในช่วง (เพื่อให้นับ "คิวที่บันทึกวันนั้น" ได้ครบแม้ appointment จะนอกช่วง)
   const dumpStart = (() => { const d = new Date(today); d.setDate(d.getDate() - 60); return d.toISOString().slice(0,10); })();
   const dumpEnd = (() => { const d = new Date(today); d.setDate(d.getDate() + 30); return d.toISOString().slice(0,10); })();
-  const dumpQueues = queues.filter(q => q.date && q.date >= dumpStart && q.date <= dumpEnd);
+  const dumpQueues = queues.filter(q => {
+    const d = q.date || "";
+    const c = recordedDateOf(q);
+    const dateIn = d >= dumpStart && d <= dumpEnd;
+    const createdIn = c >= dumpStart && c <= dumpEnd;
+    return dateIn || createdIn;
+  });
 
   const statusShort = { done: "D", cancelled: "X", no_show: "N", pending: "P", confirmed: "C", rescheduled: "R", follow: "F" };
   const typeShort = { new: "n", old: "o", course: "c" };
@@ -543,7 +560,8 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
 • **ไม่นับ** role อื่นๆ: superadmin (ผู้ดูแลระบบ), head_admin (หัวหน้าแอดมิน), branch_manager (ผู้จัดการ), cashier (แคชเชียร์)
 • **ไม่นับ** คิวที่ customerType === "course" (คิวใช้คอร์ส ไม่ใช่ยอดปิดใหม่)
 • ใช้ **createdAt** เป็นฐานวันที่ (ไม่ใช่ date = วันนัด)
-• ผมมีตัวเลข pre-computed ใน section "📌 แอดมินปิด" ใช้ได้เลย ตอบทันที ไม่ต้องถามกลับ
+• ผมมีตัวเลข pre-computed ใน section "📌 แอดมินปิด" (วันนี้/เมื่อวาน/เดือน) และ "📊 แอดมินปิดรายวัน 60 วันย้อนหลัง" ใช้ได้เลย ตอบทันที ไม่ต้องถามกลับ
+• **สำหรับคำถาม "วันที่ X แอดมินปิดกี่คิว" → อ่านจากตาราง "📊 แอดมินปิดรายวัน" เท่านั้น อย่านับจาก RAW DATA เอง** (pre-computed ถูกต้องแน่นอน กว่านับ CSV เอง)
 
 ⚠️ กฎเหล็ก - คิวมี 2 แบบ ทุกคำถามที่เกี่ยวกับจำนวน/รายการคิว **ต้องถามผู้ใช้ก่อนเสมอ** ว่าหมายถึงแบบไหน ห้ามเดา ห้ามเลือกเอง:
 
@@ -580,6 +598,9 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
 เดือนนี้ (${monthStr}): ${adminClosedMonth.length} คิว
   Top admin: ${adminClosedMonthByStaff.slice(0,15).map(([k,v])=>`${k}(${v})`).join(", ") || "(ไม่มี)"}
 เดือนที่แล้ว (${lastMonthStr}): ${adminClosedLastMonth.length} คิว
+
+=== 📊 แอดมินปิดรายวัน 60 วันย้อนหลัง (ใช้ตอบคำถาม "วันที่ X แอดมินปิดกี่คิว") ===
+${adminClosedDaily.map(d => `${d.date}: ${d.total} คิว${d.byAdmin.length > 0 ? ` [${d.byAdmin.slice(0,8).map(([k,v])=>`${k}=${v}`).join(", ")}]` : ""}`).join("\n")}
 
 === ภาพรวมวันนี้ (${today}) ===
 คิวทั้งหมด: ${todayQueues.length} | Check-in จริง (done): ${todayDone} (${todayCheckInRate}%)
