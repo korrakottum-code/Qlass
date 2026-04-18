@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { getTodayStr, formatThaiDate } from "../utils/helpers";
+import { supabase } from "../utils/supabaseClient";
+import { fetchAiMemory, createAiMemory, deleteAiMemory, deleteAllAiMemory } from "../utils/supabaseService";
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
@@ -21,6 +23,33 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
   const monthRecorded = queues.filter(q => recordedDateOf(q).startsWith(monthStr));
   const lastMonthRecorded = queues.filter(q => recordedDateOf(q).startsWith(lastMonthStr));
   const preBookCount = monthRecorded.filter(q => q.date && q.date !== recordedDateOf(q)).length;
+
+  // ─── "แอดมินปิดได้" = คิวที่ recordedBy.role === "admin" + ไม่ใช่ customerType "course" ───
+  // "ปิด" = บันทึกสำเร็จ ไม่สนใจ status ภายหลัง
+  const isAdminClosed = (q) => {
+    if (!q.recordedBy) return false;
+    if (q.customerType === "course") return false;
+    const s = (staff || []).find(x => x.id === q.recordedBy);
+    return s?.role === "admin";
+  };
+  const yesterday = (() => { const d = new Date(today); d.setDate(d.getDate() - 1); return d.toISOString().slice(0,10); })();
+  const adminClosedToday = queues.filter(q => recordedDateOf(q) === today && isAdminClosed(q));
+  const adminClosedYesterday = queues.filter(q => recordedDateOf(q) === yesterday && isAdminClosed(q));
+  const adminClosedMonth = queues.filter(q => recordedDateOf(q).startsWith(monthStr) && isAdminClosed(q));
+  const adminClosedLastMonth = queues.filter(q => recordedDateOf(q).startsWith(lastMonthStr) && isAdminClosed(q));
+
+  const adminClosedByStaff = (list) => {
+    const m = {};
+    list.forEach(q => {
+      const s = (staff || []).find(x => x.id === q.recordedBy);
+      const k = s ? (s.nickname || s.name) : "?";
+      m[k] = (m[k] || 0) + 1;
+    });
+    return Object.entries(m).sort((a,b)=>b[1]-a[1]);
+  };
+  const adminClosedTodayByStaff = adminClosedByStaff(adminClosedToday);
+  const adminClosedYesterdayByStaff = adminClosedByStaff(adminClosedYesterday);
+  const adminClosedMonthByStaff = adminClosedByStaff(adminClosedMonth);
 
   // วันที่ 7 วันย้อนหลัง (รวมวันนี้)
   const last7Days = [];
@@ -461,7 +490,7 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
 
   const branchLookup = branches.map((b,i) => `B${i+1}=${b.name}`).join(", ");
   const procLookup = procedures.map((p,i) => `P${i+1}=${p.name}`).join(", ");
-  const staffLookup = (staff || []).map((s,i) => `S${i+1}=${s.nickname || s.name}`).join(", ");
+  const staffLookup = (staff || []).map((s,i) => `S${i+1}=${s.nickname || s.name}[${s.role || "?"}]`).join(", ");
   const promoLookup = (promos || []).map((p,i) => `PR${i+1}=${p.name}`).join(", ");
   const roomLookup = (rooms || []).map((r,i) => {
     const b = branches.find(x => x.id === r.branchId);
@@ -508,6 +537,14 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
 • ถ้ามีคนถามเรื่องรายได้ตรงๆ ให้บอกว่า "ระบบไม่มีข้อมูลรายได้จริง มีแค่มูลค่าคาดการณ์จากราคาโปรที่ลูกค้าจอง จำนวนเงินจริงต้องดูที่หน้าเคาน์เตอร์/ระบบบัญชี"
 • ไม่ต้องพูดเรื่องตัวเลขราคา/มูลค่าเยอะ — ถ้าไม่ได้ถามตรงๆ ไม่ต้องใส่มาเอง
 
+⚠️ กฎเหล็ก - "แอดมินปิด" / "ปิดคิว" / "แอดมินบันทึก":
+• "ปิด" = **บันทึกคิวสำเร็จ** (ไม่สนใจสถานะภายหลัง ไม่ว่าลูกค้าจะมา/ยกเลิก/ไม่มา ก็นับหมด)
+• นับเฉพาะคิวที่ **recordedBy.role === "admin"** เท่านั้น (ในระบบ role "admin" คือแอดมินจริงๆ)
+• **ไม่นับ** role อื่นๆ: superadmin (ผู้ดูแลระบบ), head_admin (หัวหน้าแอดมิน), branch_manager (ผู้จัดการ), cashier (แคชเชียร์)
+• **ไม่นับ** คิวที่ customerType === "course" (คิวใช้คอร์ส ไม่ใช่ยอดปิดใหม่)
+• ใช้ **createdAt** เป็นฐานวันที่ (ไม่ใช่ date = วันนัด)
+• ผมมีตัวเลข pre-computed ใน section "📌 แอดมินปิด" ใช้ได้เลย ตอบทันที ไม่ต้องถามกลับ
+
 ⚠️ กฎเหล็ก - คิวมี 2 แบบ ทุกคำถามที่เกี่ยวกับจำนวน/รายการคิว **ต้องถามผู้ใช้ก่อนเสมอ** ว่าหมายถึงแบบไหน ห้ามเดา ห้ามเลือกเอง:
 
 1. **"คิวที่บันทึก"** = คิวที่แอดมินลงบันทึกในวันนั้นๆ แต่ไม่รู้ว่าลูกค้าจะเข้ามาใช้บริการวันไหน (นับตาม createdAt)
@@ -534,6 +571,15 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
   • Pre-book (บันทึกเดือนนี้แต่นัดวันอื่น): ${preBookCount} คิว
 เดือนที่แล้ว (${lastMonthStr}):
   • บันทึก: ${lastMonthRecorded.length} คิว | มีนัด: ${lastMonthQueues.length} คิว
+
+=== 📌 แอดมินปิด (role=admin, ไม่รวมคอร์ส, นับทุก status) ===
+วันนี้ (${today}): ${adminClosedToday.length} คิว
+  Top admin: ${adminClosedTodayByStaff.slice(0,10).map(([k,v])=>`${k}(${v})`).join(", ") || "(ไม่มี)"}
+เมื่อวาน (${yesterday}): ${adminClosedYesterday.length} คิว
+  Top admin: ${adminClosedYesterdayByStaff.slice(0,10).map(([k,v])=>`${k}(${v})`).join(", ") || "(ไม่มี)"}
+เดือนนี้ (${monthStr}): ${adminClosedMonth.length} คิว
+  Top admin: ${adminClosedMonthByStaff.slice(0,15).map(([k,v])=>`${k}(${v})`).join(", ") || "(ไม่มี)"}
+เดือนที่แล้ว (${lastMonthStr}): ${adminClosedLastMonth.length} คิว
 
 === ภาพรวมวันนี้ (${today}) ===
 คิวทั้งหมด: ${todayQueues.length} | Check-in จริง (done): ${todayDone} (${todayCheckInRate}%)
@@ -777,16 +823,35 @@ export default function AiChatPage({ queues, branches, procedures, promos, staff
 
 function AiChatInner({ queues, branches, procedures, promos, staff, rooms }) {
   const [messages, setMessages] = useState([
-    { role: "assistant", text: "สวัสดีครับ! ถามได้เลยเกี่ยวกับข้อมูลคิว สาขา หัตถการ หรือสถิติต่างๆ ครับ 😊" }
+    { role: "assistant", text: "สวัสดีครับ! ถามได้เลย หรือสอนผมได้ เช่น 'จำไว้นะว่า...' 'ครั้งหน้าอย่า...' 😊" }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [memory, setMemory] = useState([]);
+  const [showMemory, setShowMemory] = useState(false);
   const bottomRef = useRef(null);
   const today = getTodayStr();
 
+  // โหลด memory จาก Supabase ตอน mount + subscribe realtime
+  useEffect(() => {
+    let mounted = true;
+    fetchAiMemory().then(list => { if (mounted) setMemory(list); });
+    const channel = supabase.channel("ai_memory_changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "ai_memory" }, () => {
+        fetchAiMemory().then(list => { if (mounted) setMemory(list); });
+      })
+      .subscribe();
+    return () => { mounted = false; supabase.removeChannel(channel); };
+  }, []);
+
   const context = useMemo(
-    () => buildContext(queues, branches, procedures, promos, staff, rooms, today),
-    [queues, branches, procedures, promos, staff, rooms, today]
+    () => {
+      const baseCtx = buildContext(queues, branches, procedures, promos, staff, rooms, today);
+      const memBlock = memory.length === 0 ? "" : `\n\n════════════════════════════════════════════════\n=== 🧠 สิ่งที่ผู้ใช้สอนไว้ (จำไว้เสมอ, มี priority สูงสุด เหนือกฎอื่น) ===\n${memory.map((m,i) => `${i+1}. ${m.rule}`).join("\n")}\n════════════════════════════════════════════════\n`;
+      const teachInstr = `\n\n⚠️ ระบบเรียนรู้อัตโนมัติ (IMPORTANT):\nถ้าผู้ใช้บอกให้คุณจำกฎ/ความชอบ/นิยามคำศัพท์ (เช่น "จำไว้", "ครั้งหน้าอย่า", "ห้าม...", "ต้อง...เสมอ", "เข้าใจไว้ว่า", "สอนไว้ว่า") ให้ลงท้ายคำตอบด้วยบรรทัดพิเศษ:\n<<<MEMORIZE>>>[กฎที่สรุปแล้วเป็นประโยคเดียว ชัดเจน ใช้ซ้ำได้]<<<END>>>\nห้ามโชว์แท็กนี้ให้ผู้ใช้เห็น ใส่ท้ายสุดเท่านั้น — ระบบจะ strip ออกก่อนแสดง\nถ้าผู้ใช้ขอให้ลืม/ลบกฎที่เคยสอน ให้ตอบแนะนำให้กดปุ่ม 🧠 ด้านบนเพื่อลบ`;
+      return baseCtx + teachInstr + memBlock;
+    },
+    [queues, branches, procedures, promos, staff, rooms, today, memory]
   );
 
   useEffect(() => {
@@ -817,7 +882,25 @@ function AiChatInner({ queues, branches, procedures, promos, staff, rooms }) {
       });
 
       const data = await res.json();
-      const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "ขออภัย ไม่สามารถตอบได้ในขณะนี้";
+      let reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "ขออภัย ไม่สามารถตอบได้ในขณะนี้";
+
+      // ─── Detect MEMORIZE tag and auto-save to Supabase ───
+      const memMatches = [...reply.matchAll(/<<<MEMORIZE>>>([\s\S]*?)<<<END>>>/g)];
+      const rulesToSave = memMatches.map(m => m[1].trim()).filter(r => r.length > 0);
+      if (rulesToSave.length > 0) {
+        try {
+          const saved = await Promise.all(rulesToSave.map(r => createAiMemory(r)));
+          setMemory(prev => [...prev, ...saved]);
+        } catch (err) {
+          console.error("Failed to save memory:", err);
+        }
+      }
+      // strip tags from display
+      reply = reply.replace(/<<<MEMORIZE>>>[\s\S]*?<<<END>>>/g, "").trim();
+      if (memMatches.length > 0) {
+        reply += `\n\n✨ จำไว้แล้ว ${memMatches.length} ข้อ (กด 🧠 ด้านบนเพื่อดู/ลบ)`;
+      }
+
       setMessages(prev => [...prev, { role: "assistant", text: reply }]);
     } catch (e) {
       setMessages(prev => [...prev, { role: "assistant", text: "❌ เกิดข้อผิดพลาด กรุณาลองใหม่" }]);
@@ -832,7 +915,45 @@ function AiChatInner({ queues, branches, procedures, promos, staff, rooms }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 120px)", maxWidth: 800, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 16, color: "#1a1a2e" }}>🤖 AI ผู้ช่วย</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 800, color: "#1a1a2e", margin: 0 }}>🤖 AI ผู้ช่วย</h1>
+        <button onClick={() => setShowMemory(s => !s)} style={{
+          padding: "6px 12px", borderRadius: 10, border: "1.5px solid var(--accent)",
+          background: memory.length > 0 ? "var(--accent)" : "transparent",
+          color: memory.length > 0 ? "#fff" : "var(--accent)",
+          fontSize: 12, fontWeight: 600, cursor: "pointer"
+        }}>🧠 ความจำ ({memory.length})</button>
+      </div>
+
+      {showMemory && (
+        <div style={{ background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: 12, padding: 12, marginBottom: 12, maxHeight: 200, overflowY: "auto" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "#1a1a2e" }}>📚 กฎที่ AI จำไว้</div>
+          {memory.length === 0 ? (
+            <div style={{ fontSize: 12, color: "#9ca3af", textAlign: "center", padding: 12 }}>
+              ยังไม่มี — สอน AI ได้โดยพิมพ์ "จำไว้นะว่า..." หรือ "ห้าม..."
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {memory.map((m) => (
+                <div key={m.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: 8, background: "#f9fafb", borderRadius: 8, fontSize: 12 }}>
+                  <div style={{ flex: 1, lineHeight: 1.5 }}>{m.rule}</div>
+                  <button onClick={async () => {
+                    try {
+                      await deleteAiMemory(m.id);
+                      setMemory(prev => prev.filter(x => x.id !== m.id));
+                    } catch (err) { console.error(err); }
+                  }} style={{ background: "transparent", border: "none", color: "#dc2626", cursor: "pointer", fontSize: 14, padding: "0 4px" }}>✕</button>
+                </div>
+              ))}
+              <button onClick={async () => {
+                if (confirm("ลบความจำทั้งหมด? (ทุกเครื่องจะหายด้วย)")) {
+                  try { await deleteAllAiMemory(); setMemory([]); } catch (err) { console.error(err); }
+                }
+              }} style={{ marginTop: 4, padding: "4px 8px", fontSize: 11, background: "transparent", border: "1px solid #dc2626", color: "#dc2626", borderRadius: 6, cursor: "pointer" }}>ลบทั้งหมด</button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Chat area */}
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, padding: "4px 0", marginBottom: 16 }}>
