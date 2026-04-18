@@ -825,3 +825,40 @@ export async function fetchActivityLogs({ limit = 100 } = {}) {
     createdAt: r.created_at,
   }));
 }
+
+// ═══════════════════════════════════════════════════════════
+// AI MEMORY (rules AI has learned across devices)
+// ═══════════════════════════════════════════════════════════
+
+export async function fetchAiMemory() {
+  const { data, error } = await supabase
+    .from("ai_memory")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) { console.error("fetchAiMemory:", error); return []; }
+  return (data || []).map(r => ({
+    id: r.id,
+    rule: r.rule,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function createAiMemory(rule) {
+  const { data, error } = await supabase
+    .from("ai_memory")
+    .insert([{ rule }])
+    .select()
+    .single();
+  if (error) { console.error("createAiMemory:", error); throw error; }
+  return { id: data.id, rule: data.rule, createdAt: data.created_at };
+}
+
+export async function deleteAiMemory(id) {
+  const { error } = await supabase.from("ai_memory").delete().eq("id", id);
+  if (error) { console.error("deleteAiMemory:", error); throw error; }
+}
+
+export async function deleteAllAiMemory() {
+  const { error } = await supabase.from("ai_memory").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  if (error) { console.error("deleteAllAiMemory:", error); throw error; }
+}

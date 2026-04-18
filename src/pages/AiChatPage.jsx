@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { getTodayStr, formatThaiDate } from "../utils/helpers";
+import { supabase } from "../utils/supabaseClient";
+import { fetchAiMemory, createAiMemory, deleteAiMemory, deleteAllAiMemory } from "../utils/supabaseService";
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
@@ -819,24 +821,28 @@ export default function AiChatPage({ queues, branches, procedures, promos, staff
   return <AiChatInner queues={queues} branches={branches} procedures={procedures} promos={promos} staff={staff} rooms={rooms} />;
 }
 
-const MEMORY_KEY = "ai_chat_memory_v1";
-function loadMemory() {
-  try { return JSON.parse(localStorage.getItem(MEMORY_KEY) || "[]"); } catch { return []; }
-}
-function saveMemory(list) {
-  try { localStorage.setItem(MEMORY_KEY, JSON.stringify(list)); } catch {}
-}
-
 function AiChatInner({ queues, branches, procedures, promos, staff, rooms }) {
   const [messages, setMessages] = useState([
     { role: "assistant", text: "สวัสดีครับ! ถามได้เลย หรือสอนผมได้ เช่น 'จำไว้นะว่า...' 'ครั้งหน้าอย่า...' 😊" }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [memory, setMemory] = useState(() => loadMemory());
+  const [memory, setMemory] = useState([]);
   const [showMemory, setShowMemory] = useState(false);
   const bottomRef = useRef(null);
   const today = getTodayStr();
+
+  // โหลด memory จาก Supabase ตอน mount + subscribe realtime
+  useEffect(() => {
+    let mounted = true;
+    fetchAiMemory().then(list => { if (mounted) setMemory(list); });
+    const channel = supabase.channel("ai_memory_changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "ai_memory" }, () => {
+        fetchAiMemory().then(list => { if (mounted) setMemory(list); });
+      })
+      .subscribe();
+    return () => { mounted = false; supabase.removeChannel(channel); };
+  }, []);
 
   const context = useMemo(
     () => {
@@ -878,20 +884,15 @@ function AiChatInner({ queues, branches, procedures, promos, staff, rooms }) {
       const data = await res.json();
       let reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "ขออภัย ไม่สามารถตอบได้ในขณะนี้";
 
-      // ─── Detect MEMORIZE tag and auto-save ───
+      // ─── Detect MEMORIZE tag and auto-save to Supabase ───
       const memMatches = [...reply.matchAll(/<<<MEMORIZE>>>([\s\S]*?)<<<END>>>/g)];
-      if (memMatches.length > 0) {
-        const newRules = memMatches.map(m => ({
-          id: `m${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
-          rule: m[1].trim(),
-          createdAt: new Date().toISOString(),
-        })).filter(r => r.rule.length > 0);
-        if (newRules.length > 0) {
-          setMemory(prev => {
-            const updated = [...prev, ...newRules];
-            saveMemory(updated);
-            return updated;
-          });
+      const rulesToSave = memMatches.map(m => m[1].trim()).filter(r => r.length > 0);
+      if (rulesToSave.length > 0) {
+        try {
+          const saved = await Promise.all(rulesToSave.map(r => createAiMemory(r)));
+          setMemory(prev => [...prev, ...saved]);
+        } catch (err) {
+          console.error("Failed to save memory:", err);
         }
       }
       // strip tags from display
@@ -936,15 +937,18 @@ function AiChatInner({ queues, branches, procedures, promos, staff, rooms }) {
               {memory.map((m) => (
                 <div key={m.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: 8, background: "#f9fafb", borderRadius: 8, fontSize: 12 }}>
                   <div style={{ flex: 1, lineHeight: 1.5 }}>{m.rule}</div>
-                  <button onClick={() => {
-                    const updated = memory.filter(x => x.id !== m.id);
-                    setMemory(updated);
-                    saveMemory(updated);
+                  <button onClick={async () => {
+                    try {
+                      await deleteAiMemory(m.id);
+                      setMemory(prev => prev.filter(x => x.id !== m.id));
+                    } catch (err) { console.error(err); }
                   }} style={{ background: "transparent", border: "none", color: "#dc2626", cursor: "pointer", fontSize: 14, padding: "0 4px" }}>✕</button>
                 </div>
               ))}
-              <button onClick={() => {
-                if (confirm("ลบความจำทั้งหมด?")) { setMemory([]); saveMemory([]); }
+              <button onClick={async () => {
+                if (confirm("ลบความจำทั้งหมด? (ทุกเครื่องจะหายด้วย)")) {
+                  try { await deleteAllAiMemory(); setMemory([]); } catch (err) { console.error(err); }
+                }
               }} style={{ marginTop: 4, padding: "4px 8px", fontSize: 11, background: "transparent", border: "1px solid #dc2626", color: "#dc2626", borderRadius: 6, cursor: "pointer" }}>ลบทั้งหมด</button>
             </div>
           )}
