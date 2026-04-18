@@ -13,6 +13,7 @@ import {
 export default function ExportPage({ queues, branches, rooms, procedures, promos, staff, roomSchedules }) {
   const [startDate, setStartDate] = useState(getTodayStr());
   const [endDate, setEndDate] = useState(getTodayStr());
+  const [filterBranch, setFilterBranch] = useState("all");
 
   return (
     <div>
@@ -66,6 +67,21 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
               }}
             />
           </div>
+          <div>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#6b7280" }}>
+              สาขา
+            </label>
+            <select
+              value={filterBranch}
+              onChange={(e) => setFilterBranch(e.target.value)}
+              style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #d1d5db", fontSize: 14, outline: "none", minWidth: 160 }}
+            >
+              <option value="all">ทุกสาขา</option>
+              {branches.map(b => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          </div>
           <div style={{ marginLeft: "auto" }}>
             <button
               onClick={() => {
@@ -99,11 +115,11 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
           buttons={[
             {
               label: "Export รายละเอียดค่าคอม",
-              onClick: () => exportCommissionData(queues, staff, branches, procedures, promos, startDate, endDate),
+              onClick: () => exportCommissionData(queues, staff, branches, procedures, promos, startDate, endDate, filterBranch),
             },
             {
               label: "Export สรุปค่าคอมพนักงาน",
-              onClick: () => exportCommissionSummary(queues, staff, branches, startDate, endDate),
+              onClick: () => exportCommissionSummary(queues, staff, branches, startDate, endDate, filterBranch),
             },
           ]}
         />
@@ -116,7 +132,7 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
           buttons={[
             {
               label: "Export ข้อมูลคิว",
-              onClick: () => exportQueueData(queues, branches, rooms, procedures, promos, staff, startDate, endDate),
+              onClick: () => exportQueueData(queues, branches, rooms, procedures, promos, staff, startDate, endDate, filterBranch),
             },
           ]}
         />
@@ -129,7 +145,7 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
           buttons={[
             {
               label: "Export สรุปรายได้",
-              onClick: () => exportSummaryData(queues, branches, procedures, startDate, endDate),
+              onClick: () => exportSummaryData(queues, branches, procedures, startDate, endDate, filterBranch),
             },
           ]}
         />
