@@ -898,7 +898,11 @@ function AiChatInner({ queues, branches, procedures, promos, staff, rooms }) {
         body: JSON.stringify({
           system_instruction: { parts: [{ text: context }] },
           contents: [...history, { role: "user", parts: [{ text }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 2048 }
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 8192,
+            thinkingConfig: { thinkingBudget: 0 },
+          }
         })
       });
 
