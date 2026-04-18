@@ -10,9 +10,17 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
   const lastMonthDate = new Date(today); lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
   const lastMonthStr = lastMonthDate.toISOString().slice(0, 7);
 
+  // นับตาม "วันนัด" (date)
   const todayQueues = queues.filter(q => q.date === today);
   const monthQueues = queues.filter(q => q.date?.startsWith(monthStr));
   const lastMonthQueues = queues.filter(q => q.date?.startsWith(lastMonthStr));
+
+  // นับตาม "วันที่บันทึกคิว" (createdAt) — ใช้เมื่อผู้ใช้ถามเรื่อง "คิวที่บันทึก"
+  const recordedDateOf = (q) => (q.createdAt || q.date || "").slice(0, 10);
+  const todayRecorded = queues.filter(q => recordedDateOf(q) === today);
+  const monthRecorded = queues.filter(q => recordedDateOf(q).startsWith(monthStr));
+  const lastMonthRecorded = queues.filter(q => recordedDateOf(q).startsWith(lastMonthStr));
+  const preBookCount = monthRecorded.filter(q => q.date && q.date !== recordedDateOf(q)).length;
 
   // วันที่ 7 วันย้อนหลัง (รวมวันนี้)
   const last7Days = [];
@@ -442,8 +450,32 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
 
   return `คุณคือ AI ผู้ช่วยวิเคราะห์ข้อมูลของระบบ Qlass คลินิกความงาม ตอบเป็นภาษาไทย กระชับ ตรงประเด็น ถ้ามีข้อมูลให้ใช้ข้อมูลตอบทันที ไม่ต้องบอกว่าไม่มีข้อมูลเว้นแต่หาไม่เจอจริงๆ
 
+⚠️ กฎเหล็ก - คิวมี 2 แบบ ทุกคำถามที่เกี่ยวกับจำนวน/รายการคิว **ต้องถามผู้ใช้ก่อนเสมอ** ว่าหมายถึงแบบไหน ห้ามเดา ห้ามเลือกเอง:
+
+1. **"คิวที่บันทึก"** = คิวที่แอดมินลงบันทึกในวันนั้นๆ แต่ไม่รู้ว่าลูกค้าจะเข้ามาใช้บริการวันไหน (นับตาม createdAt)
+2. **"คิวที่นัด"** = คิวที่นัดมาในวันนั้นๆ แต่ไม่รู้ว่าบันทึกมาตั้งแต่เมื่อไหร่ (นับตาม date)
+
+วิธีตอบ:
+• คำถามเกี่ยวกับ "จำนวนคิว / คิวมีกี่คิว / ยอดคิว / คิวของ..." → **ต้องถามกลับทุกครั้ง**:
+  "ต้องการดู **คิวที่บันทึก** (แอดมินลงในวันนั้น) หรือ **คิวที่นัด** (ลูกค้านัดมาวันนั้น) ครับ?"
+• ห้ามเดาเอง แม้คำถามจะดูชัดเจน เช่น "วันนี้ใครมาบ้าง" ก็ต้องถามเพราะอาจเข้าใจต่างกัน
+• คำตอบสถิติอื่น (รายได้, สาขา, หัตถการ) ก็ถามก่อนเหมือนกันถ้าเกี่ยวกับการนับคิว
+• เมื่อผู้ใช้ตอบแล้ว ค่อยใช้ตัวเลขตรงตามที่ระบุใน section "สรุปจำนวนคิว"
+• จำ context การตอบของผู้ใช้ไว้ในบทสนทนาเดียวกัน ถ้าผู้ใช้บอกไปแล้วในข้อความก่อนหน้า ไม่ต้องถามซ้ำ
+
 วันที่วันนี้: ${formatThaiDate(today)} (${today})
 จำนวนสาขา: ${branches.length} | จำนวนพนักงาน: ${staff?.length || 0} | จำนวนหัตถการ: ${procedures.length}
+
+=== สรุปจำนวนคิว (2 แบบ) ===
+วันนี้ (${today}):
+  • บันทึกวันนี้ (createdAt): ${todayRecorded.length} คิว
+  • มีนัดวันนี้ (date): ${todayQueues.length} คิว
+เดือนนี้ (${monthStr}):
+  • บันทึกเดือนนี้ (createdAt): ${monthRecorded.length} คิว ← ตรงกับหน้า "สรุปประจำวัน"
+  • มีนัดเดือนนี้ (date): ${monthQueues.length} คิว
+  • Pre-book (บันทึกเดือนนี้แต่นัดวันอื่น): ${preBookCount} คิว
+เดือนที่แล้ว (${lastMonthStr}):
+  • บันทึก: ${lastMonthRecorded.length} คิว | มีนัด: ${lastMonthQueues.length} คิว
 
 === ภาพรวมวันนี้ (${today}) ===
 คิวทั้งหมด: ${todayQueues.length} | Check-in จริง (done): ${todayDone} (${todayCheckInRate}%)
