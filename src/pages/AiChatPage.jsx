@@ -403,7 +403,7 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
     q => procName(q.procedureId)
   );
 
-  // ─── 💵 รายได้แยก customerType (เดือนนี้) ───
+  // ─── 💵 มูลค่าคาดการณ์แยก customerType (เดือนนี้) ───
   const revByType = sumBy(monthQueues.filter(q => q.status === "done"), q => typeLabel[q.customerType] || q.customerType, q => Number(q.price) || 0);
 
   // ─── 👑 Top spender สัปดาห์นี้ ───
@@ -462,6 +462,13 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
 
   return `คุณคือ AI ผู้ช่วยวิเคราะห์ข้อมูลของระบบ Qlass คลินิกความงาม ตอบเป็นภาษาไทย กระชับ ตรงประเด็น ถ้ามีข้อมูลให้ใช้ข้อมูลตอบทันที ไม่ต้องบอกว่าไม่มีข้อมูลเว้นแต่หาไม่เจอจริงๆ
 
+⚠️ กฎเหล็กเรื่อง "รายได้" / "ราคา":
+• ตัวเลขราคาทั้งหมดในระบบเป็น **มูลค่าคาดการณ์จากโปรที่ลูกค้าจอง** ไม่ใช่ยอดขายจริง
+• ห้ามเรียกว่า "รายได้" / "ยอดขาย" / "revenue" เด็ดขาด
+• ใช้คำว่า **"มูลค่าคาดการณ์"** / **"ราคาที่ลงไว้"** / **"price tag"** เท่านั้น
+• ถ้ามีคนถามเรื่องรายได้ตรงๆ ให้บอกว่า "ระบบไม่มีข้อมูลรายได้จริง มีแค่มูลค่าคาดการณ์จากราคาโปรที่ลูกค้าจอง จำนวนเงินจริงต้องดูที่หน้าเคาน์เตอร์/ระบบบัญชี"
+• ไม่ต้องพูดเรื่องตัวเลขราคา/มูลค่าเยอะ — ถ้าไม่ได้ถามตรงๆ ไม่ต้องใส่มาเอง
+
 ⚠️ กฎเหล็ก - คิวมี 2 แบบ ทุกคำถามที่เกี่ยวกับจำนวน/รายการคิว **ต้องถามผู้ใช้ก่อนเสมอ** ว่าหมายถึงแบบไหน ห้ามเดา ห้ามเลือกเอง:
 
 1. **"คิวที่บันทึก"** = คิวที่แอดมินลงบันทึกในวันนั้นๆ แต่ไม่รู้ว่าลูกค้าจะเข้ามาใช้บริการวันไหน (นับตาม createdAt)
@@ -491,24 +498,24 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
 
 === ภาพรวมวันนี้ (${today}) ===
 คิวทั้งหมด: ${todayQueues.length} | Check-in จริง (done): ${todayDone} (${todayCheckInRate}%)
-รายได้ (done): ฿${todayRevenue.toLocaleString()} | คาดการณ์รายได้ทุกคิว: ฿${todayExpectedRevenue.toLocaleString()}
+มูลค่าคาดการณ์วันนี้ (done): ฿${todayRevenue.toLocaleString()} | มูลค่าคาดการณ์ทุกคิว: ฿${todayExpectedRevenue.toLocaleString()} (*ราคาที่ลงไว้ ไม่ใช่ยอดขายจริง)
 ประเภทลูกค้า: ${todayByType.map(([k,v])=>`${k}=${v}`).join(", ")}
 สถานะ: ${todayByStatus.map(([k,v])=>`${k}=${v}`).join(", ")}
 Top สาขา: ${fmt(todayByBranch, 10)}
 Top หัตถการ: ${fmt(todayByProc, 10)}
-Top หัตถการ (รายได้คาดการณ์): ${todayByProcRev.slice(0,5).map(([k,v])=>`${k}(฿${v.toLocaleString()})`).join(", ")}
+Top หัตถการ (มูลค่าคาดการณ์): ${todayByProcRev.slice(0,5).map(([k,v])=>`${k}(฿${v.toLocaleString()})`).join(", ")}
 Top ผู้บันทึก: ${fmt(todayByStaff, 10)}
 
 === ภาพรวมเดือนนี้ (${monthStr}) ===
-คิวทั้งหมด: ${monthQueues.length} | รายได้: ฿${monthRevenue.toLocaleString()}
+คิวทั้งหมด: ${monthQueues.length} | มูลค่าคาดการณ์ (done): ฿${monthRevenue.toLocaleString()} (*ราคาที่ลงไว้ ไม่ใช่ยอดขายจริง)
 เทียบเดือนที่แล้ว (${lastMonthStr}): ฿${lastMonthRevenue.toLocaleString()} → เติบโต ${growthPct}%
 ประเภทลูกค้า: ${monthByType.map(([k,v])=>`${k}=${v}`).join(", ")}
 สถานะ: ${monthByStatus.map(([k,v])=>`${k}=${v}`).join(", ")}
 อัตรา: done=${doneRate}%, cancel=${cancelRate}%, no-show=${noShowRate}%, follow=${followCount} คิว, reschedule=${rescheduleCount} คิว
 Top สาขา (จำนวน): ${fmt(monthByBranch, 20)}
-Top สาขา (รายได้): ${monthRevBranch.slice(0,10).map(([k,v])=>`${k}(฿${v.toLocaleString()})`).join(", ")}
+Top สาขา (มูลค่าคาดการณ์): ${monthRevBranch.slice(0,10).map(([k,v])=>`${k}(฿${v.toLocaleString()})`).join(", ")}
 Top หัตถการ (จำนวน): ${fmt(monthByProc, 20)}
-Top หัตถการ (รายได้): ${monthRevProc.slice(0,10).map(([k,v])=>`${k}(฿${v.toLocaleString()})`).join(", ")}
+Top หัตถการ (มูลค่าคาดการณ์): ${monthRevProc.slice(0,10).map(([k,v])=>`${k}(฿${v.toLocaleString()})`).join(", ")}
 Top ผู้บันทึก: ${fmt(monthByStaff, 20)}
 วันที่มีคิวเยอะสุด: ${fmt(monthByDate, 10)}
 วันในสัปดาห์: ${monthByDow.map(([k,v])=>`${k}=${v}`).join(", ")}
@@ -517,7 +524,7 @@ Top ผู้บันทึก: ${fmt(monthByStaff, 20)}
 ${last7Days.map(d => {
   const n = week7Queues.filter(q => q.date === d).length;
   const r = revenueOf(week7Queues.filter(q => q.date === d));
-  return `${d}: ${n} คิว, รายได้ ฿${r.toLocaleString()}`;
+  return `${d}: ${n} คิว, มูลค่า ฿${r.toLocaleString()}`;
 }).join("\n")}
 
 === หัตถการที่แต่ละคนบันทึกเยอะสุด (เดือนนี้, Top 3) ===
@@ -541,13 +548,13 @@ ${roomUtilSummary || "(ไม่มีข้อมูลห้อง)"}
 === โปรโมชั่น/แพ็กเกจวันนี้ (${today}) ===
 จำนวนคิวที่ใช้โปรวันนี้: ${todayByPromo.reduce((s,[,v])=>s+v,0)} / ${todayQueues.length} คิว
 Top 10 โปรวันนี้: ${todayByPromo.slice(0,10).map(([k,v])=>`${k}(${v})`).join(", ") || "(ไม่มีการใช้โปร)"}
-รายได้จากโปรวันนี้: ${todayPromoRev.slice(0,10).map(([k,v])=>`${k}(฿${v.toLocaleString()})`).join(", ") || "(ไม่มี)"}
+มูลค่าจากโปรวันนี้ (คาดการณ์): ${todayPromoRev.slice(0,10).map(([k,v])=>`${k}(฿${v.toLocaleString()})`).join(", ") || "(ไม่มี)"}
 โปรที่แอดมินแต่ละคนปิดได้วันนี้: ${todayPromoStaffArr.slice(0,15).map(([k,v])=>`${k}=${v}`).join(", ") || "(ไม่มี)"}
 
 === โปรโมชั่น/แพ็กเกจเดือนนี้ (${monthStr}) ===
 จำนวนคิวที่ใช้โปร: ${monthByPromo.reduce((s,[,v])=>s+v,0)} / ${monthQueues.length} คิว
 Top 10 โปรเดือนนี้: ${monthByPromo.slice(0,10).map(([k,v])=>`${k}(${v})`).join(", ") || "(ไม่มี)"}
-รายได้จากโปร (done): ${promoRev.slice(0,10).map(([k,v])=>`${k}(฿${v.toLocaleString()})`).join(", ") || "(ไม่มี)"}
+มูลค่าจากโปร (done, คาดการณ์): ${promoRev.slice(0,10).map(([k,v])=>`${k}(฿${v.toLocaleString()})`).join(", ") || "(ไม่มี)"}
 
 === ค่าคอมมิชชั่นพนักงาน (เดือนนี้, จากคิว done) ===
 ${commissionSummary || "(ยังไม่มีคิว done)"}
