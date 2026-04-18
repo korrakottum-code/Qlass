@@ -173,10 +173,22 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
       return `${r?.name || "?"}(${b?.name || "?"}): ${blocks} blocks ≈ ${Math.round(mins/60)} ชม`;
     }).join("\n");
 
-  // ─── Promo usage (เดือนนี้) ───
+  // ─── Promo usage (วันนี้ + เดือนนี้) ───
   const promoName = (id) => promos?.find(p => p.id === id)?.name || "ไม่ระบุ";
   const monthByPromo = countBy(monthQueues.filter(q => q.promoId), q => promoName(q.promoId));
   const promoRev = sumBy(monthQueues.filter(q => q.promoId), q => promoName(q.promoId), q => q.status === "done" ? (Number(q.price) || 0) : 0);
+  const todayByPromo = countBy(todayQueues.filter(q => q.promoId), q => promoName(q.promoId));
+  const todayPromoRev = sumBy(todayQueues.filter(q => q.promoId), q => promoName(q.promoId), q => Number(q.price) || 0);
+  // โปรที่แอดมินแต่ละคน "ปิดได้" วันนี้ (บันทึกโดย staff)
+  const todayByPromoStaff = {};
+  todayQueues.filter(q => q.promoId && q.recordedBy).forEach(q => {
+    const s = staff?.find(x => x.id === q.recordedBy);
+    const staffKey = s ? (s.nickname || s.name) : "ไม่ระบุ";
+    const promo = promoName(q.promoId);
+    const k = `${promo} by ${staffKey}`;
+    todayByPromoStaff[k] = (todayByPromoStaff[k] || 0) + 1;
+  });
+  const todayPromoStaffArr = Object.entries(todayByPromoStaff).sort((a,b)=>b[1]-a[1]);
 
   // ─── Commission per staff (เดือนนี้, only done) ───
   const commissionMap = {};
@@ -526,9 +538,15 @@ ${peakHours.map(([h,c])=>`${h}=${c}`).join(", ")}
 === ห้อง/เครื่อง Top 15 (เดือนนี้, ตาม blocks ใช้งาน) ===
 ${roomUtilSummary || "(ไม่มีข้อมูลห้อง)"}
 
-=== โปรโมชั่น/แพ็กเกจ (เดือนนี้) ===
+=== โปรโมชั่น/แพ็กเกจวันนี้ (${today}) ===
+จำนวนคิวที่ใช้โปรวันนี้: ${todayByPromo.reduce((s,[,v])=>s+v,0)} / ${todayQueues.length} คิว
+Top 10 โปรวันนี้: ${todayByPromo.slice(0,10).map(([k,v])=>`${k}(${v})`).join(", ") || "(ไม่มีการใช้โปร)"}
+รายได้จากโปรวันนี้: ${todayPromoRev.slice(0,10).map(([k,v])=>`${k}(฿${v.toLocaleString()})`).join(", ") || "(ไม่มี)"}
+โปรที่แอดมินแต่ละคนปิดได้วันนี้: ${todayPromoStaffArr.slice(0,15).map(([k,v])=>`${k}=${v}`).join(", ") || "(ไม่มี)"}
+
+=== โปรโมชั่น/แพ็กเกจเดือนนี้ (${monthStr}) ===
 จำนวนคิวที่ใช้โปร: ${monthByPromo.reduce((s,[,v])=>s+v,0)} / ${monthQueues.length} คิว
-Top โปร: ${monthByPromo.slice(0,10).map(([k,v])=>`${k}(${v})`).join(", ") || "(ไม่มี)"}
+Top 10 โปรเดือนนี้: ${monthByPromo.slice(0,10).map(([k,v])=>`${k}(${v})`).join(", ") || "(ไม่มี)"}
 รายได้จากโปร (done): ${promoRev.slice(0,10).map(([k,v])=>`${k}(฿${v.toLocaleString()})`).join(", ") || "(ไม่มี)"}
 
 === ค่าคอมมิชชั่นพนักงาน (เดือนนี้, จากคิว done) ===
