@@ -4,7 +4,7 @@ import { getTodayStr, formatThaiDate } from "../utils/helpers";
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
-function buildContext(queues, branches, procedures, promos, staff, today) {
+function buildContext(queues, branches, procedures, promos, staff, rooms, today) {
   const monthStr = today.slice(0, 7);
   const lastMonthDate = new Date(today); lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
   const lastMonthStr = lastMonthDate.toISOString().slice(0, 7);
@@ -136,6 +136,91 @@ function buildContext(queues, branches, procedures, promos, staff, today) {
   const DOW = ["อาทิตย์","จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์"];
   const monthByDow = countBy(monthQueues, q => q.date ? DOW[new Date(q.date).getDay()] : "ไม่ระบุ");
 
+  // ─── ช่วงเวลา (timeBlock → ชั่วโมง) ───
+  const blockToHour = (tb) => tb != null ? `${String(Math.floor(tb/12)).padStart(2,"0")}:${String((tb%12)*5).padStart(2,"0")}` : null;
+  const hourOf = (tb) => tb != null ? Math.floor(tb/12) : null;
+  const monthByHour = countBy(monthQueues.filter(q => q.timeBlock != null), q => `${String(hourOf(q.timeBlock)).padStart(2,"0")}:00`);
+  const peakHours = monthByHour.slice(0, 8);
+
+  // ─── ห้อง/เครื่อง utilization (เดือนนี้) ───
+  const roomName = (id) => rooms?.find(r => r.id === id)?.name || "ไม่ระบุ";
+  const monthByRoom = countBy(monthQueues.filter(q => q.roomId), q => {
+    const r = rooms?.find(x => x.id === q.roomId);
+    const b = branches.find(x => x.id === r?.branchId);
+    return r ? `${r.name}(${b?.name || ""})` : "ไม่ระบุ";
+  });
+  const roomBlocksUsed = {};
+  monthQueues.forEach(q => {
+    if (q.roomId && q.durationBlocks) {
+      roomBlocksUsed[q.roomId] = (roomBlocksUsed[q.roomId] || 0) + q.durationBlocks;
+    }
+  });
+  const roomUtilSummary = Object.entries(roomBlocksUsed)
+    .sort((a,b) => b[1] - a[1]).slice(0, 15)
+    .map(([rid, blocks]) => {
+      const r = rooms?.find(x => x.id === rid);
+      const b = branches.find(x => x.id === r?.branchId);
+      const mins = blocks * 5;
+      return `${r?.name || "?"}(${b?.name || "?"}): ${blocks} blocks ≈ ${Math.round(mins/60)} ชม`;
+    }).join("\n");
+
+  // ─── Promo usage (เดือนนี้) ───
+  const promoName = (id) => promos?.find(p => p.id === id)?.name || "ไม่ระบุ";
+  const monthByPromo = countBy(monthQueues.filter(q => q.promoId), q => promoName(q.promoId));
+  const promoRev = sumBy(monthQueues.filter(q => q.promoId), q => promoName(q.promoId), q => q.status === "done" ? (Number(q.price) || 0) : 0);
+
+  // ─── Commission per staff (เดือนนี้, only done) ───
+  const commissionMap = {};
+  monthQueues.filter(q => q.status === "done").forEach(q => {
+    const s = staff?.find(x => x.id === q.recordedBy);
+    if (!s) return;
+    const rate = s.commissionRates?.[q.customerType || "new"] || 0;
+    const key = s.nickname || s.name;
+    commissionMap[key] = (commissionMap[key] || 0) + rate;
+  });
+  const commissionSummary = Object.entries(commissionMap)
+    .sort((a,b) => b[1] - a[1])
+    .map(([k,v]) => `${k}: ฿${v.toLocaleString()}`).join(", ");
+
+  // ─── Customer retention: top spenders + repeat customers (ทั้งหมด) ───
+  const customerMap = {};
+  queues.forEach(q => {
+    const key = q.phone || q.name;
+    if (!key) return;
+    if (!customerMap[key]) customerMap[key] = { name: q.name, phone: q.phone, count: 0, spent: 0, lastVisit: null };
+    customerMap[key].count++;
+    if (q.status === "done") customerMap[key].spent += Number(q.price) || 0;
+    if (!customerMap[key].lastVisit || q.date > customerMap[key].lastVisit) customerMap[key].lastVisit = q.date;
+  });
+  const customers = Object.values(customerMap);
+  const repeatCustomers = customers.filter(c => c.count >= 2).sort((a,b) => b.count - a.count);
+  const topSpenders = [...customers].sort((a,b) => b.spent - a.spent).slice(0, 10);
+  const newCustCount = customers.filter(c => c.count === 1).length;
+  const repeatRate = customers.length > 0 ? (repeatCustomers.length / customers.length * 100).toFixed(1) : 0;
+
+  // ─── Time range: สัปดาห์ที่แล้ว, 3 เดือนที่แล้ว ───
+  const daysAgo = (n) => { const d = new Date(today); d.setDate(d.getDate() - n); return d.toISOString().slice(0,10); };
+  const lastWeekStart = daysAgo(13); const lastWeekEnd = daysAgo(7);
+  const lastWeekQueues = queues.filter(q => q.date >= lastWeekStart && q.date <= lastWeekEnd);
+  const last3Months = [];
+  for (let i = 0; i < 3; i++) {
+    const d = new Date(today); d.setMonth(d.getMonth() - i);
+    last3Months.push(d.toISOString().slice(0,7));
+  }
+  const monthlyTrend = last3Months.map(m => {
+    const qs = queues.filter(q => q.date?.startsWith(m));
+    const rev = revenueOf(qs);
+    return { month: m, count: qs.length, revenue: rev };
+  });
+
+  // ─── Forecast: estimate rest of month based on daily avg ───
+  const daysPassed = parseInt(today.slice(8, 10), 10);
+  const daysInMonth = new Date(parseInt(today.slice(0,4)), parseInt(today.slice(5,7)), 0).getDate();
+  const dailyAvg = daysPassed > 0 ? monthQueues.length / daysPassed : 0;
+  const dailyRevAvg = daysPassed > 0 ? monthRevenue / daysPassed : 0;
+  const forecastQueues = Math.round(dailyAvg * daysInMonth);
+  const forecastRevenue = Math.round(dailyRevAvg * daysInMonth);
+
   return `คุณคือ AI ผู้ช่วยวิเคราะห์ข้อมูลของระบบ Qlass คลินิกความงาม ตอบเป็นภาษาไทย กระชับ ตรงประเด็น ถ้ามีข้อมูลให้ใช้ข้อมูลตอบทันที ไม่ต้องบอกว่าไม่มีข้อมูลเว้นแต่หาไม่เจอจริงๆ
 
 วันที่วันนี้: ${formatThaiDate(today)} (${today})
@@ -182,6 +267,36 @@ ${branchTypeSummary}
 === สถานะคิวแต่ละสาขา - no-show/cancel rate (เดือนนี้) ===
 ${branchStatusSummary}
 
+=== ช่วงเวลา/ชั่วโมงที่คนมาเยอะ (เดือนนี้) ===
+${peakHours.map(([h,c])=>`${h}=${c}`).join(", ")}
+
+=== ห้อง/เครื่อง Top 15 (เดือนนี้, ตาม blocks ใช้งาน) ===
+${roomUtilSummary || "(ไม่มีข้อมูลห้อง)"}
+
+=== โปรโมชั่น/แพ็กเกจ (เดือนนี้) ===
+จำนวนคิวที่ใช้โปร: ${monthByPromo.reduce((s,[,v])=>s+v,0)} / ${monthQueues.length} คิว
+Top โปร: ${monthByPromo.slice(0,10).map(([k,v])=>`${k}(${v})`).join(", ") || "(ไม่มี)"}
+รายได้จากโปร (done): ${promoRev.slice(0,10).map(([k,v])=>`${k}(฿${v.toLocaleString()})`).join(", ") || "(ไม่มี)"}
+
+=== ค่าคอมมิชชั่นพนักงาน (เดือนนี้, จากคิว done) ===
+${commissionSummary || "(ยังไม่มีคิว done)"}
+รวม: ฿${Object.values(commissionMap).reduce((a,b)=>a+b,0).toLocaleString()}
+
+=== ลูกค้า (ทั้งหมด) ===
+ลูกค้าทั้งหมด: ${customers.length} คน | กลับมาซ้ำ: ${repeatCustomers.length} คน (${repeatRate}%) | มาครั้งเดียว: ${newCustCount} คน
+Top ลูกค้ากลับมาบ่อยสุด: ${repeatCustomers.slice(0,10).map(c=>`${c.name}(${c.count}ครั้ง)`).join(", ")}
+Top ลูกค้าใช้จ่ายสูงสุด: ${topSpenders.filter(c=>c.spent>0).slice(0,10).map(c=>`${c.name}(฿${c.spent.toLocaleString()})`).join(", ")}
+
+=== สัปดาห์ที่แล้ว (${lastWeekStart} ถึง ${lastWeekEnd}) ===
+คิว: ${lastWeekQueues.length} | รายได้: ฿${revenueOf(lastWeekQueues).toLocaleString()}
+
+=== Trend 3 เดือนล่าสุด ===
+${monthlyTrend.reverse().map(m => `${m.month}: ${m.count} คิว, ฿${m.revenue.toLocaleString()}`).join("\n")}
+
+=== คาดการณ์สิ้นเดือน (${monthStr}) ===
+ผ่านไป ${daysPassed}/${daysInMonth} วัน | เฉลี่ย ${dailyAvg.toFixed(1)} คิว/วัน, ฿${dailyRevAvg.toFixed(0)}/วัน
+ประมาณสิ้นเดือน: ~${forecastQueues} คิว, รายได้ ~฿${forecastRevenue.toLocaleString()}
+
 === รายชื่อสาขา (${branches.length}) ===
 ${branches.map(b => b.name).join(", ")}
 
@@ -194,7 +309,7 @@ ${(staff || []).map(s => `${s.nickname || s.name}(${s.role})`).join(", ")}
 หมายเหตุ: ถ้าผู้ใช้ถามเรื่องที่ต้องใช้ข้อมูลเชิงลึกเกินจากนี้ ให้บอกตรงๆ ว่าดูได้จากหน้า "สรุปประจำวัน" หรือ "Export ข้อมูล"`;
 }
 
-export default function AiChatPage({ queues, branches, procedures, promos, staff }) {
+export default function AiChatPage({ queues, branches, procedures, promos, staff, rooms }) {
   const [messages, setMessages] = useState([
     { role: "assistant", text: "สวัสดีครับ! ถามได้เลยเกี่ยวกับข้อมูลคิว สาขา หัตถการ หรือสถิติต่างๆ ครับ 😊" }
   ]);
@@ -204,8 +319,8 @@ export default function AiChatPage({ queues, branches, procedures, promos, staff
   const today = getTodayStr();
 
   const context = useMemo(
-    () => buildContext(queues, branches, procedures, promos, staff, today),
-    [queues, branches, procedures, promos, staff, today]
+    () => buildContext(queues, branches, procedures, promos, staff, rooms, today),
+    [queues, branches, procedures, promos, staff, rooms, today]
   );
 
   useEffect(() => {

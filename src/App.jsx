@@ -681,6 +681,7 @@ export default function App() {
           procedures={procedures}
           promos={promos}
           staff={staff}
+          rooms={filteredRooms}
         />
         {toast && <Toast type={toast.type} msg={toast.msg} />}
       </div>
