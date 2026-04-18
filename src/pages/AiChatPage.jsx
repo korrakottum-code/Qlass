@@ -320,6 +320,118 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
     return { date: d, curr, prev, diff: curr - prev };
   });
 
+  // ─── 💰 Expected revenue วันนี้ (ทุกคิว) / Check-in rate ───
+  const todayExpectedRevenue = todayQueues.reduce((s, q) => s + (Number(q.price) || 0), 0);
+  const todayDone = todayQueues.filter(q => q.status === "done").length;
+  const todayCheckInRate = todayQueues.length > 0 ? (todayDone / todayQueues.length * 100).toFixed(1) : 0;
+  const todayByProcRev = sumBy(todayQueues, q => procName(q.procedureId), q => Number(q.price) || 0);
+
+  // ─── 📅 Lead time: จองล่วงหน้ากี่วันก่อนใช้บริการ ───
+  const leadTimes = queues
+    .filter(q => q.createdAt && q.date)
+    .map(q => {
+      const created = new Date(q.createdAt).toISOString().slice(0,10);
+      return (new Date(q.date) - new Date(created)) / 86400000;
+    })
+    .filter(d => d >= 0 && d <= 365);
+  const avgLeadTime = leadTimes.length > 0 ? (leadTimes.reduce((a,b)=>a+b,0) / leadTimes.length).toFixed(1) : 0;
+  const walkInCount = leadTimes.filter(d => d === 0).length;
+  const walkInByBranch = countBy(
+    queues.filter(q => q.createdAt && q.date && new Date(q.createdAt).toISOString().slice(0,10) === q.date && q.date?.startsWith(monthStr)),
+    q => branchName(q.branchId)
+  );
+
+  // ─── 🚪 Double-booking detection (ห้องซ้ำ, timeBlock ซ้อน, เดือนนี้) ───
+  const doubleBookings = [];
+  const byRoomDate = {};
+  monthQueues.filter(q => q.roomId && q.date && q.timeBlock != null).forEach(q => {
+    const k = `${q.date}_${q.roomId}`;
+    byRoomDate[k] = byRoomDate[k] || [];
+    byRoomDate[k].push(q);
+  });
+  Object.values(byRoomDate).forEach(arr => {
+    for (let i = 0; i < arr.length; i++) {
+      for (let j = i+1; j < arr.length; j++) {
+        const a = arr[i], b = arr[j];
+        const aEnd = a.timeBlock + (a.durationBlocks || 1);
+        const bEnd = b.timeBlock + (b.durationBlocks || 1);
+        if (a.timeBlock < bEnd && b.timeBlock < aEnd && !["cancelled","no_show"].includes(a.status) && !["cancelled","no_show"].includes(b.status)) {
+          doubleBookings.push({ date: a.date, room: roomName(a.roomId), branch: branchName(a.branchId) });
+          break;
+        }
+      }
+    }
+  });
+  const dblByBranch = {};
+  doubleBookings.forEach(d => { dblByBranch[d.branch] = (dblByBranch[d.branch] || 0) + 1; });
+
+  // ─── ⏰ คิวค้าง (statusUpdatedAt > 24h แต่ยัง pending/confirmed, วันที่ผ่านไปแล้ว) ───
+  const stuckQueues = queues.filter(q => {
+    if (!["pending","confirmed"].includes(q.status)) return false;
+    if (!q.date || q.date >= today) return false;
+    if (q.statusUpdatedAt) {
+      const hoursSince = (Date.now() - new Date(q.statusUpdatedAt).getTime()) / 3600000;
+      return hoursSince > 24;
+    }
+    return true;
+  });
+  const stuckByBranch = countBy(stuckQueues, q => branchName(q.branchId));
+
+  // ─── 🔄 หัตถการที่ถูก reschedule บ่อย (เดือนนี้) ───
+  const rescheduleByProc = countBy(
+    monthQueues.filter(q => q.status === "rescheduled"),
+    q => procName(q.procedureId)
+  );
+
+  // ─── 💵 รายได้แยก customerType (เดือนนี้) ───
+  const revByType = sumBy(monthQueues.filter(q => q.status === "done"), q => typeLabel[q.customerType] || q.customerType, q => Number(q.price) || 0);
+
+  // ─── 👑 Top spender สัปดาห์นี้ ───
+  const thisWeekStartDate = (() => { const d = new Date(today); d.setDate(d.getDate() - 6); return d.toISOString().slice(0,10); })();
+  const weekCustomerMap = {};
+  queues.filter(q => q.date >= thisWeekStartDate && q.date <= today).forEach(q => {
+    const key = q.phone || q.name;
+    if (!key) return;
+    if (!weekCustomerMap[key]) weekCustomerMap[key] = { name: q.name, count: 0, spent: 0 };
+    weekCustomerMap[key].count++;
+    if (q.status === "done") weekCustomerMap[key].spent += Number(q.price) || 0;
+  });
+  const topSpendersWeek = Object.values(weekCustomerMap).filter(c => c.spent > 0).sort((a,b) => b.spent - a.spent).slice(0, 10);
+
+  // ─── 🔥 High-value queues (ราคา > 5000, เดือนนี้) ───
+  const highValueQueues = monthQueues.filter(q => (Number(q.price) || 0) > 5000);
+  const highValueByBranch = countBy(highValueQueues, q => branchName(q.branchId));
+  const highValueByProc = countBy(highValueQueues, q => procName(q.procedureId));
+
+  // ─── 📈 Day × Procedure category แรงสุด (เดือนนี้) ───
+  const dowByProc = {};
+  monthQueues.forEach(q => {
+    if (!q.date || !q.procedureId) return;
+    const dow = DOW[new Date(q.date).getDay()];
+    const p = procName(q.procedureId);
+    if (!dowByProc[dow]) dowByProc[dow] = {};
+    dowByProc[dow][p] = (dowByProc[dow][p] || 0) + 1;
+  });
+  const dowTopProc = Object.entries(dowByProc).map(([dow, procs]) => {
+    const top = Object.entries(procs).sort((a,b) => b[1]-a[1])[0];
+    return top ? `${dow}: ${top[0]}(${top[1]})` : "";
+  }).filter(Boolean).join(" | ");
+
+  // ─── 📊 คิวเต็ม/ว่าง สัปดาห์หน้า (ประมาณจาก avg) ───
+  const next7Days = [];
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(today); d.setDate(d.getDate() + i);
+    next7Days.push(d.toISOString().slice(0,10));
+  }
+  const futureBooking = next7Days.map(d => {
+    const bookedByBranch = {};
+    queues.filter(q => q.date === d && !["cancelled","no_show"].includes(q.status)).forEach(q => {
+      const b = branchName(q.branchId);
+      bookedByBranch[b] = (bookedByBranch[b] || 0) + 1;
+    });
+    return { date: d, dow: DOW[new Date(d).getDay()], branches: bookedByBranch, total: Object.values(bookedByBranch).reduce((a,b)=>a+b,0) };
+  });
+
   // ─── Forecast: estimate rest of month based on daily avg ───
   const daysPassed = parseInt(today.slice(8, 10), 10);
   const daysInMonth = new Date(parseInt(today.slice(0,4)), parseInt(today.slice(5,7)), 0).getDate();
@@ -334,11 +446,13 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
 จำนวนสาขา: ${branches.length} | จำนวนพนักงาน: ${staff?.length || 0} | จำนวนหัตถการ: ${procedures.length}
 
 === ภาพรวมวันนี้ (${today}) ===
-คิวทั้งหมด: ${todayQueues.length} | รายได้ (done): ฿${todayRevenue.toLocaleString()}
+คิวทั้งหมด: ${todayQueues.length} | Check-in จริง (done): ${todayDone} (${todayCheckInRate}%)
+รายได้ (done): ฿${todayRevenue.toLocaleString()} | คาดการณ์รายได้ทุกคิว: ฿${todayExpectedRevenue.toLocaleString()}
 ประเภทลูกค้า: ${todayByType.map(([k,v])=>`${k}=${v}`).join(", ")}
 สถานะ: ${todayByStatus.map(([k,v])=>`${k}=${v}`).join(", ")}
 Top สาขา: ${fmt(todayByBranch, 10)}
 Top หัตถการ: ${fmt(todayByProc, 10)}
+Top หัตถการ (รายได้คาดการณ์): ${todayByProcRev.slice(0,5).map(([k,v])=>`${k}(฿${v.toLocaleString()})`).join(", ")}
 Top ผู้บันทึก: ${fmt(todayByStaff, 10)}
 
 === ภาพรวมเดือนนี้ (${monthStr}) ===
@@ -446,6 +560,40 @@ ${unusedProcs.length > 0 ? unusedProcs.map(p => p.name).join(", ") : "✓ ทุ
 
 [โปรที่ไม่มีใครใช้เดือนนี้]
 ${unusedPromos.length > 0 ? unusedPromos.map(p => p.name).join(", ") : "✓ ทุกโปรถูกใช้งาน"}
+
+=== 📅 พฤติกรรมการจอง (Lead Time & Walk-in) ===
+เฉลี่ยจองล่วงหน้า: ${avgLeadTime} วัน ก่อนวันนัด
+Walk-in (จองวันเดียวกัน): ${walkInCount} คิว ทั้งหมด
+Walk-in เดือนนี้แยกสาขา: ${walkInByBranch.slice(0,10).map(([k,v])=>`${k}(${v})`).join(", ") || "(ไม่มี)"}
+
+=== 🔄 หัตถการที่ถูกเลื่อนบ่อย (เดือนนี้) ===
+${rescheduleByProc.slice(0,10).map(([k,v])=>`${k}(${v})`).join(", ") || "(ไม่มี)"}
+
+=== 💰 รายได้แยกประเภทลูกค้า (เดือนนี้, done) ===
+${revByType.map(([k,v])=>`${k}: ฿${v.toLocaleString()}`).join(" | ")}
+
+=== 👑 Top Spender สัปดาห์นี้ (${thisWeekStartDate} ถึง ${today}) ===
+${topSpendersWeek.length > 0 ? topSpendersWeek.map(c => `${c.name}(฿${c.spent.toLocaleString()}, ${c.count}คิว)`).join(", ") : "(ไม่มีคิว done)"}
+
+=== 🔥 High-Value Queues (ราคา >฿5,000, เดือนนี้) ===
+รวม: ${highValueQueues.length} คิว
+Top สาขา: ${highValueByBranch.slice(0,5).map(([k,v])=>`${k}(${v})`).join(", ")}
+Top หัตถการ: ${highValueByProc.slice(0,5).map(([k,v])=>`${k}(${v})`).join(", ")}
+
+=== 📈 วันในสัปดาห์ × หัตถการยอดนิยม (เดือนนี้) ===
+${dowTopProc}
+
+=== 🚪 Double-booking (ห้องซ้ำ, เดือนนี้) ===
+${doubleBookings.length > 0 ? `⚠️ พบ ${doubleBookings.length} กรณี - แยกสาขา: ${Object.entries(dblByBranch).map(([b,c])=>`${b}(${c})`).join(", ")}` : "✓ ไม่พบ"}
+
+=== ⏰ คิวค้างไม่ได้อัปเดตสถานะ (ผ่านไปเกิน 24 ชม.) ===
+${stuckQueues.length > 0 ? `⚠️ รวม ${stuckQueues.length} คิว - แยกสาขา: ${stuckByBranch.slice(0,10).map(([k,v])=>`${k}(${v})`).join(", ")}` : "✓ ไม่มี"}
+
+=== 🔮 การจองสัปดาห์หน้า (7 วันถัดไป) ===
+${futureBooking.map(d => {
+  const topBr = Object.entries(d.branches).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([b,c])=>`${b}(${c})`).join(", ");
+  return `${d.date}(${d.dow}): ${d.total} คิว - ${topBr || "ว่าง"}`;
+}).join("\n")}
 
 === รายชื่อสาขา (${branches.length}) ===
 ${branches.map(b => b.name).join(", ")}
