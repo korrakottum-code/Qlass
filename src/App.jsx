@@ -45,6 +45,7 @@ import TimelinePage from "./pages/TimelinePage";
 import StaffPage from "./pages/StaffPage";
 import CommissionPage from "./pages/CommissionPage";
 import ExportPage from "./pages/ExportPage";
+import AiChatPage from "./pages/AiChatPage";
 import TicketPage from "./pages/TicketPage";
 import ActivityLogPage from "./pages/ActivityLogPage";
 
@@ -196,15 +197,45 @@ export default function App() {
     return branches.filter(b => b.id === currentUser.branchId);
   }, [branches, currentUser]);
 
+  // ─── Hash-based navigation (for hidden pages like #ai-chat) ───
+  useEffect(() => {
+    function handleHash() {
+      const hash = window.location.hash.replace("#", "");
+      if (hash && currentUser) {
+        const allowed = ROLES.find((r) => r.value === currentUser.role)?.pages || [];
+        // Hidden pages accessible via hash only
+        const hiddenPages = ["ai-chat"];
+        if (hiddenPages.includes(hash) && ["superadmin","head_admin","admin"].includes(currentUser.role)) {
+          navigateTo(hash);
+        } else if (allowed.includes(hash)) {
+          navigateTo(hash);
+        }
+      }
+    }
+    handleHash();
+    window.addEventListener("hashchange", handleHash);
+    return () => window.removeEventListener("hashchange", handleHash);
+  }, [currentUser, navigateTo]);
+
   // ─── Redirect if current page not allowed ───
   useEffect(() => {
-    if (currentUser && allowedPages.length > 0 && !allowedPages.includes(page)) {
+    if (!currentUser) return;
+    // Hidden pages: check by role, not allowedPages
+    if (page === "ai-chat") {
+      if (!["superadmin","head_admin","admin"].includes(currentUser.role)) {
+        const target = allowedPages[0] || "queue-table";
+        try { localStorage.setItem("qlass_page", target); } catch {}
+        setPage(target);
+      }
+      return;
+    }
+    if (allowedPages.length > 0 && !allowedPages.includes(page)) {
       const target = allowedPages[0] || "queue-table";
       try { localStorage.setItem("qlass_page", target); } catch {}
       setPage(target);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, allowedPages]);
+  }, [currentUser, allowedPages, page]);
 
   // ─── Toast auto-dismiss ───
   useEffect(() => {
@@ -637,6 +668,25 @@ export default function App() {
     return <LoginScreen staff={staff} onLogin={handleLogin} supabaseError={supabaseError} />;
   }
 
+  // Fullscreen mode for hidden pages like ai-chat
+  if (page === "ai-chat") {
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--bg)", padding: 20 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+          <button onClick={handleLogout} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #d1d5db", background: "transparent", cursor: "pointer", fontSize: 13 }}>ออกจากระบบ</button>
+        </div>
+        <AiChatPage
+          queues={filteredQueues}
+          branches={filteredBranches}
+          procedures={procedures}
+          promos={promos}
+          staff={staff}
+        />
+        {toast && <Toast type={toast.type} msg={toast.msg} />}
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <Sidebar
@@ -808,6 +858,16 @@ export default function App() {
                   return true;
                 }}
                 onEditQueue={(q) => { editQueue(q); }}
+              />
+            )}
+
+            {page === "ai-chat" && (
+              <AiChatPage
+                queues={filteredQueues}
+                branches={filteredBranches}
+                procedures={procedures}
+                promos={promos}
+                staff={staff}
               />
             )}
 
