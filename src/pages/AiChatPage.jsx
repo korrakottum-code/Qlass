@@ -452,6 +452,45 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
     return { date: d, dow: DOW[new Date(d).getDay()], branches: bookedByBranch, total: Object.values(bookedByBranch).reduce((a,b)=>a+b,0) };
   });
 
+  // ─── 📦 Raw data dump (compact CSV) for flexible queries ───
+  const branchMap = new Map(branches.map((b,i) => [b.id, `B${i+1}`]));
+  const procMap = new Map(procedures.map((p,i) => [p.id, `P${i+1}`]));
+  const staffMap = new Map((staff || []).map((s,i) => [s.id, `S${i+1}`]));
+  const promoMap = new Map((promos || []).map((p,i) => [p.id, `PR${i+1}`]));
+  const roomMap = new Map((rooms || []).map((r,i) => [r.id, `R${i+1}`]));
+
+  const branchLookup = branches.map((b,i) => `B${i+1}=${b.name}`).join(", ");
+  const procLookup = procedures.map((p,i) => `P${i+1}=${p.name}`).join(", ");
+  const staffLookup = (staff || []).map((s,i) => `S${i+1}=${s.nickname || s.name}`).join(", ");
+  const promoLookup = (promos || []).map((p,i) => `PR${i+1}=${p.name}`).join(", ");
+  const roomLookup = (rooms || []).map((r,i) => {
+    const b = branches.find(x => x.id === r.branchId);
+    return `R${i+1}=${r.name}(${b?.name || "?"})`;
+  }).join(", ");
+
+  // จำกัด 90 วัน (past 60 + future 30) เพื่อประหยัด token
+  const dumpStart = (() => { const d = new Date(today); d.setDate(d.getDate() - 60); return d.toISOString().slice(0,10); })();
+  const dumpEnd = (() => { const d = new Date(today); d.setDate(d.getDate() + 30); return d.toISOString().slice(0,10); })();
+  const dumpQueues = queues.filter(q => q.date && q.date >= dumpStart && q.date <= dumpEnd);
+
+  const statusShort = { done: "D", cancelled: "X", no_show: "N", pending: "P", confirmed: "C", rescheduled: "R", follow: "F" };
+  const typeShort = { new: "n", old: "o", course: "c" };
+
+  const rawCSV = dumpQueues.map(q => [
+    q.date || "",
+    q.timeBlock != null ? q.timeBlock : "",
+    branchMap.get(q.branchId) || "",
+    procMap.get(q.procedureId) || "",
+    roomMap.get(q.roomId) || "",
+    promoMap.get(q.promoId) || "",
+    statusShort[q.status] || q.status || "",
+    typeShort[q.customerType] || q.customerType || "",
+    Number(q.price) || 0,
+    staffMap.get(q.recordedBy) || "",
+    q.durationBlocks || "",
+    q.createdAt ? q.createdAt.slice(0,10) : "",
+  ].join("|")).join("\n");
+
   // ─── Forecast: estimate rest of month based on daily avg ───
   const daysPassed = parseInt(today.slice(8, 10), 10);
   const daysInMonth = new Date(parseInt(today.slice(0,4)), parseInt(today.slice(5,7)), 0).getDate();
@@ -661,7 +700,33 @@ ${procedures.map(p => p.name).join(", ")}
 === รายชื่อพนักงาน (${staff?.length || 0}) ===
 ${(staff || []).map(s => `${s.nickname || s.name}(${s.role})`).join(", ")}
 
-หมายเหตุ: ถ้าผู้ใช้ถามเรื่องที่ต้องใช้ข้อมูลเชิงลึกเกินจากนี้ ให้บอกตรงๆ ว่าดูได้จากหน้า "สรุปประจำวัน" หรือ "Export ข้อมูล"`;
+════════════════════════════════════════════════
+=== 📦 RAW DATA: คิวทั้งหมดช่วง ${dumpStart} ถึง ${dumpEnd} (${dumpQueues.length} คิว) ===
+
+ใช้ข้อมูลดิบนี้วิเคราะห์/ตอบคำถามเชิงลึกที่ pre-computed ด้านบนไม่ครอบคลุม อย่าบอกผู้ใช้ว่า "ไม่มีข้อมูล" ถ้าข้อมูลอยู่ในตารางนี้
+
+[Lookup Tables]
+BRANCHES: ${branchLookup}
+PROCEDURES: ${procLookup}
+STAFF: ${staffLookup}
+PROMOS: ${promoLookup}
+ROOMS: ${roomLookup}
+
+[Status codes] D=done(มาแล้ว), X=cancelled(ยกเลิก), N=no_show(ไม่มาตามนัด), P=pending(รอยืนยัน), C=confirmed(ยืนยันแล้ว), R=rescheduled(เลื่อน), F=follow(ตามคิว)
+[CustomerType codes] n=new(ลูกค้าใหม่), o=old(ลูกค้าเก่า), c=course(ใช้คอร์ส)
+[TimeBlock] 1 block = 5 นาที, block 108 = 09:00, block 120 = 10:00, block 228 = 19:00 (เริ่ม 00:00 = block 0)
+[durationBlocks] จำนวน block ที่ใช้ ×5 = นาที
+
+[CSV Schema] date|timeBlock|branch|proc|room|promo|status|type|price|staff|duration|createdDate
+
+[ข้อมูล]
+${rawCSV}
+════════════════════════════════════════════════
+
+หมายเหตุสำคัญ:
+- Raw data ข้างบนครอบคลุมแค่ ${dumpStart} ถึง ${dumpEnd} ถ้าถามนอกช่วงนี้ ให้บอกว่าข้อมูลจำกัดแค่ 90 วันใกล้ปัจจุบัน
+- เวลาตอบ อย่าโชว์รหัสย่อ (B1, P1, D, n) ต่อผู้ใช้ — แปลงเป็นชื่อจริงเสมอ
+- วิเคราะห์ข้อมูลอย่างละเอียด นับเอง group เอง อย่าอ้างแค่ pre-computed ถ้าข้อมูลดิบตอบได้ดีกว่า`;
 }
 
 function PinGate({ onSuccess }) {
