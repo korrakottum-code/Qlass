@@ -3,6 +3,7 @@ import { getTodayStr, formatThaiDate } from "../utils/helpers";
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+const AI_CHAT_PIN = import.meta.env.VITE_AI_CHAT_PIN || "";
 
 function buildContext(queues, branches, procedures, promos, staff, rooms, today) {
   const monthStr = today.slice(0, 7);
@@ -458,7 +459,53 @@ ${(staff || []).map(s => `${s.nickname || s.name}(${s.role})`).join(", ")}
 หมายเหตุ: ถ้าผู้ใช้ถามเรื่องที่ต้องใช้ข้อมูลเชิงลึกเกินจากนี้ ให้บอกตรงๆ ว่าดูได้จากหน้า "สรุปประจำวัน" หรือ "Export ข้อมูล"`;
 }
 
+function PinGate({ onSuccess }) {
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+
+  function submit(e) {
+    e?.preventDefault();
+    if (!AI_CHAT_PIN) { setError("ยังไม่ได้ตั้งค่า PIN ในระบบ"); return; }
+    if (pin === AI_CHAT_PIN) {
+      try { sessionStorage.setItem("ai_chat_auth", "1"); } catch {}
+      onSuccess();
+    } else {
+      setError("PIN ไม่ถูกต้อง");
+      setPin("");
+    }
+  }
+
+  return (
+    <div style={{ minHeight: "80vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <form onSubmit={submit} style={{ padding: 32, borderRadius: 16, background: "#fff", boxShadow: "0 8px 32px rgba(0,0,0,0.08)", minWidth: 320, textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 8 }}>🔒</div>
+        <h2 style={{ margin: "0 0 6px", fontSize: 20 }}>AI ผู้ช่วยผู้บริหาร</h2>
+        <p style={{ margin: "0 0 20px", color: "#6b7280", fontSize: 13 }}>กรุณาใส่ PIN เพื่อเข้าใช้งาน</p>
+        <input
+          type="password"
+          value={pin}
+          onChange={(e) => { setPin(e.target.value); setError(""); }}
+          placeholder="••••••"
+          autoFocus
+          style={{ width: "100%", padding: "12px 16px", fontSize: 18, border: "1px solid #d1d5db", borderRadius: 10, textAlign: "center", letterSpacing: 4 }}
+        />
+        {error && <div style={{ color: "#dc2626", fontSize: 13, marginTop: 10 }}>{error}</div>}
+        <button type="submit" style={{ marginTop: 16, width: "100%", padding: "12px", background: "#C96A3E", color: "#fff", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>เข้าสู่ระบบ</button>
+      </form>
+    </div>
+  );
+}
+
 export default function AiChatPage({ queues, branches, procedures, promos, staff, rooms }) {
+  const [authed, setAuthed] = useState(() => {
+    try { return sessionStorage.getItem("ai_chat_auth") === "1"; } catch { return false; }
+  });
+  if (!authed) return <PinGate onSuccess={() => setAuthed(true)} />;
+
+  return <AiChatInner queues={queues} branches={branches} procedures={procedures} promos={promos} staff={staff} rooms={rooms} />;
+}
+
+function AiChatInner({ queues, branches, procedures, promos, staff, rooms }) {
   const [messages, setMessages] = useState([
     { role: "assistant", text: "สวัสดีครับ! ถามได้เลยเกี่ยวกับข้อมูลคิว สาขา หัตถการ หรือสถิติต่างๆ ครับ 😊" }
   ]);
