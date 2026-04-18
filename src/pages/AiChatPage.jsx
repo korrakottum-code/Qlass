@@ -213,6 +213,112 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
     return { month: m, count: qs.length, revenue: rev };
   });
 
+  // ─── 🚨 Anomaly / Audit / Executive concerns ───
+  // สาขาที่ no-show rate สูงผิดปกติ (> 10%)
+  const alertHighNoShow = Object.entries(branchStatusMap)
+    .map(([b, s]) => {
+      const total = Object.values(s).reduce((a,b)=>a+b, 0);
+      const ns = s["ไม่มาตามนัด"] || 0;
+      return { branch: b, total, noShow: ns, rate: total > 0 ? (ns/total*100) : 0 };
+    })
+    .filter(x => x.rate > 10 && x.total >= 10)
+    .sort((a,b) => b.rate - a.rate);
+
+  // สาขาที่ cancel rate สูงผิดปกติ (> 15%)
+  const alertHighCancel = Object.entries(branchStatusMap)
+    .map(([b, s]) => {
+      const total = Object.values(s).reduce((a,b)=>a+b, 0);
+      const c = s["ยกเลิก"] || 0;
+      return { branch: b, total, cancel: c, rate: total > 0 ? (c/total*100) : 0 };
+    })
+    .filter(x => x.rate > 15 && x.total >= 10)
+    .sort((a,b) => b.rate - a.rate);
+
+  // staff ไม่ได้บันทึกคิวเกิน 7 วัน (จาก staff ที่เคยบันทึกอย่างน้อย 1 ครั้ง)
+  const staffLastActive = {};
+  queues.forEach(q => {
+    if (q.recordedBy && q.date) {
+      if (!staffLastActive[q.recordedBy] || q.date > staffLastActive[q.recordedBy]) {
+        staffLastActive[q.recordedBy] = q.date;
+      }
+    }
+  });
+  const inactiveStaff = (staff || [])
+    .filter(s => s.active && staffLastActive[s.id])
+    .map(s => {
+      const last = staffLastActive[s.id];
+      const days = Math.round((new Date(today) - new Date(last)) / 86400000);
+      return { name: s.nickname || s.name, role: s.role, last, days };
+    })
+    .filter(x => x.days > 7)
+    .sort((a,b) => b.days - a.days);
+
+  // staff ที่ active แต่ไม่เคยบันทึกคิวเลย
+  const neverRecorded = (staff || [])
+    .filter(s => s.active && !staffLastActive[s.id] && !["superadmin"].includes(s.role))
+    .map(s => s.nickname || s.name);
+
+  // เปรียบเทียบ staff: top vs bottom performer (เดือนนี้)
+  const staffMonthCount = {};
+  monthQueues.forEach(q => {
+    if (q.recordedBy) staffMonthCount[q.recordedBy] = (staffMonthCount[q.recordedBy] || 0) + 1;
+  });
+  const activeStaff = (staff || []).filter(s => s.active && !["superadmin"].includes(s.role));
+  const staffPerformance = activeStaff.map(s => ({
+    name: s.nickname || s.name,
+    role: s.role,
+    branch: branches.find(b => b.id === s.branchId)?.name || "ไม่ระบุ",
+    count: staffMonthCount[s.id] || 0,
+  })).sort((a,b) => b.count - a.count);
+  const topStaff3 = staffPerformance.slice(0, 3);
+  const bottomStaff3 = staffPerformance.filter(s => s.count > 0).slice(-3).reverse();
+  const zeroStaff = staffPerformance.filter(s => s.count === 0);
+
+  // เทียบสัปดาห์นี้กับสัปดาห์ที่แล้ว
+  const thisWeekStart = daysAgo(6);
+  const thisWeekQueues = queues.filter(q => q.date >= thisWeekStart && q.date <= today);
+  const thisWeekRev = revenueOf(thisWeekQueues);
+  const lastWeekRev = revenueOf(lastWeekQueues);
+  const weekGrowth = lastWeekRev > 0 ? ((thisWeekRev - lastWeekRev) / lastWeekRev * 100).toFixed(1) : "N/A";
+  const weekCountGrowth = lastWeekQueues.length > 0 ? ((thisWeekQueues.length - lastWeekQueues.length) / lastWeekQueues.length * 100).toFixed(1) : "N/A";
+
+  // ─── ข้อมูลไม่สมบูรณ์ / น่าสงสัย ───
+  const missingBranch = queues.filter(q => !q.branchId).length;
+  const missingRoom = monthQueues.filter(q => !q.roomId).length;
+  const missingProc = monthQueues.filter(q => !q.procedureId).length;
+  const missingPrice = monthQueues.filter(q => q.status === "done" && (!q.price || q.price === 0)).length;
+  const missingRecordedBy = monthQueues.filter(q => !q.recordedBy).length;
+  const duplicatePhones = {};
+  queues.forEach(q => {
+    if (!q.phone) return;
+    duplicatePhones[q.phone] = duplicatePhones[q.phone] || new Set();
+    duplicatePhones[q.phone].add(q.name);
+  });
+  const diffNameSamePhone = Object.entries(duplicatePhones).filter(([,names]) => names.size > 1).length;
+
+  // โปรที่ไม่มีใครใช้เดือนนี้
+  const usedPromoIds = new Set(monthQueues.filter(q => q.promoId).map(q => q.promoId));
+  const unusedPromos = (promos || []).filter(p => !usedPromoIds.has(p.id)).slice(0, 10);
+
+  // หัตถการที่ไม่มีใครทำเดือนนี้
+  const usedProcIds = new Set(monthQueues.filter(q => q.procedureId).map(q => q.procedureId));
+  const unusedProcs = (procedures || []).filter(p => !usedProcIds.has(p.id)).slice(0, 10);
+
+  // คิว pending เก่าค้าง (> 3 วัน)
+  const oldPending = queues.filter(q => {
+    if (q.status !== "pending") return false;
+    const daysDiff = (new Date(q.date) - new Date(today)) / 86400000;
+    return daysDiff >= -30 && daysDiff < -3; // นัดผ่านมาแล้ว 3-30 วันแต่ยัง pending
+  }).length;
+
+  // สัปดาห์ที่คิวลดลงผิดปกติ (เทียบ last week vs this week by day)
+  const dayOverDayDrop = last7Days.map(d => {
+    const curr = queues.filter(q => q.date === d).length;
+    const prevDate = new Date(d); prevDate.setDate(prevDate.getDate() - 7);
+    const prev = queues.filter(q => q.date === prevDate.toISOString().slice(0,10)).length;
+    return { date: d, curr, prev, diff: curr - prev };
+  });
+
   // ─── Forecast: estimate rest of month based on daily avg ───
   const daysPassed = parseInt(today.slice(8, 10), 10);
   const daysInMonth = new Date(parseInt(today.slice(0,4)), parseInt(today.slice(5,7)), 0).getDate();
@@ -296,6 +402,49 @@ ${monthlyTrend.reverse().map(m => `${m.month}: ${m.count} คิว, ฿${m.reve
 === คาดการณ์สิ้นเดือน (${monthStr}) ===
 ผ่านไป ${daysPassed}/${daysInMonth} วัน | เฉลี่ย ${dailyAvg.toFixed(1)} คิว/วัน, ฿${dailyRevAvg.toFixed(0)}/วัน
 ประมาณสิ้นเดือน: ~${forecastQueues} คิว, รายได้ ~฿${forecastRevenue.toLocaleString()}
+
+=== 🚨 จุดที่ควรตรวจสอบ / จับผิด (Executive Alerts) ===
+
+[สัปดาห์นี้ vs สัปดาห์ที่แล้ว]
+คิว: ${thisWeekQueues.length} vs ${lastWeekQueues.length} (${weekCountGrowth === "N/A" ? "N/A" : weekCountGrowth + "%"})
+รายได้: ฿${thisWeekRev.toLocaleString()} vs ฿${lastWeekRev.toLocaleString()} (${weekGrowth === "N/A" ? "N/A" : weekGrowth + "%"})
+${parseFloat(weekGrowth) < -10 ? "⚠️ รายได้สัปดาห์นี้ลดลงเกิน 10%" : ""}
+${parseFloat(weekCountGrowth) < -10 ? "⚠️ จำนวนคิวสัปดาห์นี้ลดลงเกิน 10%" : ""}
+
+[Day-over-day 7 วันล่าสุด (เทียบกับ 7 วันก่อนหน้า)]
+${dayOverDayDrop.map(d => `${d.date}: ${d.curr} (${d.diff >= 0 ? "+" : ""}${d.diff} จาก ${d.prev})`).join("\n")}
+
+[สาขาที่ no-show rate สูงผิดปกติ (>10%)]
+${alertHighNoShow.length > 0 ? alertHighNoShow.map(x => `⚠️ ${x.branch}: ${x.rate.toFixed(1)}% (${x.noShow}/${x.total})`).join("\n") : "✓ ไม่มี"}
+
+[สาขาที่ cancel rate สูงผิดปกติ (>15%)]
+${alertHighCancel.length > 0 ? alertHighCancel.map(x => `⚠️ ${x.branch}: ${x.rate.toFixed(1)}% (${x.cancel}/${x.total})`).join("\n") : "✓ ไม่มี"}
+
+[พนักงาน active ที่ไม่บันทึกคิวเกิน 7 วัน]
+${inactiveStaff.length > 0 ? inactiveStaff.map(s => `⚠️ ${s.name}(${s.role}): หายไป ${s.days} วัน (ล่าสุด ${s.last})`).join("\n") : "✓ ทุกคน active ปกติ"}
+
+[พนักงาน active แต่ไม่เคยบันทึกคิวเลย]
+${neverRecorded.length > 0 ? "⚠️ " + neverRecorded.join(", ") : "✓ ไม่มี"}
+
+[พนักงาน Top/Bottom Performer เดือนนี้]
+Top 3: ${topStaff3.map(s => `${s.name}(${s.branch})=${s.count}`).join(", ")}
+Bottom 3 (มีคิวแล้วน้อยสุด): ${bottomStaff3.map(s => `${s.name}(${s.branch})=${s.count}`).join(", ")}
+${zeroStaff.length > 0 ? `⚠️ ไม่มีคิวเลยเดือนนี้: ${zeroStaff.map(s => `${s.name}(${s.branch})`).join(", ")}` : ""}
+
+[คุณภาพข้อมูล - ข้อมูลไม่สมบูรณ์]
+คิวที่ไม่มีสาขา: ${missingBranch} | ไม่มีห้อง (เดือนนี้): ${missingRoom} | ไม่มีหัตถการ: ${missingProc}
+คิว done ที่ไม่มีราคา: ${missingPrice} ${missingPrice > 0 ? "⚠️" : ""}
+คิวที่ไม่มีผู้บันทึก: ${missingRecordedBy} ${missingRecordedBy > 0 ? "⚠️" : ""}
+เบอร์โทรซ้ำแต่ชื่อต่างกัน: ${diffNameSamePhone} ${diffNameSamePhone > 0 ? "⚠️" : ""} คู่
+
+[คิว pending ค้างเก่า (นัดผ่านไป >3 วัน แต่ยังไม่อัปเดต)]
+${oldPending > 0 ? `⚠️ ${oldPending} คิว - ควรเช็คว่ามาหรือไม่มา` : "✓ ไม่มี"}
+
+[หัตถการที่ไม่มีใครทำเดือนนี้]
+${unusedProcs.length > 0 ? unusedProcs.map(p => p.name).join(", ") : "✓ ทุกหัตถการถูกใช้งาน"}
+
+[โปรที่ไม่มีใครใช้เดือนนี้]
+${unusedPromos.length > 0 ? unusedPromos.map(p => p.name).join(", ") : "✓ ทุกโปรถูกใช้งาน"}
 
 === รายชื่อสาขา (${branches.length}) ===
 ${branches.map(b => b.name).join(", ")}

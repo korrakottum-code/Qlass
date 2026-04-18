@@ -649,6 +649,9 @@ export default function App() {
 
   // ═══════ RENDER ═══════
 
+  // ─── Public AI chat (no login required) — accessible via #ai-chat ───
+  const isPublicAiChat = typeof window !== "undefined" && window.location.hash.replace("#", "").startsWith("ai-chat");
+
   // ยังโหลดข้อมูลอยู่ (และยังไม่มี currentUser จาก localStorage) → แสดง loading แทน
   if (isLoading && !currentUser) {
     return (
@@ -664,11 +667,28 @@ export default function App() {
     );
   }
 
+  // Public AI chat mode — no login, full data, accessible via /#ai-chat
+  if (isPublicAiChat) {
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--bg)", padding: 20 }}>
+        <AiChatPage
+          queues={queues}
+          branches={branches}
+          procedures={procedures}
+          promos={promos}
+          staff={staff}
+          rooms={rooms}
+        />
+        {toast && <Toast type={toast.type} msg={toast.msg} />}
+      </div>
+    );
+  }
+
   if (!currentUser) {
     return <LoginScreen staff={staff} onLogin={handleLogin} supabaseError={supabaseError} />;
   }
 
-  // Fullscreen mode for hidden pages like ai-chat
+  // Fullscreen mode for hidden pages like ai-chat (logged-in users)
   if (page === "ai-chat") {
     return (
       <div style={{ minHeight: "100vh", background: "var(--bg)", padding: 20 }}>
