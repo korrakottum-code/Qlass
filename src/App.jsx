@@ -820,6 +820,7 @@ export default function App() {
                 rooms={filteredRooms}
                 procedures={procedures}
                 promos={promos}
+                staff={staff}
                 currentUser={currentUser}
               />
             )}

@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { CUSTOMER_TYPES, PROCEDURE_CATEGORIES } from "../utils/constants";
+import { CUSTOMER_TYPES, PROCEDURE_CATEGORIES, ROLES } from "../utils/constants";
 import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass, canViewAllBranches } from "../utils/helpers";
 
 // ─── Date Distribution Bar Chart ───
@@ -53,38 +53,47 @@ function DateDistributionChart({ title, queues }) {
 }
 
 // ─── Mini Bar Chart ───
-function MiniBarChart({ title, data, colorFn }) {
+function MiniBarChart({ title, data, colorFn, onSelect, selectedValue }) {
   if (!data || data.length === 0) return null;
   const max = Math.max(...data.map((d) => d.value), 1);
+  const hasSelection = selectedValue != null;
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text2)", marginBottom: 8 }}>{title}</div>
       <div style={{ display: "grid", gap: 5 }}>
-        {data.map((d, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 110, fontSize: 11, color: "var(--text2)", textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>
-              {d.label}
-            </div>
-            <div style={{ flex: 1, background: "var(--surface2)", borderRadius: 4, height: 18, position: "relative", overflow: "hidden" }}>
-              <div style={{
-                width: `${(d.value / max) * 100}%`,
-                height: "100%",
-                background: colorFn ? colorFn(i) : "var(--accent)",
-                borderRadius: 4,
-                transition: "width 0.4s ease",
-                minWidth: d.value > 0 ? 4 : 0,
-              }} />
-            </div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", minWidth: 32, textAlign: "right" }}>
-              {d.value}
-            </div>
-            {d.revenue !== undefined && (
-              <div style={{ fontSize: 10, color: "var(--green)", fontFamily: "var(--mono)", minWidth: 60, textAlign: "right" }}>
-                ฿{d.revenue.toLocaleString()}
+        {data.map((d, i) => {
+          const isSelected = selectedValue === d.label;
+          const dimmed = hasSelection && !isSelected;
+          return (
+            <div
+              key={i}
+              onClick={() => onSelect && onSelect(isSelected ? null : d.label)}
+              style={{ display: "flex", alignItems: "center", gap: 8, cursor: onSelect ? "pointer" : "default", opacity: dimmed ? 0.35 : 1, transition: "opacity 0.2s" }}
+            >
+              <div style={{ width: 110, fontSize: 11, color: isSelected ? "var(--accent)" : "var(--text2)", fontWeight: isSelected ? 700 : 400, textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>
+                {d.label}
               </div>
-            )}
-          </div>
-        ))}
+              <div style={{ flex: 1, background: "var(--surface2)", borderRadius: 4, height: 18, position: "relative", overflow: "hidden", outline: isSelected ? "2px solid var(--accent)" : "none", borderRadius: 4 }}>
+                <div style={{
+                  width: `${(d.value / max) * 100}%`,
+                  height: "100%",
+                  background: colorFn ? colorFn(i) : "var(--accent)",
+                  borderRadius: 4,
+                  transition: "width 0.4s ease",
+                  minWidth: d.value > 0 ? 4 : 0,
+                }} />
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", minWidth: 32, textAlign: "right" }}>
+                {d.value}
+              </div>
+              {d.revenue !== undefined && (
+                <div style={{ fontSize: 10, color: "var(--green)", fontFamily: "var(--mono)", minWidth: 60, textAlign: "right" }}>
+                  ฿{d.revenue.toLocaleString()}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -330,14 +339,19 @@ function TopPromoRanking({ title, queues, promos, procedures }) {
   );
 }
 
-export default function SummaryPage({ queues, allQueues, branches, allBranches, rooms, procedures, promos, currentUser }) {
+export default function SummaryPage({ queues, allQueues, branches, allBranches, rooms, procedures, promos, staff, currentUser }) {
   const [viewMode, setViewMode] = useState("day"); // day | week | month
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterProcedure, setFilterProcedure] = useState("all");
   const [filterBranch, setFilterBranch] = useState("all");
   const [filterCustomerType, setFilterCustomerType] = useState("all");
+  const [crossFilter, setCrossFilter] = useState(null); // { dim: "branch"|"role"|"room"|"procedure", value: string }
   const isMultiBranch = canViewAllBranches(currentUser);
+
+  function handleCrossFilter(dim, value) {
+    setCrossFilter(prev => (prev?.dim === dim && prev?.value === value) ? null : (value ? { dim, value } : null));
+  }
 
   // ─── คำนวณ date range ตาม viewMode ───
   const dateRange = useMemo(() => {
@@ -421,7 +435,33 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
     [filteredQueues, inRange]
   );
 
-  const futureFromToday = recordedQueues.filter((q) => !inRange(q.date));
+  // ─── cross-filter recorded queues ───
+  const crossFilteredRecorded = useMemo(() => {
+    if (!crossFilter) return recordedQueues;
+    return recordedQueues.filter(q => {
+      if (crossFilter.dim === "branch") {
+        const b = branches.find(x => x.id === q.branchId);
+        return (b?.name || "ไม่ระบุ") === crossFilter.value;
+      }
+      if (crossFilter.dim === "role") {
+        const s = staff?.find(x => x.id === q.recordedBy);
+        const roleLabel = ROLES.find(r => r.value === s?.role)?.label || "ไม่ระบุ";
+        return roleLabel === crossFilter.value;
+      }
+      if (crossFilter.dim === "room") {
+        const r = rooms.find(x => x.id === q.roomId);
+        const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ";
+        return k === crossFilter.value;
+      }
+      if (crossFilter.dim === "procedure") {
+        const p = procedures.find(x => x.id === q.procedureId);
+        return (p?.name || "ไม่ระบุ") === crossFilter.value;
+      }
+      return true;
+    });
+  }, [recordedQueues, crossFilter, branches, staff, rooms, procedures]);
+
+  const futureFromToday = crossFilteredRecorded.filter((q) => !inRange(q.date));
   const advanceBookings = appointmentQueues.filter((q) => !inRange((q.createdAt || q.date || "").slice(0, 10)));
 
   const availableCategories = useMemo(() => {
@@ -520,7 +560,13 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
         }
         defaultOpen={false}
       >
-        <SectionStats queues={recordedQueues} procedures={procedures} />
+        <SectionStats queues={crossFilteredRecorded} procedures={procedures} />
+        {crossFilter && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "4px 10px", background: "rgba(185,94,66,0.08)", borderRadius: 6, border: "1px solid var(--accent)" }}>
+            <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>🔍 กรอง: {crossFilter.value}</span>
+            <button onClick={() => setCrossFilter(null)} style={{ marginLeft: "auto", fontSize: 11, padding: "2px 10px", borderRadius: 6, border: "1px solid var(--accent)", background: "transparent", color: "var(--accent)", cursor: "pointer", fontWeight: 700 }}>✕ Clear</button>
+          </div>
+        )}
         {futureFromToday.length > 0 && (
           <div style={{ fontSize: 12, color: "var(--blue)", marginBottom: 8, padding: "4px 10px", background: "var(--blue-soft)", borderRadius: 6 }}>
             📌 ในจำนวนนี้ <strong>{futureFromToday.length}</strong> คิว บันทึกวันนี้แต่นัดวันอื่น (pre-book)
@@ -528,11 +574,12 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
         )}
         {recordedQueues.length > 0 && (
           <>
-          <DateDistributionChart title="📅 คิวไปนัดวันไหนบ้าง" queues={recordedQueues} />
+          <DateDistributionChart title="📅 คิวไปนัดวันไหนบ้าง" queues={crossFilteredRecorded} />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginTop: 12 }}>
-            {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; recordedQueues.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} />}
-            <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; recordedQueues.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} />
-            <MiniBarChart title="💉 หัตถการ" data={(() => { const m = {}; recordedQueues.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} />
+            {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} onSelect={(v) => handleCrossFilter("branch", v)} selectedValue={crossFilter?.dim === "branch" ? crossFilter.value : null} />}
+            <MiniBarChart title="👤 ผู้บันทึก (ตามบทบาท)" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const s = staff?.find(x => x.id === q.recordedBy); const roleLabel = ROLES.find(r => r.value === s?.role)?.label || "ไม่ระบุ"; if (!m[roleLabel]) m[roleLabel] = { value: 0, revenue: 0 }; m[roleLabel].value++; m[roleLabel].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${260+i*25},60%,60%)`} onSelect={(v) => handleCrossFilter("role", v)} selectedValue={crossFilter?.dim === "role" ? crossFilter.value : null} />
+            <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} onSelect={(v) => handleCrossFilter("room", v)} selectedValue={crossFilter?.dim === "room" ? crossFilter.value : null} />
+            <MiniBarChart title="💉 หัตถการ" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} onSelect={(v) => handleCrossFilter("procedure", v)} selectedValue={crossFilter?.dim === "procedure" ? crossFilter.value : null} />
           </div>
           </>
         )}
@@ -557,7 +604,6 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
         )}
         {appointmentQueues.length > 0 && (
           <>
-          <DateDistributionChart title="📅 คิวไปนัดวันไหนบ้าง" queues={appointmentQueues} />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginTop: 12 }}>
             {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; appointmentQueues.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} />}
             <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; appointmentQueues.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} />
