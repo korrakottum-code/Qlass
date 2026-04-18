@@ -528,7 +528,7 @@ export default function BookingPage({
                   ["⏰ เวลา",       form.timeBlock !== null
                     ? `${blockToTime(form.timeBlock)} — ${blockToTime(form.timeBlock + (form.durationBlocks ?? procedure?.blocks ?? 0))} (${(form.durationBlocks ?? procedure?.blocks ?? 0) * 5} นาที${form.durationBlocks !== null && form.durationBlocks !== procedure?.blocks ? " ⚡ override" : ""})`
                     : "—"],
-                  ["💉 หัตถการ",  procedure?.name || "—"],
+ยีวส                  ["💉 หัตถการ",  procedure?.name || "—"],
                   ["🏷️ โปร/แพ็ก",  promo?.name || "—"],
                   ["💰 ราคา",      form.price ? `฿${Number(form.price).toLocaleString()}` : "—"],
                   ["📝 Note",       form.note || "—"],
