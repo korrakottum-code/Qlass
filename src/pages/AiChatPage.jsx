@@ -22,6 +22,33 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
   const lastMonthRecorded = queues.filter(q => recordedDateOf(q).startsWith(lastMonthStr));
   const preBookCount = monthRecorded.filter(q => q.date && q.date !== recordedDateOf(q)).length;
 
+  // ─── "แอดมินปิดได้" = คิวที่ recordedBy.role === "admin" + ไม่ใช่ customerType "course" ───
+  // "ปิด" = บันทึกสำเร็จ ไม่สนใจ status ภายหลัง
+  const isAdminClosed = (q) => {
+    if (!q.recordedBy) return false;
+    if (q.customerType === "course") return false;
+    const s = (staff || []).find(x => x.id === q.recordedBy);
+    return s?.role === "admin";
+  };
+  const yesterday = (() => { const d = new Date(today); d.setDate(d.getDate() - 1); return d.toISOString().slice(0,10); })();
+  const adminClosedToday = queues.filter(q => recordedDateOf(q) === today && isAdminClosed(q));
+  const adminClosedYesterday = queues.filter(q => recordedDateOf(q) === yesterday && isAdminClosed(q));
+  const adminClosedMonth = queues.filter(q => recordedDateOf(q).startsWith(monthStr) && isAdminClosed(q));
+  const adminClosedLastMonth = queues.filter(q => recordedDateOf(q).startsWith(lastMonthStr) && isAdminClosed(q));
+
+  const adminClosedByStaff = (list) => {
+    const m = {};
+    list.forEach(q => {
+      const s = (staff || []).find(x => x.id === q.recordedBy);
+      const k = s ? (s.nickname || s.name) : "?";
+      m[k] = (m[k] || 0) + 1;
+    });
+    return Object.entries(m).sort((a,b)=>b[1]-a[1]);
+  };
+  const adminClosedTodayByStaff = adminClosedByStaff(adminClosedToday);
+  const adminClosedYesterdayByStaff = adminClosedByStaff(adminClosedYesterday);
+  const adminClosedMonthByStaff = adminClosedByStaff(adminClosedMonth);
+
   // วันที่ 7 วันย้อนหลัง (รวมวันนี้)
   const last7Days = [];
   for (let i = 6; i >= 0; i--) {
@@ -461,7 +488,7 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
 
   const branchLookup = branches.map((b,i) => `B${i+1}=${b.name}`).join(", ");
   const procLookup = procedures.map((p,i) => `P${i+1}=${p.name}`).join(", ");
-  const staffLookup = (staff || []).map((s,i) => `S${i+1}=${s.nickname || s.name}`).join(", ");
+  const staffLookup = (staff || []).map((s,i) => `S${i+1}=${s.nickname || s.name}[${s.role || "?"}]`).join(", ");
   const promoLookup = (promos || []).map((p,i) => `PR${i+1}=${p.name}`).join(", ");
   const roomLookup = (rooms || []).map((r,i) => {
     const b = branches.find(x => x.id === r.branchId);
@@ -508,6 +535,14 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
 • ถ้ามีคนถามเรื่องรายได้ตรงๆ ให้บอกว่า "ระบบไม่มีข้อมูลรายได้จริง มีแค่มูลค่าคาดการณ์จากราคาโปรที่ลูกค้าจอง จำนวนเงินจริงต้องดูที่หน้าเคาน์เตอร์/ระบบบัญชี"
 • ไม่ต้องพูดเรื่องตัวเลขราคา/มูลค่าเยอะ — ถ้าไม่ได้ถามตรงๆ ไม่ต้องใส่มาเอง
 
+⚠️ กฎเหล็ก - "แอดมินปิด" / "ปิดคิว" / "แอดมินบันทึก":
+• "ปิด" = **บันทึกคิวสำเร็จ** (ไม่สนใจสถานะภายหลัง ไม่ว่าลูกค้าจะมา/ยกเลิก/ไม่มา ก็นับหมด)
+• นับเฉพาะคิวที่ **recordedBy.role === "admin"** เท่านั้น (ในระบบ role "admin" คือแอดมินจริงๆ)
+• **ไม่นับ** role อื่นๆ: superadmin (ผู้ดูแลระบบ), head_admin (หัวหน้าแอดมิน), branch_manager (ผู้จัดการ), cashier (แคชเชียร์)
+• **ไม่นับ** คิวที่ customerType === "course" (คิวใช้คอร์ส ไม่ใช่ยอดปิดใหม่)
+• ใช้ **createdAt** เป็นฐานวันที่ (ไม่ใช่ date = วันนัด)
+• ผมมีตัวเลข pre-computed ใน section "📌 แอดมินปิด" ใช้ได้เลย ตอบทันที ไม่ต้องถามกลับ
+
 ⚠️ กฎเหล็ก - คิวมี 2 แบบ ทุกคำถามที่เกี่ยวกับจำนวน/รายการคิว **ต้องถามผู้ใช้ก่อนเสมอ** ว่าหมายถึงแบบไหน ห้ามเดา ห้ามเลือกเอง:
 
 1. **"คิวที่บันทึก"** = คิวที่แอดมินลงบันทึกในวันนั้นๆ แต่ไม่รู้ว่าลูกค้าจะเข้ามาใช้บริการวันไหน (นับตาม createdAt)
@@ -534,6 +569,15 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
   • Pre-book (บันทึกเดือนนี้แต่นัดวันอื่น): ${preBookCount} คิว
 เดือนที่แล้ว (${lastMonthStr}):
   • บันทึก: ${lastMonthRecorded.length} คิว | มีนัด: ${lastMonthQueues.length} คิว
+
+=== 📌 แอดมินปิด (role=admin, ไม่รวมคอร์ส, นับทุก status) ===
+วันนี้ (${today}): ${adminClosedToday.length} คิว
+  Top admin: ${adminClosedTodayByStaff.slice(0,10).map(([k,v])=>`${k}(${v})`).join(", ") || "(ไม่มี)"}
+เมื่อวาน (${yesterday}): ${adminClosedYesterday.length} คิว
+  Top admin: ${adminClosedYesterdayByStaff.slice(0,10).map(([k,v])=>`${k}(${v})`).join(", ") || "(ไม่มี)"}
+เดือนนี้ (${monthStr}): ${adminClosedMonth.length} คิว
+  Top admin: ${adminClosedMonthByStaff.slice(0,15).map(([k,v])=>`${k}(${v})`).join(", ") || "(ไม่มี)"}
+เดือนที่แล้ว (${lastMonthStr}): ${adminClosedLastMonth.length} คิว
 
 === ภาพรวมวันนี้ (${today}) ===
 คิวทั้งหมด: ${todayQueues.length} | Check-in จริง (done): ${todayDone} (${todayCheckInRate}%)
