@@ -101,6 +101,25 @@ function buildContext(queues, branches, procedures, promos, staff, today) {
       return `${b}: ${top}`;
     }).join("\n");
 
+  // ─── branch × status (เดือนนี้) ───
+  const branchStatusMap = {};
+  monthQueues.forEach(q => {
+    const b = branchName(q.branchId);
+    const s = statusLabel[q.status] || q.status;
+    if (!branchStatusMap[b]) branchStatusMap[b] = {};
+    branchStatusMap[b][s] = (branchStatusMap[b][s] || 0) + 1;
+  });
+  const branchStatusSummary = Object.entries(branchStatusMap)
+    .sort((a,b) => Object.values(b[1]).reduce((x,y)=>x+y,0) - Object.values(a[1]).reduce((x,y)=>x+y,0))
+    .map(([b, statuses]) => {
+      const total = Object.values(statuses).reduce((a,b)=>a+b, 0);
+      const noShow = statuses["ไม่มาตามนัด"] || 0;
+      const cancel = statuses["ยกเลิก"] || 0;
+      const done = statuses["มาแล้ว/เสร็จ"] || 0;
+      const rate = total > 0 ? ((noShow/total)*100).toFixed(1) : 0;
+      return `${b} [${total}]: done=${done}, no-show=${noShow}(${rate}%), cancel=${cancel}`;
+    }).join("\n");
+
   // ─── branch × customerType (เดือนนี้) ───
   const branchTypeMap = {};
   monthQueues.forEach(q => {
@@ -159,6 +178,9 @@ ${branchProcSummary}
 
 === ประเภทลูกค้าแต่ละสาขา (เดือนนี้) ===
 ${branchTypeSummary}
+
+=== สถานะคิวแต่ละสาขา - no-show/cancel rate (เดือนนี้) ===
+${branchStatusSummary}
 
 === รายชื่อสาขา (${branches.length}) ===
 ${branches.map(b => b.name).join(", ")}
