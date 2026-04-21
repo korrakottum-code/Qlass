@@ -283,13 +283,27 @@ export async function deleteRoom(id) {
 // ═══════════════════════════════════════════════════════════
 
 export async function fetchRoomSchedules() {
-  const { data, error } = await supabase
-    .from("room_schedules")
-    .select("*")
-    .order("created_at", { ascending: true });
-  
-  if (error) throw error;
-  return data.map(s => ({
+  const PAGE_SIZE = 1000;
+  let allData = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("room_schedules")
+      .select("*")
+      .order("created_at", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allData = allData.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+
+  const unique = Array.from(new Map(allData.map((s) => [s.id, s])).values());
+
+  return unique.map(s => ({
     id: s.id,
     roomId: s.room_id,
     date: s.date || "",
