@@ -462,6 +462,12 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
                 ไม่เปลี่ยนช่วงเวลารับคิว — แค่แสดงหมายเหตุในหน้าบันทึกคิว
               </div>
             )}
+            {!noteOnly && available && (
+              <div style={{ marginTop: 6, fontSize: 11, color: "var(--green)", fontWeight: 600, lineHeight: 1.5 }}>
+                💡 ช่วงเวลาที่ตั้ง = เวลาเปิดจริงของวันนั้น (ครอบคลุมทั้งช่วง)<br />
+                ตัวอย่าง: ห้องเปิดปกติ 11:00–20:00 อยากต่อเวลาเป็น 22:00 → ตั้ง <b>11:00–22:00</b>
+              </div>
+            )}
           </div>
 
           {/* Time spinner — ซ่อนเมื่อ noteOnly หรือ ปิดทั้งวัน */}
