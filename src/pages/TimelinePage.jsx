@@ -41,15 +41,24 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
     return notesByRoomId;
   }, [filteredRooms, roomSchedules, date]);
 
-  // หา time range จากทุกห้อง
+  // หา time range จากทุกห้อง + schedules ที่ต่อเวลาสำหรับวันที่เลือก
   const { minBlock, maxBlock } = useMemo(() => {
     let mn = 132, mx = 240;
+    const roomIds = new Set(filteredRooms.map((r) => r.id));
     filteredRooms.forEach((r) => {
       if ((r.openBlock ?? 132) < mn) mn = r.openBlock ?? 132;
       if ((r.closeBlock ?? 240) > mx) mx = r.closeBlock ?? 240;
     });
+    (roomSchedules || []).forEach((s) => {
+      if (!s.available || s.noteOnly) return;
+      if (s.startBlock === null || s.endBlock === null) return;
+      if (s.date && s.date !== date) return;
+      if (!roomIds.has(s.roomId)) return;
+      if (s.startBlock < mn) mn = s.startBlock;
+      if (s.endBlock > mx) mx = s.endBlock;
+    });
     return { minBlock: mn, maxBlock: mx };
-  }, [filteredRooms]);
+  }, [filteredRooms, roomSchedules, date]);
 
   // แสดงทุกชั่วโมง (12 บล็อค = 1 ชม.) เป็น row
   const hourBlocks = useMemo(() => {
