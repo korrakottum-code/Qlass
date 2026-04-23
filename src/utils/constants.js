@@ -96,9 +96,12 @@ export const CUSTOMER_TYPES = [
   { value: "course", label: "ใช้คอร์ส", emoji: "📋" },
 ];
 
-// Time blocks: 11:00 - 20:00 (block 132 - 240)
+// Time blocks: default room hours 11:00 - 20:00 (block 132 - 240)
 export const WORK_START_BLOCK = 132;
 export const WORK_END_BLOCK = 240;
+// Day block pool: 08:00 - 24:00 (block 96 - 288) — allows schedules/rooms to extend hours
+export const DAY_START_BLOCK = 96;
+export const DAY_END_BLOCK = 288;
 
 export const NAV_ITEMS = [
   { section: "งานหลัก" },
