@@ -133,7 +133,7 @@ export const ROLES = [
     label: "หัวหน้าแอดมิน",
     color: "#7c3aed",
     bg: "rgba(124,58,237,0.1)",
-    pages: ["booking","queue-table","timeline","summary","commission","export","ai-chat","tickets","promos","rooms","room-schedule","staff","activity-log"],
+    pages: ["booking","queue-table","timeline","summary","commission","export","ai-chat","tickets","procedures","promos","rooms","room-schedule","staff","activity-log"],
   },
   {
     value: "admin",
