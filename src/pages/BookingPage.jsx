@@ -88,35 +88,62 @@ export default function BookingPage({
     return occupied;
   }, [form.roomId, form.date, queues, editingQueueId, procedures]);
 
-  // Blocks available ตาม roomSchedules (ปิด/เปิดพิเศษ) + default hours ของห้อง
+  // ช่วงเวลาที่ห้องเปิด (union ของเวลาปกติห้อง + schedules ที่เปิดพิเศษ) ลบด้วย schedules ที่ปิด
   const availableBlocks = useMemo(() => {
-    // เริ่มจาก default hours ของห้อง (openBlock/closeBlock)
     const openB = selectedRoom?.openBlock ?? WORK_START_BLOCK;
     const closeB = selectedRoom?.closeBlock ?? WORK_END_BLOCK;
-    const baseBlocks = WORK_BLOCKS.filter((b) => b.block >= openB && b.block < closeB);
 
-    if (!form.roomId || !form.date) return baseBlocks;
+    if (!form.roomId || !form.date) {
+      return WORK_BLOCKS.filter((b) => b.block >= openB && b.block < closeB);
+    }
+
     const schedules = roomSchedules.filter(
       (s) => s.roomId === form.roomId && (s.date === form.date || s.date === "")
     );
-    if (schedules.length === 0) return baseBlocks;
+
     // ปิดทั้งวัน (available=false, ไม่มี block range) → ไม่มี slot เลย
     const isClosedAllDay = schedules.some((s) => !s.available && !s.noteOnly && s.startBlock === null);
     if (isClosedAllDay) return [];
-    return baseBlocks.filter((b) => {
-      for (const s of schedules) {
-        // noteOnly = แค่ note ไม่มีผลต่อเวลา ข้ามไป
-        if (s.startBlock === null || s.endBlock === null) continue;
-        if (s.available) {
-          // เปิดเฉพาะช่วง → นอกช่วง = ปิด
-          if (b.block < s.startBlock || b.block >= s.endBlock) return false;
-        } else {
-          // ปิดช่วงนี้
-          if (b.block >= s.startBlock && b.block < s.endBlock) return false;
-        }
+
+    // Open ranges: default ห้อง + schedules ที่เปิด (union → ต่อเวลาได้)
+    const openRanges = [{ start: openB, end: closeB }];
+    schedules.forEach((s) => {
+      if (s.available && !s.noteOnly && s.startBlock !== null && s.endBlock !== null) {
+        openRanges.push({ start: s.startBlock, end: s.endBlock });
       }
-      return true;
     });
+
+    // Block ranges: schedules ที่ปิดเฉพาะช่วง
+    const blockRanges = schedules
+      .filter((s) => !s.available && !s.noteOnly && s.startBlock !== null && s.endBlock !== null)
+      .map((s) => ({ start: s.startBlock, end: s.endBlock }));
+
+    return WORK_BLOCKS.filter((b) => {
+      const isOpen = openRanges.some((r) => b.block >= r.start && b.block < r.end);
+      if (!isOpen) return false;
+      const isBlocked = blockRanges.some((r) => b.block >= r.start && b.block < r.end);
+      return !isBlocked;
+    });
+  }, [form.roomId, form.date, roomSchedules, selectedRoom]);
+
+  // ช่วงเวลาที่จะแสดงในตารางเลือกเวลา (effective open range รวม schedule ที่ต่อเวลา)
+  const displayBlocks = useMemo(() => {
+    const openB = selectedRoom?.openBlock ?? WORK_START_BLOCK;
+    const closeB = selectedRoom?.closeBlock ?? WORK_END_BLOCK;
+    let effStart = openB;
+    let effEnd = closeB;
+    if (form.roomId && form.date) {
+      const schedules = roomSchedules.filter(
+        (s) => s.roomId === form.roomId && (s.date === form.date || s.date === "")
+      );
+      schedules.forEach((s) => {
+        if (s.available && !s.noteOnly && s.startBlock !== null && s.endBlock !== null) {
+          if (s.startBlock < effStart) effStart = s.startBlock;
+          if (s.endBlock > effEnd) effEnd = s.endBlock;
+        }
+      });
+    }
+    return WORK_BLOCKS.filter((b) => b.block >= effStart && b.block < effEnd);
   }, [form.roomId, form.date, roomSchedules, selectedRoom]);
 
   // ตรวจสอบ slot ที่เลือกชนกับคิวอื่น
@@ -438,7 +465,7 @@ export default function BookingPage({
                 </div>
               )}
               <div className="time-grid">
-                {WORK_BLOCKS.map((b) => {
+                {displayBlocks.map((b) => {
                   const isStart = form.timeBlock === b.block;
                   const isInRange = form.timeBlock !== null && activeDur > 0
                     && b.block > form.timeBlock && b.block < form.timeBlock + activeDur;

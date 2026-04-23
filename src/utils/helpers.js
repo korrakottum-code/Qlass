@@ -1,4 +1,4 @@
-import { WORK_START_BLOCK, WORK_END_BLOCK } from "./constants";
+import { DAY_START_BLOCK, DAY_END_BLOCK } from "./constants";
 
 export function genId(prefix) {
   return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
@@ -28,7 +28,7 @@ export function blockToTime(block) {
 
 export function generateWorkBlocks() {
   const blocks = [];
-  for (let b = WORK_START_BLOCK; b < WORK_END_BLOCK; b++) {
+  for (let b = DAY_START_BLOCK; b < DAY_END_BLOCK; b++) {
     blocks.push({ block: b, time: blockToTime(b) });
   }
   return blocks;
