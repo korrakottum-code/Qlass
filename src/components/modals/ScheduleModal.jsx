@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
-import { blockToTime, WORK_BLOCKS } from "../../utils/helpers";
+import { blockToTime } from "../../utils/helpers";
 
 const DAY_NAMES = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 const DAY_NAMES_FULL = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัส", "ศุกร์", "เสาร์"];
@@ -152,17 +152,19 @@ function generateDates(repeatMode, singleDate, weekStart, monthYear, weekdays) {
 }
 
 const STEP = 6; // 30 นาที = 6 บล็อค
+const SPINNER_MIN_BLOCK = 0;   // 00:00
+const SPINNER_MAX_BLOCK = 288; // 24:00
 
 function TimeSpinner({ label, value, onChange }) {
-  const atMin = value <= WORK_BLOCKS[0].block;
-  const atMax = value >= WORK_BLOCKS[WORK_BLOCKS.length - 1].block;
+  const atMin = value <= SPINNER_MIN_BLOCK;
+  const atMax = value >= SPINNER_MAX_BLOCK;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <label className="form-label">{label}</label>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <button
           className="btn btn-secondary btn-sm"
-          onClick={() => !atMin && onChange(Math.max(WORK_BLOCKS[0].block, value - STEP))}
+          onClick={() => !atMin && onChange(Math.max(SPINNER_MIN_BLOCK, value - STEP))}
           disabled={atMin}
           style={{ fontSize: 16, padding: "4px 10px", lineHeight: 1 }}
         >−</button>
@@ -176,7 +178,7 @@ function TimeSpinner({ label, value, onChange }) {
         </div>
         <button
           className="btn btn-secondary btn-sm"
-          onClick={() => !atMax && onChange(Math.min(WORK_BLOCKS[WORK_BLOCKS.length - 1].block, value + STEP))}
+          onClick={() => !atMax && onChange(Math.min(SPINNER_MAX_BLOCK, value + STEP))}
           disabled={atMax}
           style={{ fontSize: 16, padding: "4px 10px", lineHeight: 1 }}
         >+</button>
@@ -458,6 +460,12 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
             {noteOnly && (
               <div style={{ marginTop: 6, fontSize: 11, color: "#b45309", fontWeight: 600 }}>
                 ไม่เปลี่ยนช่วงเวลารับคิว — แค่แสดงหมายเหตุในหน้าบันทึกคิว
+              </div>
+            )}
+            {!noteOnly && available && (
+              <div style={{ marginTop: 6, fontSize: 11, color: "var(--green)", fontWeight: 600, lineHeight: 1.5 }}>
+                💡 ช่วงเวลาที่ตั้ง = เวลาเปิดจริงของวันนั้น (ครอบคลุมทั้งช่วง)<br />
+                ตัวอย่าง: ห้องเปิดปกติ 11:00–20:00 อยากต่อเวลาเป็น 22:00 → ตั้ง <b>11:00–22:00</b>
               </div>
             )}
           </div>
