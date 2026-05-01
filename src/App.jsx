@@ -409,7 +409,7 @@ export default function App() {
           status: "rescheduled_in",
           statusNote: payload.statusNote || "",
           createdAt: getTodayStr(),
-          recordedBy: currentUser?.id || null,
+          // คงชื่อคนบันทึกเดิมไว้ (จาก ...rest) เพื่อให้คอมมิชชั่นไปถึงแอดมินคนแรก
         });
       }
     } else {
