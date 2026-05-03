@@ -126,11 +126,15 @@ function CollapsibleCard({ title, subtitle, badge, children, defaultOpen = true 
 }
 
 // ─── Admin Performance Table (superadmin only) ───
-function AdminPerformanceCard({ recordedQueues, staff, branches, rangeLabel }) {
+function AdminPerformanceCard({ recordedQueues, staff, branches, rangeLabel, selectedRecorderIds = [], onRowClick }) {
   const rows = useMemo(() => {
+    // build set of admin staff ids (role === "admin")
+    const adminIds = new Set((staff || []).filter((s) => s?.role === "admin").map((s) => s.id));
+
     const byStaff = {};
     (recordedQueues || []).forEach((q) => {
-      const sid = q.recordedBy || "__none__";
+      const sid = q.recordedBy;
+      if (!sid || !adminIds.has(sid)) return; // เอาแค่ role === "admin"
       if (!byStaff[sid]) byStaff[sid] = { total: 0, new: 0, old: 0, course: 0, revenue: 0, branches: new Set() };
       const r = byStaff[sid];
       r.total++;
@@ -165,6 +169,8 @@ function AdminPerformanceCard({ recordedQueues, staff, branches, rangeLabel }) {
       .sort((a, b) => b.total - a.total);
   }, [recordedQueues, staff, branches]);
 
+  const hasSelection = selectedRecorderIds.length > 0;
+
   if (rows.length === 0) {
     return (
       <CollapsibleCard
@@ -173,7 +179,7 @@ function AdminPerformanceCard({ recordedQueues, staff, branches, rangeLabel }) {
         defaultOpen={false}
       >
         <div style={{ padding: 16, color: "var(--text3)", fontSize: 13, textAlign: "center" }}>
-          ไม่มีคิวที่บันทึกในช่วงนี้
+          ไม่มีคิวที่แอดมินบันทึกในช่วงนี้
         </div>
       </CollapsibleCard>
     );
@@ -185,7 +191,7 @@ function AdminPerformanceCard({ recordedQueues, staff, branches, rangeLabel }) {
   return (
     <CollapsibleCard
       title={`👥 Performance ของแอดมิน — ${rangeLabel}`}
-      subtitle={`รวม ${totalQueues} คิว • ฿${totalRevenue.toLocaleString()}`}
+      subtitle={`รวม ${totalQueues} คิว • ฿${totalRevenue.toLocaleString()} — คลิกชื่อเพื่อกรองคิวที่บันทึก`}
       badge={
         <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)", background: "var(--surface3)", borderRadius: 10, padding: "2px 10px", color: "var(--text2)" }}>
           {rows.length} คน
@@ -211,11 +217,23 @@ function AdminPerformanceCard({ recordedQueues, staff, branches, rangeLabel }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, idx) => (
-              <tr key={r.id}>
+            {rows.map((r, idx) => {
+              const isSelected = selectedRecorderIds.includes(r.id);
+              const dimmed = hasSelection && !isSelected;
+              return (
+              <tr
+                key={r.id}
+                onClick={() => onRowClick && onRowClick(r.id)}
+                style={{
+                  cursor: onRowClick ? "pointer" : "default",
+                  opacity: dimmed ? 0.4 : 1,
+                  background: isSelected ? "rgba(185,94,66,0.08)" : "transparent",
+                  transition: "opacity 0.2s, background 0.2s",
+                }}
+              >
                 <td style={{ fontWeight: 700, color: "var(--text3)" }}>{idx + 1}</td>
                 <td>
-                  <div style={{ fontWeight: 700 }}>{r.name}</div>
+                  <div style={{ fontWeight: 700, color: isSelected ? "var(--accent)" : "inherit" }}>{r.name}</div>
                   {r.fullName !== r.name && (
                     <div style={{ fontSize: 11, color: "var(--text3)" }}>{r.fullName}</div>
                   )}
@@ -236,7 +254,8 @@ function AdminPerformanceCard({ recordedQueues, staff, branches, rangeLabel }) {
                   {totalQueues > 0 ? Math.round((r.total / totalQueues) * 100) + "%" : "—"}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -467,8 +486,8 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
   const [filterProcedure, setFilterProcedure] = useState("all");
   const [filterBranch, setFilterBranch] = useState("all");
   const [filterCustomerType, setFilterCustomerType] = useState("all");
-  // Multi-select cross filter — { branch: [], role: [], room: [], procedure: [] }
-  const [crossFilter, setCrossFilter] = useState({ branch: [], role: [], room: [], procedure: [] });
+  // Multi-select cross filter — { branch: [], role: [], room: [], procedure: [], recorder: [] }
+  const [crossFilter, setCrossFilter] = useState({ branch: [], role: [], room: [], procedure: [], recorder: [] });
   const [customStart, setCustomStart] = useState(getTodayStr());
   const [customEnd, setCustomEnd] = useState(getTodayStr());
   const isMultiBranch = canViewAllBranches(currentUser);
@@ -488,7 +507,12 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
   }
 
   const hasAnyCrossFilter =
-    crossFilter.branch.length + crossFilter.role.length + crossFilter.room.length + crossFilter.procedure.length > 0;
+    crossFilter.branch.length +
+      crossFilter.role.length +
+      crossFilter.room.length +
+      crossFilter.procedure.length +
+      crossFilter.recorder.length >
+    0;
 
   // ─── คำนวณ date range ตาม viewMode ───
   const dateRange = useMemo(() => {
@@ -596,6 +620,9 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
       if (crossFilter.procedure.length > 0) {
         const p = procedures.find((x) => x.id === q.procedureId);
         if (!crossFilter.procedure.includes(p?.name || "ไม่ระบุ")) return false;
+      }
+      if (crossFilter.recorder.length > 0) {
+        if (!crossFilter.recorder.includes(q.recordedBy)) return false;
       }
       return true;
     });
@@ -722,6 +749,8 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
           staff={staff}
           branches={branches}
           rangeLabel={rangeLabel}
+          selectedRecorderIds={crossFilter.recorder}
+          onRowClick={(staffId) => handleCrossFilter("recorder", staffId)}
         />
       )}
 
@@ -740,17 +769,24 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
         {hasAnyCrossFilter && (
           <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginBottom: 8, padding: "6px 10px", background: "rgba(185,94,66,0.08)", borderRadius: 6, border: "1px solid var(--accent)" }}>
             <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 700 }}>🔍 กรอง:</span>
-            {(["branch", "role", "room", "procedure"]).flatMap((dim) =>
-              (crossFilter[dim] || []).map((v) => (
-                <button
-                  key={`${dim}:${v}`}
-                  onClick={() => handleCrossFilter(dim, v)}
-                  title="คลิกเพื่อลบ"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 12, border: "1px solid var(--accent)", background: "var(--surface)", color: "var(--accent)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
-                >{v} ✕</button>
-              ))
+            {(["branch", "role", "room", "procedure", "recorder"]).flatMap((dim) =>
+              (crossFilter[dim] || []).map((v) => {
+                let label = v;
+                if (dim === "recorder") {
+                  const s = (staff || []).find((x) => x.id === v);
+                  label = `👤 ${s?.nickname || s?.name || v}`;
+                }
+                return (
+                  <button
+                    key={`${dim}:${v}`}
+                    onClick={() => handleCrossFilter(dim, v)}
+                    title="คลิกเพื่อลบ"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 12, border: "1px solid var(--accent)", background: "var(--surface)", color: "var(--accent)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                  >{label} ✕</button>
+                );
+              })
             )}
-            <button onClick={() => setCrossFilter({ branch: [], role: [], room: [], procedure: [] })} style={{ marginLeft: "auto", fontSize: 11, padding: "2px 10px", borderRadius: 6, border: "1px solid var(--accent)", background: "transparent", color: "var(--accent)", cursor: "pointer", fontWeight: 700 }}>✕ Clear all</button>
+            <button onClick={() => setCrossFilter({ branch: [], role: [], room: [], procedure: [], recorder: [] })} style={{ marginLeft: "auto", fontSize: 11, padding: "2px 10px", borderRadius: 6, border: "1px solid var(--accent)", background: "transparent", color: "var(--accent)", cursor: "pointer", fontWeight: 700 }}>✕ Clear all</button>
           </div>
         )}
         {futureFromToday.length > 0 && (
