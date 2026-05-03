@@ -92,29 +92,37 @@ export default function App() {
   const [lastParseSnapshot, setLastParseSnapshot] = useState(null);
 
   // ─── Load data from Supabase on initial mount ───
+  // Strategy: fetch recent 90 days of queues first for fast render,
+  // then fetch full history in the background (non-blocking). Master data
+  // (branches, rooms, etc.) is small so always fetched in full upfront.
   useEffect(() => {
-    async function loadFromSupabase() {
+    const RECENT_DAYS = 90;
+    const recentSince = new Date(Date.now() - RECENT_DAYS * 86400 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
+    async function loadInitial() {
       try {
         setIsLoading(true);
-        const [staffData, branchData, procedureData, promoData, roomData, scheduleData, queueData, categoryData, ticketData] = await Promise.all([
+        const [staffData, branchData, procedureData, promoData, roomData, scheduleData, recentQueueData, categoryData, ticketData] = await Promise.all([
           getAllStaff(),
           getAllBranches(),
           getAllProcedures(),
           getAllPromos(),
           getAllRooms(),
           getAllRoomSchedules(),
-          getAllQueues(),
+          getAllQueues({ sinceDate: recentSince }), // only last 90 days for fast render
           getAllCategories().catch(() => null),
           fetchTickets().catch(() => null),
         ]);
-        
+
         setStaff(staffData || []);
         setBranches(branchData || []);
         setProcedures(procedureData || []);
         setPromos(promoData || []);
         setRooms(roomData || []);
         setRoomSchedules(scheduleData || []);
-        setQueues(queueData || []);
+        setQueues(recentQueueData || []);
         if (categoryData && categoryData.length > 0) {
           setCategories(categoryData);
         }
@@ -127,8 +135,30 @@ export default function App() {
       } finally {
         setIsLoading(false);
       }
+
+      // Background: fetch full queue history and merge in (non-blocking).
+      // Merge strategy: any queue already in state (likely touched by realtime
+      // during the gap) is preserved; older queues not yet in state are added.
+      try {
+        const fullQueues = await getAllQueues();
+        if (Array.isArray(fullQueues)) {
+          setQueues((prev) => {
+            const prevMap = new Map(prev.map((q) => [q.id, q]));
+            const merged = fullQueues.map((q) => prevMap.get(q.id) || q);
+            // Preserve any local queues not present in the full snapshot
+            // (e.g. created after snapshot started)
+            const mergedIds = new Set(merged.map((q) => q.id));
+            for (const q of prev) {
+              if (!mergedIds.has(q.id)) merged.push(q);
+            }
+            return merged;
+          });
+        }
+      } catch (e) {
+        console.warn("Background full-queue fetch failed (keeping recent only):", e);
+      }
     }
-    loadFromSupabase();
+    loadInitial();
   }, []);
 
   // ─── Realtime subscription for queues ───

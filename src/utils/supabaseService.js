@@ -520,19 +520,21 @@ export function mapQueueRow(q) {
   };
 }
 
-export async function fetchQueues() {
+export async function fetchQueues(opts = {}) {
+  const { sinceDate = null } = opts; // "YYYY-MM-DD" — include queues with date >= sinceDate
   const PAGE_SIZE = 1000;
   let allData = [];
   let from = 0;
 
   while (true) {
-    const { data, error } = await supabase
-      .from("queues")
-      .select("*")
+    let query = supabase.from("queues").select("*");
+    if (sinceDate) query = query.gte("date", sinceDate);
+    query = query
       .order("date", { ascending: false })
       .order("time_block", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
 
+    const { data, error } = await query;
     if (error) throw error;
     if (!data || data.length === 0) break;
     allData = allData.concat(data);
