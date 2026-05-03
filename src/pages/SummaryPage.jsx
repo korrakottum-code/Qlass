@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { CUSTOMER_TYPES, PROCEDURE_CATEGORIES, ROLES } from "../utils/constants";
 import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass, canViewAllBranches } from "../utils/helpers";
+import AdSpendCard from "../components/AdSpendCard";
 
 // ─── Date Distribution Bar Chart ───
 const DOW_SHORT = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
@@ -548,6 +549,15 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
           <span style={{ fontSize: 15, fontWeight: 700, color: "var(--accent)" }}>{rangeLabel}</span>
         </div>
       </div>
+
+      {/* ─── Ad Spend (superadmin only) ─── */}
+      {currentUser?.role === "superadmin" && (
+        <AdSpendCard
+          dateRange={dateRange}
+          rangeLabel={rangeLabel}
+          selectedDate={selectedDate}
+        />
+      )}
 
       {/* Section 1: บันทึกวันนั้น */}
       <CollapsibleCard
