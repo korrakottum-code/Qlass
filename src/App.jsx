@@ -91,11 +91,37 @@ export default function App() {
   const [parseHints, setParseHints] = useState({ branchAliases: {}, procedureAliases: {} });
   const [lastParseSnapshot, setLastParseSnapshot] = useState(null);
 
-  // ─── Load data from Supabase on initial mount ───
+  // ─── Load data from Supabase on initial mount (stale-while-revalidate) ───
   useEffect(() => {
+    const CACHE_KEY = "qlass_cache_v1";
+
+    // 1) Hydrate immediately from localStorage cache (instant render after hard refresh)
+    let hadCache = false;
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        if (cached && typeof cached === "object") {
+          if (Array.isArray(cached.staff)) setStaff(cached.staff);
+          if (Array.isArray(cached.branches)) setBranches(cached.branches);
+          if (Array.isArray(cached.procedures)) setProcedures(cached.procedures);
+          if (Array.isArray(cached.promos)) setPromos(cached.promos);
+          if (Array.isArray(cached.rooms)) setRooms(cached.rooms);
+          if (Array.isArray(cached.roomSchedules)) setRoomSchedules(cached.roomSchedules);
+          if (Array.isArray(cached.queues)) setQueues(cached.queues);
+          if (Array.isArray(cached.categories) && cached.categories.length > 0) setCategories(cached.categories);
+          if (Array.isArray(cached.tickets)) setTickets(cached.tickets);
+          hadCache = true;
+        }
+      }
+    } catch (e) {
+      console.warn("cache hydrate failed:", e);
+    }
+
+    // 2) Fetch fresh data in background (no fullscreen loader if cache existed)
     async function loadFromSupabase() {
       try {
-        setIsLoading(true);
+        if (!hadCache) setIsLoading(true);
         const [staffData, branchData, procedureData, promoData, roomData, scheduleData, queueData, categoryData, ticketData] = await Promise.all([
           getAllStaff(),
           getAllBranches(),
@@ -107,7 +133,7 @@ export default function App() {
           getAllCategories().catch(() => null),
           fetchTickets().catch(() => null),
         ]);
-        
+
         setStaff(staffData || []);
         setBranches(branchData || []);
         setProcedures(procedureData || []);
@@ -121,9 +147,31 @@ export default function App() {
         if (ticketData) {
           setTickets(ticketData);
         }
+
+        // 3) Update cache after fresh fetch
+        try {
+          localStorage.setItem(
+            CACHE_KEY,
+            JSON.stringify({
+              staff: staffData || [],
+              branches: branchData || [],
+              procedures: procedureData || [],
+              promos: promoData || [],
+              rooms: roomData || [],
+              roomSchedules: scheduleData || [],
+              queues: queueData || [],
+              categories: categoryData || [],
+              tickets: ticketData || [],
+              cachedAt: Date.now(),
+            })
+          );
+        } catch (e) {
+          // localStorage quota — drop cache silently
+          console.warn("cache write failed:", e);
+        }
       } catch (error) {
         console.error('Error loading from Supabase:', error);
-        setSupabaseError(error.message);
+        if (!hadCache) setSupabaseError(error.message);
       } finally {
         setIsLoading(false);
       }
