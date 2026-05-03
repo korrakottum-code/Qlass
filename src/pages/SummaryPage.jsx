@@ -125,144 +125,6 @@ function CollapsibleCard({ title, subtitle, badge, children, defaultOpen = true 
   );
 }
 
-// ─── Admin Performance Table (superadmin only) ───
-function AdminPerformanceCard({ recordedQueues, staff, branches, rangeLabel, selectedRecorderIds = [], onRowClick }) {
-  const rows = useMemo(() => {
-    // build set of admin staff ids (role === "admin")
-    const adminIds = new Set((staff || []).filter((s) => s?.role === "admin").map((s) => s.id));
-
-    const byStaff = {};
-    (recordedQueues || []).forEach((q) => {
-      const sid = q.recordedBy;
-      if (!sid || !adminIds.has(sid)) return; // เอาแค่ role === "admin"
-      if (!byStaff[sid]) byStaff[sid] = { total: 0, new: 0, old: 0, course: 0, revenue: 0, branches: new Set() };
-      const r = byStaff[sid];
-      r.total++;
-      if (q.customerType === "new") r.new++;
-      else if (q.customerType === "old") r.old++;
-      else if (q.customerType === "course") r.course++;
-      r.revenue += Number(q.price) || 0;
-      if (q.branchId) r.branches.add(q.branchId);
-    });
-    return Object.entries(byStaff)
-      .map(([sid, v]) => {
-        const s = (staff || []).find((x) => x.id === sid);
-        const role = ROLES.find((r) => r.value === s?.role);
-        return {
-          id: sid,
-          name: s?.nickname || s?.name || "—",
-          fullName: s?.name || "—",
-          roleLabel: role?.label || "—",
-          roleColor: role?.color,
-          branchNames: [...v.branches]
-            .map((bid) => (branches || []).find((b) => b.id === bid)?.name)
-            .filter(Boolean)
-            .join(", "),
-          total: v.total,
-          new: v.new,
-          old: v.old,
-          course: v.course,
-          newOld: v.new + v.old,
-          revenue: v.revenue,
-        };
-      })
-      .sort((a, b) => b.total - a.total);
-  }, [recordedQueues, staff, branches]);
-
-  const hasSelection = selectedRecorderIds.length > 0;
-
-  if (rows.length === 0) {
-    return (
-      <CollapsibleCard
-        title={`👥 Performance ของแอดมิน — ${rangeLabel}`}
-        subtitle="ดูได้แค่ผู้ดูแลระบบ"
-        defaultOpen={false}
-      >
-        <div style={{ padding: 16, color: "var(--text3)", fontSize: 13, textAlign: "center" }}>
-          ไม่มีคิวที่แอดมินบันทึกในช่วงนี้
-        </div>
-      </CollapsibleCard>
-    );
-  }
-
-  const totalQueues = rows.reduce((s, r) => s + r.total, 0);
-  const totalRevenue = rows.reduce((s, r) => s + r.revenue, 0);
-
-  return (
-    <CollapsibleCard
-      title={`👥 Performance ของแอดมิน — ${rangeLabel}`}
-      subtitle={`รวม ${totalQueues} คิว • ฿${totalRevenue.toLocaleString()} — คลิกชื่อเพื่อกรองคิวที่บันทึก`}
-      badge={
-        <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)", background: "var(--surface3)", borderRadius: 10, padding: "2px 10px", color: "var(--text2)" }}>
-          {rows.length} คน
-        </span>
-      }
-      defaultOpen={true}
-    >
-      <div style={{ overflowX: "auto" }}>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>ชื่อ</th>
-              <th>บทบาท</th>
-              <th>สาขา</th>
-              <th style={{ textAlign: "right" }}>คิวรวม</th>
-              <th style={{ textAlign: "right" }}>🆕 ใหม่</th>
-              <th style={{ textAlign: "right" }}>♻️ เก่า</th>
-              <th style={{ textAlign: "right" }}>📦 คอร์ส</th>
-              <th style={{ textAlign: "right" }}>ใหม่+เก่า</th>
-              <th style={{ textAlign: "right" }}>ยอด (฿)</th>
-              <th style={{ textAlign: "right" }}>%คิว</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, idx) => {
-              const isSelected = selectedRecorderIds.includes(r.id);
-              const dimmed = hasSelection && !isSelected;
-              return (
-              <tr
-                key={r.id}
-                onClick={() => onRowClick && onRowClick(r.id)}
-                style={{
-                  cursor: onRowClick ? "pointer" : "default",
-                  opacity: dimmed ? 0.4 : 1,
-                  background: isSelected ? "rgba(185,94,66,0.08)" : "transparent",
-                  transition: "opacity 0.2s, background 0.2s",
-                }}
-              >
-                <td style={{ fontWeight: 700, color: "var(--text3)" }}>{idx + 1}</td>
-                <td>
-                  <div style={{ fontWeight: 700, color: isSelected ? "var(--accent)" : "inherit" }}>{r.name}</div>
-                  {r.fullName !== r.name && (
-                    <div style={{ fontSize: 11, color: "var(--text3)" }}>{r.fullName}</div>
-                  )}
-                </td>
-                <td>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: r.roleColor || "var(--text2)" }}>
-                    {r.roleLabel}
-                  </span>
-                </td>
-                <td style={{ fontSize: 11, color: "var(--text3)" }}>{r.branchNames || "—"}</td>
-                <td style={{ textAlign: "right", fontWeight: 800, color: "var(--accent)", fontFamily: "var(--mono)" }}>{r.total}</td>
-                <td style={{ textAlign: "right", fontFamily: "var(--mono)" }}>{r.new || "—"}</td>
-                <td style={{ textAlign: "right", fontFamily: "var(--mono)" }}>{r.old || "—"}</td>
-                <td style={{ textAlign: "right", fontFamily: "var(--mono)" }}>{r.course || "—"}</td>
-                <td style={{ textAlign: "right", fontFamily: "var(--mono)", fontWeight: 700, color: "var(--blue)" }}>{r.newOld || "—"}</td>
-                <td style={{ textAlign: "right", fontFamily: "var(--mono)", color: "var(--green)" }}>฿{r.revenue.toLocaleString()}</td>
-                <td style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 11, color: "var(--text3)" }}>
-                  {totalQueues > 0 ? Math.round((r.total / totalQueues) * 100) + "%" : "—"}
-                </td>
-              </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </CollapsibleCard>
-  );
-}
-
 function QueueMiniTable({ items, procedures, promos, rooms, branches, emptyText }) {
   if (items.length === 0) {
     return (
@@ -622,7 +484,9 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
         if (!crossFilter.procedure.includes(p?.name || "ไม่ระบุ")) return false;
       }
       if (crossFilter.recorder.length > 0) {
-        if (!crossFilter.recorder.includes(q.recordedBy)) return false;
+        const s = staff?.find((x) => x.id === q.recordedBy);
+        const name = s?.nickname || s?.name || "ไม่ระบุ";
+        if (!crossFilter.recorder.includes(name)) return false;
       }
       return true;
     });
@@ -742,18 +606,6 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
         />
       )}
 
-      {/* ─── Admin Performance (superadmin only) ─── */}
-      {isSuperAdmin && (
-        <AdminPerformanceCard
-          recordedQueues={recordedQueues}
-          staff={staff}
-          branches={branches}
-          rangeLabel={rangeLabel}
-          selectedRecorderIds={crossFilter.recorder}
-          onRowClick={(staffId) => handleCrossFilter("recorder", staffId)}
-        />
-      )}
-
       {/* Section 1: บันทึกวันนั้น */}
       <CollapsibleCard
         title={`� คิวที่บันทึก — ${rangeLabel}`}
@@ -772,10 +624,7 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
             {(["branch", "role", "room", "procedure", "recorder"]).flatMap((dim) =>
               (crossFilter[dim] || []).map((v) => {
                 let label = v;
-                if (dim === "recorder") {
-                  const s = (staff || []).find((x) => x.id === v);
-                  label = `👤 ${s?.nickname || s?.name || v}`;
-                }
+                if (dim === "recorder") label = `👤 ${v}`;
                 return (
                   <button
                     key={`${dim}:${v}`}
@@ -802,6 +651,7 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
             <MiniBarChart title="👤 ผู้บันทึก (ตามบทบาท)" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const s = staff?.find(x => x.id === q.recordedBy); const roleLabel = ROLES.find(r => r.value === s?.role)?.label || "ไม่ระบุ"; if (!m[roleLabel]) m[roleLabel] = { value: 0, revenue: 0 }; m[roleLabel].value++; m[roleLabel].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${260+i*25},60%,60%)`} onSelect={(v) => handleCrossFilter("role", v)} selectedValues={crossFilter.role} />
             <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} onSelect={(v) => handleCrossFilter("room", v)} selectedValues={crossFilter.room} />
             <MiniBarChart title="💉 หัตถการ" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} onSelect={(v) => handleCrossFilter("procedure", v)} selectedValues={crossFilter.procedure} />
+            <MiniBarChart title="👤 แอดมิน (บันทึกคิว)" data={(() => { const m = {}; const adminIds = new Set((staff || []).filter(s => s?.role === "admin").map(s => s.id)); crossFilteredRecorded.forEach(q => { if (!adminIds.has(q.recordedBy)) return; const s = staff.find(x => x.id === q.recordedBy); const k = s?.nickname || s?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${30+i*20},70%,55%)`} onSelect={(v) => handleCrossFilter("recorder", v)} selectedValues={crossFilter.recorder} />
           </div>
           </>
         )}
