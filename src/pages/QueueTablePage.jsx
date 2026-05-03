@@ -26,6 +26,7 @@ export default function QueueTablePage({
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { queue }
   const [deleteInput, setDeleteInput] = useState("");
   const [qfStatus, setQfStatus] = useState("all");
+  const [qfRecordedBy, setQfRecordedBy] = useState("all");
   const [collapsedRooms, setCollapsedRooms] = useState({});
 
   function toggleRoom(key) {
@@ -38,14 +39,21 @@ export default function QueueTablePage({
         if (qfBranch !== "all" && q.branchId !== qfBranch) return false;
         if (qfDate && q.date !== qfDate) return false;
         if (qfStatus !== "all" && (q.status || "pending") !== qfStatus) return false;
+        if (qfRecordedBy !== "all" && q.recordedBy !== qfRecordedBy) return false;
         if (qfSearch) {
           const s = qfSearch.toLowerCase();
-          if (!q.name.toLowerCase().includes(s) && !q.phone.includes(s)) return false;
+          const recorder = staff?.find((x) => x.id === q.recordedBy);
+          const recorderName = `${recorder?.nickname || ""} ${recorder?.name || ""}`.toLowerCase();
+          if (
+            !q.name.toLowerCase().includes(s) &&
+            !q.phone.includes(s) &&
+            !recorderName.includes(s)
+          ) return false;
         }
         return true;
       })
       .sort((a, b) => (a.timeBlock || 0) - (b.timeBlock || 0));
-  }, [queues, qfBranch, qfDate, qfSearch, qfStatus]);
+  }, [queues, qfBranch, qfDate, qfSearch, qfStatus, qfRecordedBy, staff]);
 
   // สถิติสถานะ (สำหรับวันที่เลือก ทุกสาขา)
   const statusStats = useMemo(() => {
@@ -111,9 +119,21 @@ export default function QueueTablePage({
             ))}
           </select>
         </div>
+        <div className="form-group">
+          <label className="form-label">บันทึกโดย</label>
+          <select value={qfRecordedBy} onChange={(e) => setQfRecordedBy(e.target.value)} style={{ minWidth: 150 }}>
+            <option value="all">ทุกคน</option>
+            {[...(staff || [])]
+              .slice()
+              .sort((a, b) => (a.nickname || a.name || "").localeCompare(b.nickname || b.name || "", "th"))
+              .map((s) => (
+                <option key={s.id} value={s.id}>{s.nickname || s.name}</option>
+              ))}
+          </select>
+        </div>
         <div className="form-group" style={{ flex: 1 }}>
           <label className="form-label">ค้นหา</label>
-          <input placeholder="ชื่อ / เบอร์โทร..." value={qfSearch} onChange={(e) => setQfSearch(e.target.value)} />
+          <input placeholder="ชื่อ / เบอร์โทร / แอดมิน..." value={qfSearch} onChange={(e) => setQfSearch(e.target.value)} />
         </div>
       </div>
 
