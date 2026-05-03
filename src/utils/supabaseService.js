@@ -284,21 +284,31 @@ export async function deleteRoom(id) {
 
 export async function fetchRoomSchedules() {
   const PAGE_SIZE = 1000;
-  let allData = [];
-  let from = 0;
 
-  while (true) {
-    const { data, error } = await supabase
-      .from("room_schedules")
-      .select("*")
-      .order("created_at", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
+  // Get total count first, then fetch all pages in parallel
+  const { count, error: countError } = await supabase
+    .from("room_schedules")
+    .select("*", { count: "exact", head: true });
+  if (countError) throw countError;
 
+  if (!count || count === 0) return [];
+
+  const numPages = Math.ceil(count / PAGE_SIZE);
+  const promises = [];
+  for (let i = 0; i < numPages; i++) {
+    promises.push(
+      supabase
+        .from("room_schedules")
+        .select("*")
+        .order("created_at", { ascending: true })
+        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
+    );
+  }
+  const results = await Promise.all(promises);
+  const allData = [];
+  for (const { data, error } of results) {
     if (error) throw error;
-    if (!data || data.length === 0) break;
-    allData = allData.concat(data);
-    if (data.length < PAGE_SIZE) break;
-    from += PAGE_SIZE;
+    if (data) allData.push(...data);
   }
 
   const unique = Array.from(new Map(allData.map((s) => [s.id, s])).values());
@@ -520,24 +530,34 @@ export function mapQueueRow(q) {
   };
 }
 
-export async function fetchQueues() {
+export async function fetchQueues(opts = {}) {
+  const { sinceDate = null } = opts; // "YYYY-MM-DD" — include queues with date >= sinceDate (optional)
   const PAGE_SIZE = 1000;
-  let allData = [];
-  let from = 0;
 
-  while (true) {
-    const { data, error } = await supabase
-      .from("queues")
-      .select("*")
+  // Get total count first, then fetch all pages in parallel
+  let countQuery = supabase.from("queues").select("*", { count: "exact", head: true });
+  if (sinceDate) countQuery = countQuery.gte("date", sinceDate);
+  const { count, error: countError } = await countQuery;
+  if (countError) throw countError;
+
+  if (!count || count === 0) return [];
+
+  const numPages = Math.ceil(count / PAGE_SIZE);
+  const promises = [];
+  for (let i = 0; i < numPages; i++) {
+    let q = supabase.from("queues").select("*");
+    if (sinceDate) q = q.gte("date", sinceDate);
+    q = q
       .order("date", { ascending: false })
       .order("time_block", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-
+      .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1);
+    promises.push(q);
+  }
+  const results = await Promise.all(promises);
+  const allData = [];
+  for (const { data, error } of results) {
     if (error) throw error;
-    if (!data || data.length === 0) break;
-    allData = allData.concat(data);
-    if (data.length < PAGE_SIZE) break;
-    from += PAGE_SIZE;
+    if (data) allData.push(...data);
   }
 
   const unique = Array.from(new Map(allData.map((q) => [q.id, q])).values());
