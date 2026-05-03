@@ -47,7 +47,7 @@ function parseSheet(text) {
 const fmtBaht = (n) =>
   "฿" + Math.round(n).toLocaleString("en-US");
 
-export default function AdSpendCard({ dateRange, rangeLabel, selectedDate }) {
+export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queues = [], staff = [] }) {
   const [rows, setRows] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -104,6 +104,51 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate }) {
     return sum;
   }, [byDate, monthPrefix]);
 
+  // ─── Admin recorder IDs (role === "admin") ───
+  const adminIds = useMemo(() => {
+    const set = new Set();
+    (staff || []).forEach((s) => {
+      if (s && s.role === "admin") set.add(s.id);
+    });
+    return set;
+  }, [staff]);
+
+  // ─── count queues recorded by admin (new+old only) per day ───
+  // date key = createdAt (fallback to date if missing), sliced to YYYY-MM-DD
+  const adminQueuesByDate = useMemo(() => {
+    const m = {};
+    (queues || []).forEach((q) => {
+      if (!q || !q.recordedBy) return;
+      if (!adminIds.has(q.recordedBy)) return;
+      if (q.customerType !== "new" && q.customerType !== "old") return;
+      const key = (q.createdAt || q.date || "").slice(0, 10);
+      if (!key) return;
+      m[key] = (m[key] || 0) + 1;
+    });
+    return m;
+  }, [queues, adminIds]);
+
+  const sumAdminQueues = useCallback(
+    (predicate) => {
+      let sum = 0;
+      for (const [day, n] of Object.entries(adminQueuesByDate)) {
+        if (predicate(day)) sum += n;
+      }
+      return sum;
+    },
+    [adminQueuesByDate]
+  );
+
+  const rangeAdminQueues = useMemo(
+    () => (dateRange ? sumAdminQueues((d) => d >= dateRange.start && d <= dateRange.end) : 0),
+    [sumAdminQueues, dateRange]
+  );
+  const monthAdminQueues = useMemo(
+    () => (monthPrefix ? sumAdminQueues((d) => d.startsWith(monthPrefix)) : 0),
+    [sumAdminQueues, monthPrefix]
+  );
+  const cpo = (amt, n) => (n > 0 ? amt / n : null);
+
   // last 14 days mini chart
   const chartData = useMemo(() => {
     const arr = [];
@@ -112,10 +157,12 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate }) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
       const key = d.toISOString().slice(0, 10);
-      arr.push({ day: key, amount: byDate[key] || 0 });
+      const amount = byDate[key] || 0;
+      const n = adminQueuesByDate[key] || 0;
+      arr.push({ day: key, amount, adminQueues: n, cpo: n > 0 ? amount / n : null });
     }
     return arr;
-  }, [byDate]);
+  }, [byDate, adminQueuesByDate]);
 
   const chartMax = Math.max(...chartData.map((d) => d.amount), 1);
   const todayKey = new Date().toISOString().slice(0, 10);
@@ -187,16 +234,22 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate }) {
               <Stat
                 label={`ยอดในช่วง (${rangeLabel || "—"})`}
                 value={fmtBaht(rangeTotal)}
+                cpo={cpo(rangeTotal, rangeAdminQueues)}
+                queueCount={rangeAdminQueues}
                 accent="#16a34a"
               />
               <Stat
                 label={`รวมเดือน ${monthPrefix}`}
                 value={fmtBaht(monthTotal)}
+                cpo={cpo(monthTotal, monthAdminQueues)}
+                queueCount={monthAdminQueues}
                 accent="#2563eb"
               />
               <Stat
                 label="วันนี้"
                 value={fmtBaht(byDate[todayKey] || 0)}
+                cpo={cpo(byDate[todayKey] || 0, adminQueuesByDate[todayKey] || 0)}
+                queueCount={adminQueuesByDate[todayKey] || 0}
                 accent="#7c3aed"
               />
             </div>
@@ -207,17 +260,17 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate }) {
                 💸 ย้อนหลัง 14 วัน
               </div>
               <div style={{ display: "flex", gap: 4, alignItems: "flex-end" }}>
-                {chartData.map(({ day, amount }) => {
+                {chartData.map(({ day, amount, adminQueues, cpo: dayCpo }) => {
                   const heightPct = Math.max(4, (amount / chartMax) * 70);
                   const isToday = day === todayKey;
                   const dt = new Date(day);
                   return (
-                    <div key={day} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 28 }}>
+                    <div key={day} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 36 }}>
                       <span style={{ fontSize: 9, fontWeight: 700, color: "var(--text3)" }}>
                         {amount > 0 ? Math.round(amount / 1000) + "k" : ""}
                       </span>
                       <div
-                        title={`${day}: ${fmtBaht(amount)}`}
+                        title={`${day}\n฿${Math.round(amount).toLocaleString()} / ${adminQueues} คิว = CPO ${dayCpo ? "฿" + Math.round(dayCpo).toLocaleString() : "—"}`}
                         style={{
                           width: "100%",
                           height: heightPct,
@@ -229,9 +282,18 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate }) {
                       <span style={{ fontSize: 9, color: isToday ? "var(--accent)" : "var(--text3)", fontWeight: isToday ? 800 : 500 }}>
                         {dt.getDate()}/{dt.getMonth() + 1}
                       </span>
+                      <span style={{ fontSize: 9, fontWeight: 700, color: "#ea580c", fontFamily: "var(--mono)" }}>
+                        {dayCpo ? "฿" + Math.round(dayCpo).toLocaleString() : "—"}
+                      </span>
+                      <span style={{ fontSize: 8, color: "var(--text3)" }}>
+                        {adminQueues} คิว
+                      </span>
                     </div>
                   );
                 })}
+              </div>
+              <div style={{ marginTop: 6, fontSize: 10, color: "var(--text3)", fontStyle: "italic" }}>
+                * CPO = Amount / คิวที่แอดมินบันทึก (ลูกค้าใหม่+เก่า)
               </div>
             </div>
 
@@ -245,7 +307,7 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate }) {
   );
 }
 
-function Stat({ label, value, accent }) {
+function Stat({ label, value, accent, cpo, queueCount }) {
   return (
     <div
       style={{
@@ -257,6 +319,22 @@ function Stat({ label, value, accent }) {
     >
       <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600, marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 800, color: accent, fontFamily: "var(--mono)" }}>{value}</div>
+      {cpo != null && (
+        <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6, fontSize: 11 }}>
+          <span style={{ color: "var(--text3)" }}>Est. CPO</span>
+          <span style={{ fontWeight: 800, fontFamily: "var(--mono)", color: "#ea580c" }}>
+            ฿{Math.round(cpo).toLocaleString()}
+          </span>
+        </div>
+      )}
+      {cpo == null && queueCount === 0 && (
+        <div style={{ marginTop: 6, fontSize: 11, color: "var(--text3)" }}>Est. CPO — (ไม่มีคิวแอดมิน)</div>
+      )}
+      {queueCount > 0 && (
+        <div style={{ fontSize: 10, color: "var(--text3)", textAlign: "right" }}>
+          {queueCount} คิวแอดมิน (ใหม่+เก่า)
+        </div>
+      )}
     </div>
   );
 }

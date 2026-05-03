@@ -556,6 +556,8 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
           dateRange={dateRange}
           rangeLabel={rangeLabel}
           selectedDate={selectedDate}
+          queues={allQueues || queues}
+          staff={staff}
         />
       )}
 
