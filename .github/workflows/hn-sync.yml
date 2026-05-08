@@ -40,7 +40,9 @@ jobs:
           sed -i 's/^          //' hn_sync/.env
 
       - name: Write cookies from secret
-        run: echo '${{ secrets.PROCLINIC_COOKIES }}' > hn_sync/cookies.json
+        env:
+          COOKIES_JSON: ${{ secrets.PROCLINIC_COOKIES }}
+        run: python -c "import os; open('hn_sync/cookies.json','w').write(os.environ['COOKIES_JSON'])"
 
       - name: Run HN Sync
         run: cd hn_sync && python -u sync.py
