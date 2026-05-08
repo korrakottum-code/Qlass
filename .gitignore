@@ -24,3 +24,6 @@ dist-ssr
 *.sln
 *.sw?
 *.csv
+hn_sync/.env
+hn_sync/cookies.json
+hn_sync/sync_state.json
