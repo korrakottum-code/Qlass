@@ -9,7 +9,7 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +43,14 @@ jobs:
         env:
           COOKIES_B64: ${{ secrets.PROCLINIC_COOKIES_B64 }}
         run: python -c "import os,base64; open('hn_sync/cookies.json','wb').write(base64.b64decode(os.environ['COOKIES_B64']))"
+
+      - name: Write sync state from secret (skip full re-fetch)
+        env:
+          STATE_B64: ${{ secrets.SYNC_STATE_B64 }}
+        run: |
+          if [ -n "$STATE_B64" ] && [ ! -f hn_sync/sync_state.json ]; then
+            python -c "import os,base64; open('hn_sync/sync_state.json','wb').write(base64.b64decode(os.environ['STATE_B64']))"
+          fi
 
       - name: Run HN Sync
         run: cd hn_sync && python -u sync.py

@@ -24,9 +24,9 @@ SUPABASE_KEY       = os.getenv("SUPABASE_SERVICE_KEY")
 
 LOGIN_URL   = "https://proclinicth.com/login"
 API_URL     = "https://proclinicth.com/admin/api/customer"
-CONCURRENCY = 5
-BATCH_SIZE  = 50
-DELAY       = 0.5
+CONCURRENCY = 20
+BATCH_SIZE  = 100
+DELAY       = 0.3
 COOKIE_FILE = os.path.join(os.path.dirname(__file__), "cookies.json")
 STATE_FILE  = os.path.join(os.path.dirname(__file__), "sync_state.json")
 
