@@ -39,10 +39,10 @@ jobs:
           EOF
           sed -i 's/^          //' hn_sync/.env
 
-      - name: Write cookies from secret
+      - name: Write cookies from secret (base64 encoded)
         env:
-          COOKIES_JSON: ${{ secrets.PROCLINIC_COOKIES }}
-        run: python -c "import os; open('hn_sync/cookies.json','w').write(os.environ['COOKIES_JSON'])"
+          COOKIES_B64: ${{ secrets.PROCLINIC_COOKIES_B64 }}
+        run: python -c "import os,base64; open('hn_sync/cookies.json','wb').write(base64.b64decode(os.environ['COOKIES_B64']))"
 
       - name: Run HN Sync
         run: cd hn_sync && python -u sync.py
