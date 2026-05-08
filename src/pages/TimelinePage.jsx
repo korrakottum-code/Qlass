@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm } from "../utils/helpers";
+import HnLookup from "../components/HnLookup";
 
 export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], currentUser, onSubmitBooking, onEditQueue }) {
   const [date, setDate] = useState(getTodayStr());
@@ -375,6 +376,18 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                     <input style={{ width: "100%", fontSize: 13 }} value={bookingForm.phone}
                       onChange={(e) => setBookingForm((f) => ({ ...f, phone: e.target.value }))}
                       placeholder="0xxxxxxxxx" />
+                    <HnLookup
+                      phone={bookingForm.phone}
+                      onSelect={(c) => {
+                        const fullName = `${c.firstname} ${c.lastname}`.trim();
+                        setBookingForm((f) => ({
+                          ...f,
+                          name: fullName || f.name,
+                          phone: c.telephone || f.phone,
+                          customerType: "old",
+                        }));
+                      }}
+                    />
                   </div>
                 </div>
 
