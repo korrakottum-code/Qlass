@@ -12,7 +12,7 @@ import yarl
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import httpx
-from playwright.async_api import async_playwright
+# playwright is imported lazily only when needed (not installed on CI)
 
 load_dotenv()
 
@@ -56,7 +56,15 @@ async def auto_login() -> dict:
                 pass
         print("  Saved cookies expired, re-login needed...")
 
-    # Headed login (reCAPTCHA requires visible browser)
+    # Headed login (reCAPTCHA requires visible browser — only works locally)
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        raise RuntimeError(
+            "Cookies expired and Playwright not installed. "
+            "Run 'python sync.py' locally to refresh cookies, then update PROCLINIC_COOKIES secret."
+        )
+
     print("  Opening browser for login...")
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=False)
