@@ -1,0 +1,61 @@
+name: HN Sync - Pro Clinic to Supabase
+
+on:
+  schedule:
+    # Every Monday at 03:00 ICT (20:00 UTC Sunday)
+    - cron: '0 20 * * 0'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install -r hn_sync/requirements.txt
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: Restore cache (cookies + state)
+        uses: actions/cache@v4
+        with:
+          path: |
+            hn_sync/cookies.json
+            hn_sync/sync_state.json
+          key: hn-sync-${{ github.run_id }}
+          restore-keys: hn-sync-
+
+      - name: Create .env file
+        run: |
+          cat > hn_sync/.env <<'EOF'
+          PROCLINIC_EMAIL=${{ secrets.PROCLINIC_EMAIL }}
+          PROCLINIC_PASSWORD=${{ secrets.PROCLINIC_PASSWORD }}
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
+          EOF
+          sed -i 's/^          //' hn_sync/.env
+
+      - name: Run HN Sync
+        run: |
+          cd hn_sync
+          xvfb-run python sync.py
+        env:
+          DISPLAY: ':99'
+
+      - name: Save cache for next run
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            hn_sync/cookies.json
+            hn_sync/sync_state.json
+          key: hn-sync-${{ github.run_id }}
