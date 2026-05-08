@@ -896,3 +896,41 @@ export async function deleteAllAiMemory() {
   const { error } = await supabase.from("ai_memory").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   if (error) { console.error("deleteAllAiMemory:", error); throw error; }
 }
+
+// ═══════════════════════════════════════════════════════════
+// HN CUSTOMERS (Pro Clinic lookup)
+// ═══════════════════════════════════════════════════════════
+
+export async function searchHnCustomers(query) {
+  if (!query || query.trim().length < 3) return [];
+  const q = query.trim();
+
+  // Search by phone (digits) or by name (text)
+  const isPhone = /^\d+$/.test(q);
+
+  let supaQuery;
+  if (isPhone) {
+    supaQuery = supabase
+      .from("hn_customers")
+      .select("*")
+      .ilike("telephone", `%${q}%`)
+      .limit(10);
+  } else {
+    supaQuery = supabase
+      .from("hn_customers")
+      .select("*")
+      .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,nickname.ilike.%${q}%`)
+      .limit(10);
+  }
+
+  const { data, error } = await supaQuery;
+  if (error) { console.error("searchHnCustomers:", error); return []; }
+  return (data || []).map(c => ({
+    hnId: c.hn_id,
+    firstname: c.firstname || "",
+    lastname: c.lastname || "",
+    nickname: c.nickname || "",
+    telephone: c.telephone || "",
+    birthdate: c.birthdate || "",
+  }));
+}

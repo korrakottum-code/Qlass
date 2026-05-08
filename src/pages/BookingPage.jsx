@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { CUSTOMER_TYPES, ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
 import { WORK_BLOCKS, blockToTime, getEmptyBookingForm, getTodayStr } from "../utils/helpers";
 import SmartParseBox from "../components/SmartParseBox";
+import HnLookup from "../components/HnLookup";
 
 export default function BookingPage({
   form, setForm, editingQueueId, setEditingQueueId,
@@ -227,6 +228,18 @@ export default function BookingPage({
                 placeholder="08x-xxx-xxxx"
                 value={form.phone}
                 onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+              />
+              <HnLookup
+                phone={form.phone}
+                onSelect={(c) => {
+                  const fullName = `${c.firstname} ${c.lastname}`.trim();
+                  setForm((f) => ({
+                    ...f,
+                    name: fullName || f.name,
+                    phone: c.telephone || f.phone,
+                    customerType: "old",
+                  }));
+                }}
               />
             </div>
 
