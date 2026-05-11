@@ -38,7 +38,13 @@ def import_csv(csv_path: str):
                 "synced_at": datetime.now(timezone.utc).isoformat(),
             })
 
-    print(f"Records: {len(records):,}")
+    # Deduplicate by hn_id (keep last occurrence)
+    seen = {}
+    for r in records:
+        seen[r["hn_id"]] = r
+    records = list(seen.values())
+
+    print(f"Records: {len(records):,} (unique)")
 
     # Upsert to Supabase in chunks
     url = f"{SUPABASE_URL}/rest/v1/hn_customers"

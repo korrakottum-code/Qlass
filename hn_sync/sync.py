@@ -106,7 +106,7 @@ async def fetch_page(session: aiohttp.ClientSession, sem: asyncio.Semaphore, pag
                 async with session.get(
                     API_URL,
                     params={"page": page},
-                    timeout=aiohttp.ClientTimeout(total=30),
+                    timeout=aiohttp.ClientTimeout(total=60),
                 ) as r:
                     text = await r.text()
                     if not text.strip().startswith("{"):
@@ -125,7 +125,7 @@ async def fetch_page(session: aiohttp.ClientSession, sem: asyncio.Semaphore, pag
                     ]
             except Exception as e:
                 if attempt == 4:
-                    print(f"  ✗ skip page {page}: {e}")
+                    print(f"  [SKIP] page {page}: {e}")
                     return []
                 await asyncio.sleep(2 ** attempt)
     return []
@@ -167,7 +167,7 @@ async def fetch_all_customers(session: aiohttp.ClientSession) -> list:
         print(f"  {len(all_customers):,} / {total:,} ({len(all_customers)/total*100:.1f}%)")
         await asyncio.sleep(DELAY)
 
-    print(f"  ✓ Fetched {len(all_customers):,} customers")
+    print(f"  [OK] Fetched {len(all_customers):,} customers")
     return all_customers
 
 
@@ -254,15 +254,15 @@ def upsert_to_supabase(customers: list):
             chunk = customers[i : i + chunk_size]
             resp = client.post(url, headers=headers, json=chunk)
             if resp.status_code not in (200, 201):
-                print(f"  ✗ Error at chunk {i}: {resp.status_code} {resp.text[:200]}")
+                print(f"  [ERROR] chunk {i}: {resp.status_code} {resp.text[:200]}")
             else:
                 print(f"  {min(i + chunk_size, total):,} / {total:,}")
 
-    print(f"  ✓ Upserted {total:,} records to hn_customers")
+    print(f"  [OK] Upserted {total:,} records to hn_customers")
 
 
 async def main():
-    print(f"=== HN Sync — {datetime.now().strftime('%Y-%m-%d %H:%M')} ===\n")
+    print(f"=== HN Sync - {datetime.now().strftime('%Y-%m-%d %H:%M')} ===\n")
 
     # Validate env
     missing = []
