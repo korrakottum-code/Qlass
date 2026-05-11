@@ -1,18 +1,22 @@
 import { useState, useEffect, useRef } from "react";
 import { searchHnCustomers } from "../utils/supabaseService";
 
-export default function HnLookup({ phone, onSelect }) {
+export default function HnLookup({ phone, name, onSelect }) {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [show, setShow] = useState(false);
   const debounceRef = useRef(null);
   const containerRef = useRef(null);
 
+  // Determine search query: prefer phone (digits only), fallback to name
+  const rawPhone = (phone || "").replace(/[^0-9]/g, "");
+  const rawName = (name || "").trim();
+  const query = rawPhone.length >= 4 ? rawPhone : rawName.length >= 3 ? rawName : "";
+
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
-    const q = (phone || "").replace(/[^0-9]/g, "");
-    if (q.length < 4) {
+    if (!query) {
       setResults([]);
       setShow(false);
       return;
@@ -20,14 +24,14 @@ export default function HnLookup({ phone, onSelect }) {
 
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
-      const res = await searchHnCustomers(q);
+      const res = await searchHnCustomers(query);
       setResults(res);
       setShow(res.length > 0);
       setLoading(false);
     }, 400);
 
     return () => clearTimeout(debounceRef.current);
-  }, [phone]);
+  }, [query]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -43,7 +47,7 @@ export default function HnLookup({ phone, onSelect }) {
   if (!show && !loading) return null;
 
   return (
-    <div ref={containerRef} style={{ position: "relative" }}>
+    <div ref={containerRef}>
       {loading && (
         <div style={{
           fontSize: 11, color: "var(--text3)", padding: "4px 0",
@@ -55,7 +59,6 @@ export default function HnLookup({ phone, onSelect }) {
       )}
       {show && (
         <div style={{
-          position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
           background: "var(--surface)", border: "1.5px solid var(--accent)",
           borderRadius: 8, boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
           maxHeight: 220, overflowY: "auto",

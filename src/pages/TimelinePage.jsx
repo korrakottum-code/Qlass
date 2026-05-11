@@ -378,6 +378,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                       placeholder="0xxxxxxxxx" />
                     <HnLookup
                       phone={bookingForm.phone}
+                      name={bookingForm.name}
                       onSelect={(c) => {
                         const fullName = `${c.firstname} ${c.lastname}`.trim();
                         setBookingForm((f) => ({

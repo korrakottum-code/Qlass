@@ -229,8 +229,13 @@ export default function BookingPage({
                 value={form.phone}
                 onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
               />
+            </div>
+
+            {/* HN Lookup — full width row */}
+            <div className="form-group full">
               <HnLookup
                 phone={form.phone}
+                name={form.name}
                 onSelect={(c) => {
                   const fullName = `${c.firstname} ${c.lastname}`.trim();
                   setForm((f) => ({
