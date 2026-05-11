@@ -2,8 +2,8 @@ name: HN Sync - Pro Clinic to Supabase
 
 on:
   schedule:
-    # Every Monday at 03:00 ICT (20:00 UTC Sunday)
-    - cron: '0 20 * * 0'
+    # Every day at 03:00 ICT (20:00 UTC previous day)
+    - cron: '0 20 * * *'
   workflow_dispatch: # Allow manual trigger
 
 jobs:
