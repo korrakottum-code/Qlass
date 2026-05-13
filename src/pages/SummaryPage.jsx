@@ -183,7 +183,7 @@ function QueueMiniTable({ items, procedures, promos, rooms, branches, emptyText 
                 </td>
                 {q.createdAt !== undefined && (
                   <td style={{ fontSize: 11, color: "var(--text3)" }}>
-                    {formatThaiDate(q.createdAt)}
+                    {formatThaiDate(isoToLocalDateStr(q.createdAt))}
                   </td>
                 )}
               </tr>
@@ -385,14 +385,14 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
       const day = d.getDay(); // 0=Sun
       const mon = new Date(d); mon.setDate(d.getDate() - ((day + 6) % 7));
       const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-      return { start: mon.toISOString().slice(0, 10), end: sun.toISOString().slice(0, 10) };
+      return { start: isoToLocalDateStr(mon), end: isoToLocalDateStr(sun) };
     } else if (viewMode === "custom") {
       const s = customStart || customEnd || selectedDate;
       const e = customEnd || customStart || selectedDate;
       return s <= e ? { start: s, end: e } : { start: e, end: s };
     } else {
       const start = `${selectedDate.slice(0, 7)}-01`;
-      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10);
+      const end = isoToLocalDateStr(new Date(d.getFullYear(), d.getMonth() + 1, 0));
       return { start, end };
     }
   }, [selectedDate, viewMode, customStart, customEnd]);
@@ -402,7 +402,7 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
     if (viewMode === "day") d.setDate(d.getDate() + dir);
     else if (viewMode === "week") d.setDate(d.getDate() + dir * 7);
     else d.setMonth(d.getMonth() + dir);
-    setSelectedDate(d.toISOString().slice(0, 10));
+    setSelectedDate(isoToLocalDateStr(d));
   }
 
   const rangeLabel = useMemo(() => {
