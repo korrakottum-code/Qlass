@@ -907,7 +907,30 @@ function AiChatInner({ queues, branches, procedures, promos, staff, rooms }) {
       });
 
       const data = await res.json();
-      let reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "ขออภัย ไม่สามารถตอบได้ในขณะนี้";
+
+      // Surface real API errors instead of a silent fallback
+      if (!res.ok) {
+        const apiMsg = data?.error?.message || `HTTP ${res.status}`;
+        console.error("Gemini API error:", data);
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", text: `❌ Gemini API error (${res.status}): ${apiMsg}` },
+        ]);
+        setLoading(false);
+        return;
+      }
+
+      // Sometimes the API blocks the response — surface that too
+      const blockReason = data?.promptFeedback?.blockReason;
+      const finishReason = data?.candidates?.[0]?.finishReason;
+      let reply = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!reply) {
+        let why = "ไม่ทราบสาเหตุ";
+        if (blockReason) why = `prompt blocked: ${blockReason}`;
+        else if (finishReason && finishReason !== "STOP") why = `finishReason: ${finishReason}`;
+        console.error("Gemini empty reply:", data);
+        reply = `⚠️ ไม่ได้รับคำตอบจาก Gemini (${why})`;
+      }
 
       // ─── Detect MEMORIZE tag and auto-save to Supabase ───
       const memMatches = [...reply.matchAll(/<<<MEMORIZE>>>([\s\S]*?)<<<END>>>/g)];
