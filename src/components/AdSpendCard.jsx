@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { isoToLocalDateStr } from "../utils/helpers";
 
 // Public Google Sheet — sheet "Data รวมทุกสาขา"
 const SHEET_URL =
@@ -121,7 +122,7 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
       if (!q || !q.recordedBy) return;
       if (!adminIds.has(q.recordedBy)) return;
       if (q.customerType !== "new" && q.customerType !== "old") return;
-      const key = (q.createdAt || q.date || "").slice(0, 10);
+      const key = q.createdAt ? isoToLocalDateStr(q.createdAt) : (q.date || "");
       if (!key) return;
       m[key] = (m[key] || 0) + 1;
     });

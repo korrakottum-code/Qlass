@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import { CUSTOMER_TYPES, PROCEDURE_CATEGORIES, ROLES } from "../utils/constants";
-import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass, canViewAllBranches } from "../utils/helpers";
+import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass, canViewAllBranches, isoToLocalDateStr } from "../utils/helpers";
 import AdSpendCard from "../components/AdSpendCard";
 
 // ─── Date Distribution Bar Chart ───
@@ -441,14 +441,14 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
   // ─── filter ตาม date range ───
   const inRange = useCallback((dateStr) => {
     if (!dateStr) return false;
-    const d = dateStr.slice(0, 10);
+    const d = new Date(dateStr);
     return d >= dateRange.start && d <= dateRange.end;
   }, [dateRange]);
 
   // คิวที่ถูกบันทึกในช่วงนี้ (createdAt)
   const recordedQueues = useMemo(() =>
     filteredQueues
-      .filter((q) => inRange((q.createdAt || q.date || "").slice(0, 10)))
+      .filter((q) => inRange(q.createdAt ? isoToLocalDateStr(q.createdAt) : (q.date || "")))
       .sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.timeBlock || 0) - (b.timeBlock || 0)),
     [filteredQueues, inRange]
   );
@@ -493,7 +493,7 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
   }, [recordedQueues, crossFilter, hasAnyCrossFilter, branches, staff, rooms, procedures]);
 
   const futureFromToday = crossFilteredRecorded.filter((q) => !inRange(q.date));
-  const advanceBookings = appointmentQueues.filter((q) => !inRange((q.createdAt || q.date || "").slice(0, 10)));
+  const advanceBookings = appointmentQueues.filter((q) => !inRange(q.createdAt ? isoToLocalDateStr(q.createdAt) : (q.date || "")));
 
   const availableCategories = useMemo(() => {
     const cats = new Set(procedures.map(p => p.category).filter(Boolean));
