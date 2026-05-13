@@ -916,11 +916,19 @@ export async function searchHnCustomers(query) {
       .ilike("telephone", `%${q}%`)
       .limit(10);
   } else {
-    supaQuery = supabase
-      .from("hn_customers")
-      .select("*")
-      .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,nickname.ilike.%${q}%`)
-      .limit(10);
+    // Split into tokens by whitespace so "วิราพร ไชย" matches a row where
+    // firstname="วิราพร" and lastname="ไชยมาตย์" (each token must match any
+    // of firstname/lastname/nickname; tokens are AND'd together).
+    const tokens = q.split(/\s+/).filter((t) => t.length > 0);
+    supaQuery = supabase.from("hn_customers").select("*").limit(10);
+    for (const t of tokens) {
+      // escape PostgREST special chars in the token to keep .or() filter safe
+      const safe = t.replace(/[(),]/g, "");
+      if (!safe) continue;
+      supaQuery = supaQuery.or(
+        `firstname.ilike.%${safe}%,lastname.ilike.%${safe}%,nickname.ilike.%${safe}%`
+      );
+    }
   }
 
   const { data, error } = await supaQuery;
