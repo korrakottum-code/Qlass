@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { getTodayStr, formatThaiDate } from "../utils/helpers";
+import { getTodayStr, formatThaiDate, isoToLocalDateStr } from "../utils/helpers";
 import { supabase } from "../utils/supabaseClient";
 import { fetchAiMemory, createAiMemory, deleteAiMemory, deleteAllAiMemory } from "../utils/supabaseService";
 
@@ -18,7 +18,7 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
   const lastMonthQueues = queues.filter(q => q.date?.startsWith(lastMonthStr));
 
   // นับตาม "วันที่บันทึกคิว" (createdAt) — ใช้เมื่อผู้ใช้ถามเรื่อง "คิวที่บันทึก"
-  const recordedDateOf = (q) => (q.createdAt || q.date || "").slice(0, 10);
+  const recordedDateOf = (q) => q.createdAt ? isoToLocalDateStr(q.createdAt) : (q.date || "");
   const todayRecorded = queues.filter(q => recordedDateOf(q) === today);
   const monthRecorded = queues.filter(q => recordedDateOf(q).startsWith(monthStr));
   const lastMonthRecorded = queues.filter(q => recordedDateOf(q).startsWith(lastMonthStr));
@@ -389,14 +389,14 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
   const leadTimes = queues
     .filter(q => q.createdAt && q.date)
     .map(q => {
-      const created = new Date(q.createdAt).toISOString().slice(0,10);
+      const created = isoToLocalDateStr(q.createdAt);
       return (new Date(q.date) - new Date(created)) / 86400000;
     })
     .filter(d => d >= 0 && d <= 365);
   const avgLeadTime = leadTimes.length > 0 ? (leadTimes.reduce((a,b)=>a+b,0) / leadTimes.length).toFixed(1) : 0;
   const walkInCount = leadTimes.filter(d => d === 0).length;
   const walkInByBranch = countBy(
-    queues.filter(q => q.createdAt && q.date && new Date(q.createdAt).toISOString().slice(0,10) === q.date && q.date?.startsWith(monthStr)),
+    queues.filter(q => q.createdAt && q.date && isoToLocalDateStr(q.createdAt) === q.date && q.date?.startsWith(monthStr)),
     q => branchName(q.branchId)
   );
 
@@ -534,7 +534,7 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
     Number(q.price) || 0,
     staffMap.get(q.recordedBy) || "",
     q.durationBlocks || "",
-    q.createdAt ? q.createdAt.slice(0,10) : "",
+    q.createdAt ? isoToLocalDateStr(q.createdAt) : "",
   ].join("|")).join("\n");
 
   // ─── Forecast: estimate rest of month based on daily avg ───

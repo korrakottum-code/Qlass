@@ -9,6 +9,20 @@ export function getTodayStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// Convert any ISO timestamp / Date to local YYYY-MM-DD.
+// IMPORTANT: do not use .slice(0, 10) on Supabase timestamps — that returns
+// the UTC date, which causes Thai-midnight queues to be attributed to the
+// wrong day (UTC is 7h behind Thai local time).
+export function isoToLocalDateStr(iso) {
+  if (!iso) return "";
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (isNaN(d.getTime())) {
+    // Fall back to first 10 chars if it's already a plain "YYYY-MM-DD..." string
+    return String(iso).slice(0, 10);
+  }
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function formatThaiDate(s) {
   if (!s) return "";
   const [y, m, d] = s.split("-");
