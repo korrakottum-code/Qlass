@@ -441,8 +441,10 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
   // ─── filter ตาม date range ───
   const inRange = useCallback((dateStr) => {
     if (!dateStr) return false;
-    const d = new Date(dateStr);
-    return d >= dateRange.start && d <= dateRange.end;
+    // dateRange.start / .end are "YYYY-MM-DD" strings; compare lexically as
+    // strings. Do NOT convert to Date — Date >= string coerces to Number(NaN)
+    // and always returns false, which silently hides all rows.
+    return dateStr >= dateRange.start && dateStr <= dateRange.end;
   }, [dateRange]);
 
   // คิวที่ถูกบันทึกในช่วงนี้ (createdAt)
