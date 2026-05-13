@@ -507,17 +507,24 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
     return `R${i+1}=${r.name}(${b?.name || "?"})`;
   }).join(", ");
 
-  // จำกัด 90 วัน (past 60 + future 30) เพื่อประหยัด token
+  // จำกัด 44 วัน (past 30 + future 14) + hard cap 15k rows เพื่อกัน token ทะลุ 1M
+  // (Gemini 2.5 Flash limit = 1,048,576 input tokens — high-volume clinics ทะลุได้)
   // รวมถ้า date หรือ createdAt อยู่ในช่วง (เพื่อให้นับ "คิวที่บันทึกวันนั้น" ได้ครบแม้ appointment จะนอกช่วง)
-  const dumpStart = (() => { const d = new Date(today); d.setDate(d.getDate() - 60); return d.toISOString().slice(0,10); })();
-  const dumpEnd = (() => { const d = new Date(today); d.setDate(d.getDate() + 30); return d.toISOString().slice(0,10); })();
-  const dumpQueues = queues.filter(q => {
+  const DUMP_MAX_ROWS = 15000;
+  const dumpStart = (() => { const d = new Date(today); d.setDate(d.getDate() - 30); return d.toISOString().slice(0,10); })();
+  const dumpEnd = (() => { const d = new Date(today); d.setDate(d.getDate() + 14); return d.toISOString().slice(0,10); })();
+  let dumpQueues = queues.filter(q => {
     const d = q.date || "";
     const c = recordedDateOf(q);
     const dateIn = d >= dumpStart && d <= dumpEnd;
     const createdIn = c >= dumpStart && c <= dumpEnd;
     return dateIn || createdIn;
   });
+  // Sort by date desc + cap — keep most-recent rows if over the cap
+  if (dumpQueues.length > DUMP_MAX_ROWS) {
+    dumpQueues = [...dumpQueues].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, DUMP_MAX_ROWS);
+  }
+  const dumpTruncated = dumpQueues.length === DUMP_MAX_ROWS;
 
   const statusShort = { done: "D", cancelled: "X", no_show: "N", pending: "P", confirmed: "C", rescheduled: "R", follow: "F" };
   const typeShort = { new: "n", old: "o", course: "c" };
@@ -791,7 +798,7 @@ ${rawCSV}
 ════════════════════════════════════════════════
 
 หมายเหตุสำคัญ:
-- Raw data ข้างบนครอบคลุมแค่ ${dumpStart} ถึง ${dumpEnd} ถ้าถามนอกช่วงนี้ ให้บอกว่าข้อมูลจำกัดแค่ 90 วันใกล้ปัจจุบัน
+- Raw data ข้างบนครอบคลุม ${dumpStart} ถึง ${dumpEnd} (${dumpTruncated ? `ถูก cap ที่ ${DUMP_MAX_ROWS} แถวล่าสุด — ` : ""}ถ้าถามนอกช่วงนี้ ให้บอกว่าข้อมูลจำกัดแค่ ~44 วันใกล้ปัจจุบัน)
 - เวลาตอบ อย่าโชว์รหัสย่อ (B1, P1, D, n) ต่อผู้ใช้ — แปลงเป็นชื่อจริงเสมอ
 - วิเคราะห์ข้อมูลอย่างละเอียด นับเอง group เอง อย่าอ้างแค่ pre-computed ถ้าข้อมูลดิบตอบได้ดีกว่า`;
 }
