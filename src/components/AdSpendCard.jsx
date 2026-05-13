@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { isoToLocalDateStr } from "../utils/helpers";
+import { isoToLocalDateStr, getTodayStr } from "../utils/helpers";
 
 // Public Google Sheet — sheet "Data รวมทุกสาขา"
 const SHEET_URL =
@@ -150,14 +150,15 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
   );
   const cpo = (amt, n) => (n > 0 ? amt / n : null);
 
-  // last 14 days mini chart
+  // last 14 days mini chart — use local date, not UTC (toISOString shifts by
+  // tz offset and attributes Thai-early-morning hours to the previous day)
   const chartData = useMemo(() => {
     const arr = [];
     const today = new Date();
     for (let i = 13; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
+      const key = isoToLocalDateStr(d);
       const amount = byDate[key] || 0;
       const n = adminQueuesByDate[key] || 0;
       arr.push({ day: key, amount, adminQueues: n, cpo: n > 0 ? amount / n : null });
@@ -166,7 +167,7 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
   }, [byDate, adminQueuesByDate]);
 
   const chartMax = Math.max(...chartData.map((d) => d.amount), 1);
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = getTodayStr();
 
   return (
     <div
