@@ -260,8 +260,19 @@ export default function App() {
 
   // ─── Login / Logout ───
   function handleLogin(user) {
-    setCurrentUser(user);
-    localStorage.setItem('qlass_user', JSON.stringify(user));
+    // เก็บเฉพาะข้อมูลที่จำเป็น ไม่เก็บ PIN
+    const safeUser = {
+      id: user.id,
+      name: user.name,
+      nickname: user.nickname,
+      phone: user.phone,
+      branchId: user.branchId,
+      role: user.role,
+      active: user.active,
+      commissionRates: user.commissionRates,
+    };
+    setCurrentUser(safeUser);
+    localStorage.setItem('qlass_user', JSON.stringify(safeUser));
     const pages = ROLES.find((r) => r.value === user.role)?.pages || [];
     navigateTo(pages[0] || "queue-table");
     showToast("success", `ยินดีต้อนรับ ${user.nickname || user.name} 👋`);
@@ -522,8 +533,12 @@ export default function App() {
   const saveStaff = useCallback(async (data) => {
     if (data.id) {
       await updateStaff(data.id, data);
-      // อัปเดต currentUser ถ้าแก้ไขตัวเอง
-      if (currentUser?.id === data.id) setCurrentUser(data);
+      // อัปเดต currentUser ถ้าแก้ไขตัวเอง (ไม่เก็บ PIN)
+      if (currentUser?.id === data.id) {
+        const { pin: _pin, ...safeData } = data;
+        setCurrentUser(safeData);
+        localStorage.setItem('qlass_user', JSON.stringify(safeData));
+      }
     } else {
       await createStaff(data);
     }
