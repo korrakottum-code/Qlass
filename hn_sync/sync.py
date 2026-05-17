@@ -8,6 +8,7 @@ import aiohttp
 import aiohttp.cookiejar
 import json
 import os
+import sys
 import yarl
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -279,16 +280,31 @@ async def main():
         print("Copy .env.example to .env and fill in the values.")
         return
 
+    full_sync = "--full" in sys.argv
+    if full_sync:
+        print("[MODE] Full sync (--full flag detected)\n")
+
     cookies = await auto_login()
     jar = aiohttp.CookieJar()
     async with aiohttp.ClientSession(cookie_jar=jar) as session:
         # Set cookies from Playwright login
         for name, value in cookies.items():
             jar.update_cookies({name: value}, response_url=yarl.URL("https://proclinicth.com"))
-        customers = await fetch_new_customers(session)
+        if full_sync:
+            customers = await fetch_all_customers(session)
+        else:
+            customers = await fetch_new_customers(session)
 
     if customers:
         upsert_to_supabase(customers)
+        if full_sync:
+            # Save state after full sync
+            async with aiohttp.ClientSession(cookie_jar=jar) as session:
+                for name, value in cookies.items():
+                    jar.update_cookies({name: value}, response_url=yarl.URL("https://proclinicth.com"))
+                async with session.get(API_URL, params={"page": 1}) as resp:
+                    first = await resp.json(content_type=None)
+                    save_state(first["total"])
     else:
         print("No new customers to sync.")
 
