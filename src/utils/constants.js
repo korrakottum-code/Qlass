@@ -105,6 +105,7 @@ export const DAY_END_BLOCK = 288;
 
 export const NAV_ITEMS = [
   { section: "งานหลัก" },
+  { id: "ceo-dashboard", label: "CEO Dashboard",       icon: "👑" },
   { id: "booking",       label: "บันทึกคิว",          icon: "📝" },
   { id: "queue-table",   label: "ตารางคิว",            icon: "📋" },
   { id: "timeline",      label: "Timeline คิว",        icon: "🗓️" },
@@ -125,18 +126,25 @@ export const NAV_ITEMS = [
 // ─── ROLES & PERMISSIONS ───
 export const ROLES = [
   {
+    value: "ceo",
+    label: "CEO",
+    color: "#b45309",
+    bg: "rgba(180,83,9,0.1)",
+    pages: ["ceo-dashboard"],
+  },
+  {
     value: "superadmin",
     label: "ผู้ดูแลระบบ",
     color: "#dc2626",
     bg: "rgba(220,38,38,0.1)",
-    pages: ["booking","queue-table","timeline","summary","commission","export","ai-chat","tickets","branches","procedures","promos","rooms","room-schedule","staff","activity-log"],
+    pages: ["ceo-dashboard","booking","queue-table","timeline","summary","commission","export","ai-chat","tickets","branches","procedures","promos","rooms","room-schedule","staff","activity-log"],
   },
   {
     value: "head_admin",
     label: "หัวหน้าแอดมิน",
     color: "#7c3aed",
     bg: "rgba(124,58,237,0.1)",
-    pages: ["booking","queue-table","timeline","summary","commission","export","ai-chat","tickets","procedures","promos","rooms","room-schedule","staff","activity-log"],
+    pages: ["ceo-dashboard","booking","queue-table","timeline","summary","commission","export","ai-chat","tickets","procedures","promos","rooms","room-schedule","staff","activity-log"],
   },
   {
     value: "admin",
