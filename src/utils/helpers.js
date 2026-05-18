@@ -106,7 +106,7 @@ export function calcCommission(doneQueues, staff) {
 export function canViewAllBranches(user) {
   if (!user) return false;
   // Admin roles can see all branches
-  return ["superadmin", "head_admin", "admin"].includes(user.role);
+  return ["ceo", "superadmin", "head_admin", "admin"].includes(user.role);
 }
 
 export function filterByUserBranch(items, user, branchIdField = "branchId") {

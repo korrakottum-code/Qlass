@@ -1,6 +1,7 @@
 import { formatThaiDate, getTodayStr } from "../utils/helpers";
 
 const PAGE_TITLES = {
+  "ceo-dashboard": "👑 CEO Dashboard",
   booking: "📝 บันทึกคิว",
   "booking-edit": "✏️ แก้ไขคิว",
   "queue-table": "📋 ตารางคิว",

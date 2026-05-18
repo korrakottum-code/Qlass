@@ -48,6 +48,7 @@ import ExportPage from "./pages/ExportPage";
 import AiChatPage from "./pages/AiChatPage";
 import TicketPage from "./pages/TicketPage";
 import ActivityLogPage from "./pages/ActivityLogPage";
+import CeoDashboardPage from "./pages/CeoDashboardPage";
 
 export default function App() {
   
@@ -739,6 +740,19 @@ export default function App() {
           <TopBar page={page} isEditing={!!editingQueueId} supabaseError={supabaseError} />
 
           <div className="content">
+            {page === "ceo-dashboard" && (
+              <CeoDashboardPage
+                queues={filteredQueues}
+                allQueues={queues}
+                branches={branches}
+                rooms={rooms}
+                procedures={procedures}
+                promos={promos}
+                staff={staff}
+                currentUser={currentUser}
+              />
+            )}
+
             {page === "booking" && (
               <BookingPage
                 form={form}
