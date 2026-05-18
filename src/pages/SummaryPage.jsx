@@ -611,8 +611,8 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
         />
       )}
 
-      {/* ─── Tab bar ─── */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, borderBottom: "2px solid var(--border)" }}>
+      {/* ─── Tab bar (sticky) ─── */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, borderBottom: "2px solid var(--border)", position: "sticky", top: 50, zIndex: 20, background: "var(--bg)", marginLeft: -28, marginRight: -28, paddingLeft: 28, paddingRight: 28 }}>
         {[
           { v: "appointment", l: "📅 คิวนัดทำ", n: appointmentQueues.length },
           { v: "recorded", l: "📝 คิวบันทึก", n: recordedQueues.length },
@@ -673,18 +673,24 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
                 <MiniBarChart title="� หัตถการ" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} onSelect={(v) => handleCrossFilter("procedure", v)} selectedValues={crossFilter.procedure} />
                 <MiniBarChart title="🎁 โปร" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const p = promos.find(x => x.id === q.promoId); const k = p?.name || "ไม่ระบุโปร"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${15+i*22},75%,58%)`} />
                 <MiniBarChart title="� แอดมิน (บันทึกคิว)" data={(() => { const m = {}; const adminIds = new Set((staff || []).filter(s => s?.role === "admin").map(s => s.id)); crossFilteredRecorded.forEach(q => { if (!adminIds.has(q.recordedBy)) return; const s = staff.find(x => x.id === q.recordedBy); const k = s?.nickname || s?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${30+i*20},70%,55%)`} onSelect={(v) => handleCrossFilter("recorder", v)} selectedValues={crossFilter.recorder} />
+                {!showMoreRecorded && (
+                  <button onClick={() => setShowMoreRecorded(true)} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, padding: 16, borderRadius: 12, border: "1.5px dashed var(--border)", background: "var(--surface2)", color: "var(--text3)", cursor: "pointer", fontSize: 12, fontWeight: 700, minHeight: 80 }}>
+                    <span style={{ fontSize: 16 }}>＋</span>
+                    <span>ห้อง / role</span>
+                  </button>
+                )}
                 {showMoreRecorded && (
                   <>
-                    <MiniBarChart title="� ห้อง" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} onSelect={(v) => handleCrossFilter("room", v)} selectedValues={crossFilter.room} />
+                    <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} onSelect={(v) => handleCrossFilter("room", v)} selectedValues={crossFilter.room} />
                     <MiniBarChart title="👤 ผู้บันทึก (ตามบทบาท)" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const s = staff?.find(x => x.id === q.recordedBy); const roleLabel = ROLES.find(r => r.value === s?.role)?.label || "ไม่ระบุ"; if (!m[roleLabel]) m[roleLabel] = { value: 0, revenue: 0 }; m[roleLabel].value++; m[roleLabel].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${260+i*25},60%,60%)`} onSelect={(v) => handleCrossFilter("role", v)} selectedValues={crossFilter.role} />
                   </>
                 )}
               </div>
-              <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
-                <button onClick={() => setShowMoreRecorded((v) => !v)} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", color: "var(--text2)", cursor: "pointer" }}>
-                  {showMoreRecorded ? "▴ ซ่อน (ห้อง / role)" : "▾ ดูเพิ่ม (ห้อง / role)"}
-                </button>
-              </div>
+              {showMoreRecorded && (
+                <div style={{ display: "flex", justifyContent: "center", marginTop: 8 }}>
+                  <button onClick={() => setShowMoreRecorded(false)} style={{ padding: "5px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", color: "var(--text2)", cursor: "pointer" }}>▴ ซ่อน (ห้อง / role)</button>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -706,15 +712,21 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
                 {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; appointmentQueues.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} />}
                 <MiniBarChart title="� หัตถการ" data={(() => { const m = {}; appointmentQueues.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} />
                 <MiniBarChart title="🎁 โปร" data={(() => { const m = {}; appointmentQueues.forEach(q => { const p = promos.find(x => x.id === q.promoId); const k = p?.name || "ไม่ระบุโปร"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${15+i*22},75%,58%)`} />
+                {!showMoreAppointment && (
+                  <button onClick={() => setShowMoreAppointment(true)} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, padding: 16, borderRadius: 12, border: "1.5px dashed var(--border)", background: "var(--surface2)", color: "var(--text3)", cursor: "pointer", fontSize: 12, fontWeight: 700, minHeight: 80 }}>
+                    <span style={{ fontSize: 16 }}>＋</span>
+                    <span>ห้อง</span>
+                  </button>
+                )}
                 {showMoreAppointment && (
                   <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; appointmentQueues.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} />
                 )}
               </div>
-              <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
-                <button onClick={() => setShowMoreAppointment((v) => !v)} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", color: "var(--text2)", cursor: "pointer" }}>
-                  {showMoreAppointment ? "▴ ซ่อน (ห้อง)" : "▾ ดูเพิ่ม (ห้อง)"}
-                </button>
-              </div>
+              {showMoreAppointment && (
+                <div style={{ display: "flex", justifyContent: "center", marginTop: 8 }}>
+                  <button onClick={() => setShowMoreAppointment(false)} style={{ padding: "5px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", color: "var(--text2)", cursor: "pointer" }}>▴ ซ่อน (ห้อง)</button>
+                </div>
+              )}
             </>
           )}
         </div>
