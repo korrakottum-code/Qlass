@@ -611,35 +611,56 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
         />
       )}
 
-      {/* ─── Tab bar (sticky) ─── */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, borderBottom: "2px solid var(--border)", position: "sticky", top: 50, zIndex: 20, background: "var(--bg)", marginLeft: -28, marginRight: -28, paddingLeft: 28, paddingRight: 28 }}>
-        {[
-          { v: "appointment", l: "📅 คิวนัดทำ", n: appointmentQueues.length },
-          { v: "recorded", l: "📝 คิวบันทึก", n: recordedQueues.length },
-        ].map(({ v, l, n }) => (
-          <button
-            key={v}
-            onClick={() => setActiveTab(v)}
-            style={{
-              padding: "8px 16px", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer",
-              background: "transparent",
-              color: activeTab === v ? "var(--accent)" : "var(--text3)",
-              borderBottom: activeTab === v ? "3px solid var(--accent)" : "3px solid transparent",
-              marginBottom: -2,
-              display: "inline-flex", alignItems: "center", gap: 8,
-            }}
-          >
-            {l}
-            <span style={{ fontSize: 11, fontFamily: "var(--mono)", background: activeTab === v ? "var(--accent)" : "var(--surface3)", color: activeTab === v ? "#fff" : "var(--text2)", borderRadius: 10, padding: "1px 8px" }}>{n}</span>
-          </button>
-        ))}
+      {/* ─── Sticky context bar: tabs + mini stats ─── */}
+      <div style={{ position: "sticky", top: 54, zIndex: 20, background: "var(--bg)", marginLeft: -28, marginRight: -28, paddingLeft: 28, paddingRight: 28, borderBottom: "2px solid var(--border)", marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          {[
+            { v: "appointment", l: "📅 คิวนัดทำ", n: appointmentQueues.length },
+            { v: "recorded", l: "📝 คิวบันทึก", n: recordedQueues.length },
+          ].map(({ v, l, n }) => (
+            <button
+              key={v}
+              onClick={() => setActiveTab(v)}
+              style={{
+                padding: "8px 16px", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer",
+                background: "transparent",
+                color: activeTab === v ? "var(--accent)" : "var(--text3)",
+                borderBottom: activeTab === v ? "3px solid var(--accent)" : "3px solid transparent",
+                marginBottom: -2,
+                display: "inline-flex", alignItems: "center", gap: 8,
+              }}
+            >
+              {l}
+              <span style={{ fontSize: 11, fontFamily: "var(--mono)", background: activeTab === v ? "var(--accent)" : "var(--surface3)", color: activeTab === v ? "#fff" : "var(--text2)", borderRadius: 10, padding: "1px 8px" }}>{n}</span>
+            </button>
+          ))}
+        </div>
+        {(() => {
+          const qs = activeTab === "appointment" ? appointmentQueues : crossFilteredRecorded;
+          const rev = qs.reduce((s, q) => s + (Number(q.price) || 0), 0);
+          const newC = qs.filter(q => q.customerType === "new").length;
+          const oldC = qs.filter(q => q.customerType === "old").length;
+          const crs = qs.filter(q => q.customerType === "course").length;
+          const done = activeTab === "appointment" ? qs.filter(q => q.status === "done").length : 0;
+          const waiting = activeTab === "appointment" ? qs.filter(q => ["pending","follow1","follow2","follow3"].includes(q.status)).length : 0;
+          const confirmed = activeTab === "appointment" ? qs.filter(q => q.status === "confirmed").length : 0;
+          return (
+            <div style={{ display: "flex", gap: 10, padding: "5px 0 8px", flexWrap: "wrap", fontSize: 12, alignItems: "center" }}>
+              {rev > 0 && <span style={{ color: "var(--green)", fontWeight: 700 }}>฿{rev.toLocaleString()}</span>}
+              {newC > 0 && <span style={{ color: "var(--blue)" }}>ใหม่ <strong>{newC}</strong></span>}
+              {oldC > 0 && <span style={{ color: "var(--text2)" }}>เก่า <strong>{oldC}</strong></span>}
+              {crs > 0 && <span style={{ color: "var(--amber)" }}>คอร์ส <strong>{crs}</strong></span>}
+              {activeTab === "appointment" && done > 0 && <span style={{ color: "var(--green)", marginLeft: 4 }}>✅ เสร็จ <strong>{done}</strong></span>}
+              {activeTab === "appointment" && confirmed > 0 && <span style={{ color: "var(--blue)" }}>✓ ยืนยัน <strong>{confirmed}</strong></span>}
+              {activeTab === "appointment" && waiting > 0 && <span style={{ color: "var(--amber)" }}>⏳ รอ <strong>{waiting}</strong></span>}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Tab content: คิวบันทึก */}
       {activeTab === "recorded" && (
         <div>
-          <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8 }}>ลงทะเบียนเข้าระบบช่วงนี้ — นัดวันไหนก็ได้</div>
-          <SectionStats queues={crossFilteredRecorded} procedures={procedures} />
           {hasAnyCrossFilter && (
             <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginBottom: 8, padding: "6px 10px", background: "rgba(185,94,66,0.08)", borderRadius: 6, border: "1px solid var(--accent)" }}>
               <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 700 }}>🔍 กรอง:</span>
@@ -667,8 +688,7 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
           )}
           {recordedQueues.length > 0 && (
             <>
-              <DateDistributionChart title="📅 คิวไปนัดวันไหนบ้าง" queues={crossFilteredRecorded} />
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginTop: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginTop: 4 }}>
                 {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} onSelect={(v) => handleCrossFilter("branch", v)} selectedValues={crossFilter.branch} />}
                 <MiniBarChart title="� หัตถการ" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} onSelect={(v) => handleCrossFilter("procedure", v)} selectedValues={crossFilter.procedure} />
                 <MiniBarChart title="🎁 โปร" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const p = promos.find(x => x.id === q.promoId); const k = p?.name || "ไม่ระบุโปร"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${15+i*22},75%,58%)`} />
@@ -687,9 +707,12 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
                 )}
               </div>
               {showMoreRecorded && (
-                <div style={{ display: "flex", justifyContent: "center", marginTop: 8 }}>
-                  <button onClick={() => setShowMoreRecorded(false)} style={{ padding: "5px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", color: "var(--text2)", cursor: "pointer" }}>▴ ซ่อน (ห้อง / role)</button>
-                </div>
+                <>
+                  <DateDistributionChart title="📅 คิวไปนัดวันไหนบ้าง" queues={crossFilteredRecorded} />
+                  <div style={{ display: "flex", justifyContent: "center", marginTop: 4 }}>
+                    <button onClick={() => setShowMoreRecorded(false)} style={{ padding: "5px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", color: "var(--text2)", cursor: "pointer" }}>▴ ซ่อน</button>
+                  </div>
+                </>
               )}
             </>
           )}
@@ -699,8 +722,6 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
       {/* Tab content: คิวนัดทำ */}
       {activeTab === "appointment" && (
         <div>
-          <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8 }}>appointment ช่วงนี้ — บันทึกวันไหนก็ได้</div>
-          <SectionStats queues={appointmentQueues} procedures={procedures} showStatus={true} />
           {advanceBookings.length > 0 && (
             <div style={{ fontSize: 12, color: "var(--amber)", marginBottom: 8, padding: "4px 10px", background: "rgba(245,158,11,0.1)", borderRadius: 6 }}>
               📌 ในจำนวนนี้ <strong>{advanceBookings.length}</strong> คิว จองล่วงหน้ามาจากวันก่อนหน้า
@@ -708,7 +729,7 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
           )}
           {appointmentQueues.length > 0 && (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginTop: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginTop: 4 }}>
                 {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; appointmentQueues.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} />}
                 <MiniBarChart title="� หัตถการ" data={(() => { const m = {}; appointmentQueues.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} />
                 <MiniBarChart title="🎁 โปร" data={(() => { const m = {}; appointmentQueues.forEach(q => { const p = promos.find(x => x.id === q.promoId); const k = p?.name || "ไม่ระบุโปร"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${15+i*22},75%,58%)`} />
