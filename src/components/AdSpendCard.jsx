@@ -261,38 +261,40 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
               <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text2)", marginBottom: 6 }}>
                 💸 ย้อนหลัง 14 วัน
               </div>
-              <div style={{ display: "flex", gap: 4, alignItems: "flex-end" }}>
-                {chartData.map(({ day, amount, adminQueues, cpo: dayCpo }) => {
-                  const heightPct = Math.max(4, (amount / chartMax) * 70);
-                  const isToday = day === todayKey;
-                  const dt = new Date(day);
-                  return (
-                    <div key={day} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 36 }}>
-                      <span style={{ fontSize: 9, fontWeight: 700, color: "var(--text3)" }}>
-                        {amount > 0 ? Math.round(amount / 1000) + "k" : ""}
-                      </span>
-                      <div
-                        title={`${day}\n฿${Math.round(amount).toLocaleString()} / ${adminQueues} คิว = CPO ${dayCpo ? "฿" + Math.round(dayCpo).toLocaleString() : "—"}`}
-                        style={{
-                          width: "100%",
-                          height: heightPct,
-                          background: isToday ? "var(--accent)" : "rgba(34,197,94,0.55)",
-                          borderRadius: "4px 4px 0 0",
-                          minHeight: 4,
-                        }}
-                      />
-                      <span style={{ fontSize: 9, color: isToday ? "var(--accent)" : "var(--text3)", fontWeight: isToday ? 800 : 500 }}>
-                        {dt.getDate()}/{dt.getMonth() + 1}
-                      </span>
-                      <span style={{ fontSize: 9, fontWeight: 700, color: "#ea580c", fontFamily: "var(--mono)" }}>
-                        {dayCpo ? "฿" + Math.round(dayCpo).toLocaleString() : "—"}
-                      </span>
-                      <span style={{ fontSize: 8, color: "var(--text3)" }}>
-                        {adminQueues} คิว
-                      </span>
-                    </div>
-                  );
-                })}
+              <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+                <div style={{ display: "flex", gap: 4, alignItems: "flex-end", minWidth: chartData.length * 52 }}>
+                  {chartData.map(({ day, amount, adminQueues, cpo: dayCpo }) => {
+                    const heightPct = Math.max(4, (amount / chartMax) * 70);
+                    const isToday = day === todayKey;
+                    const dt = new Date(day);
+                    return (
+                      <div key={day} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 36 }}>
+                        <span style={{ fontSize: 9, fontWeight: 700, color: "var(--text3)" }}>
+                          {amount > 0 ? Math.round(amount / 1000) + "k" : ""}
+                        </span>
+                        <div
+                          title={`${day}\n฿${Math.round(amount).toLocaleString()} / ${adminQueues} คิว = CPO ${dayCpo ? "฿" + Math.round(dayCpo).toLocaleString() : "—"}`}
+                          style={{
+                            width: "100%",
+                            height: heightPct,
+                            background: isToday ? "var(--accent)" : "rgba(34,197,94,0.55)",
+                            borderRadius: "4px 4px 0 0",
+                            minHeight: 4,
+                          }}
+                        />
+                        <span style={{ fontSize: 9, color: isToday ? "var(--accent)" : "var(--text3)", fontWeight: isToday ? 800 : 500 }}>
+                          {dt.getDate()}/{dt.getMonth() + 1}
+                        </span>
+                        <span style={{ fontSize: 9, fontWeight: 700, color: "#ea580c", fontFamily: "var(--mono)" }}>
+                          {dayCpo ? "฿" + Math.round(dayCpo).toLocaleString() : "—"}
+                        </span>
+                        <span style={{ fontSize: 8, color: "var(--text3)" }}>
+                          {adminQueues} คิว
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
               <div style={{ marginTop: 6, fontSize: 10, color: "var(--text3)", fontStyle: "italic" }}>
                 * CPO = Amount / คิวที่แอดมินบันทึก (ลูกค้าใหม่+เก่า)
