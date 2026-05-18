@@ -243,8 +243,8 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
 .ceo-rank-item.good{background:#f2fbf6}
 .ceo-rank-item.bad{background:#fff5f5}
 .ceo-rank-badge{font-size:11px;font-weight:700;color:#8b7f76}
-.ceo-rank-name{font-size:12px;color:#2d2a26;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ceo-rank-value{font-size:12px;color:#7a6f67;font-weight:700}
+.ceo-rank-name{font-size:12px;color:#2d2a26;font-weight:600;white-space:normal;overflow:visible;line-height:1.35;word-break:break-word}
+.ceo-rank-value{font-size:12px;color:#7a6f67;font-weight:700;white-space:nowrap}
 .ceo-dual-rank{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .ceo-dual-rank-title{font-size:11px;font-weight:700;color:#9b8f86;margin-bottom:6px}
 
