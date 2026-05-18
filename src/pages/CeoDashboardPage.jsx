@@ -251,9 +251,33 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
     ];
   }, [dayANO.length, prevANO.length, newPct, lostPct, confRate]);
 
-  const topPromos = pStats.slice(0, 3);
-  const topBranches = bStats.filter((b) => b.total > 0).slice(0, 3);
-  const lowBranches = [...bStats].filter((b) => b.total > 0).sort((a, b) => a.total - b.total).slice(0, 3);
+  const adminPromoStats = useMemo(() => {
+    const m = {};
+    dayANO.forEach((q) => {
+      if (!q.promoId) return;
+      const p = promoMap[q.promoId];
+      const name = p ? p.name : q.promoId;
+      if (!m[q.promoId]) m[q.promoId] = { name, count: 0 };
+      m[q.promoId].count += 1;
+    });
+    return Object.values(m).sort((a, b) => b.count - a.count);
+  }, [dayANO, promoMap]);
+
+  const adminBranchStats = useMemo(() => {
+    const m = {};
+    (branches || []).forEach((b) => {
+      m[b.id] = { name: b.name, total: 0 };
+    });
+    dayANO.forEach((q) => {
+      if (!m[q.branchId]) return;
+      m[q.branchId].total += 1;
+    });
+    return Object.values(m).filter((b) => b.total > 0).sort((a, b) => b.total - a.total);
+  }, [branches, dayANO]);
+
+  const topPromos = adminPromoStats.slice(0, 3);
+  const topBranches = adminBranchStats.slice(0, 3);
+  const lowBranches = [...adminBranchStats].sort((a, b) => a.total - b.total).slice(0, 3);
   const topAdmins = aPerf.slice(0, 3);
   const lowAdmins = [...aPerf].sort((a, b) => a.total - b.total).slice(0, 3);
 
@@ -323,7 +347,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
       </div>
 
       <div className="ceo-rank-grid">
-        <SectionCard title="🏷️ โปรเด่น 3 อันดับ">
+        <SectionCard title="🏷️ โปรเด่น 3 อันดับ (คิวแอดมินเท่านั้น)">
           {topPromos.length === 0 ? <div style={{ color: "#ccc", fontSize: 13 }}>ไม่มีข้อมูล</div> : (
             <div className="ceo-rank-list">
               {topPromos.map((p, i) => (
@@ -337,7 +361,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
           )}
         </SectionCard>
 
-        <SectionCard title="🏢 สาขาเด่น 3 / สาขาที่ควรระวัง 3">
+        <SectionCard title="🏢 สาขาเด่น 3 / สาขาที่ควรระวัง 3 (คิวแอดมินเท่านั้น)">
           <div className="ceo-dual-rank">
             <div>
               <div className="ceo-dual-rank-title">ดี</div>
@@ -370,7 +394,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
           </div>
         </SectionCard>
 
-        <SectionCard title="👤 แอดมินเด่น 3 / แอดมินที่ควรโค้ช 3">
+        <SectionCard title="👤 แอดมินเด่น 3 / แอดมินที่ควรโค้ช 3 (ไม่รวมใช้คอร์ส)">
           <div className="ceo-dual-rank">
             <div>
               <div className="ceo-dual-rank-title">ดี</div>
