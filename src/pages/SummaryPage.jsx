@@ -352,6 +352,9 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
   const [crossFilter, setCrossFilter] = useState({ branch: [], role: [], room: [], procedure: [], recorder: [] });
   const [customStart, setCustomStart] = useState(getTodayStr());
   const [customEnd, setCustomEnd] = useState(getTodayStr());
+  const [activeTab, setActiveTab] = useState("appointment"); // appointment | recorded
+  const [showMoreRecorded, setShowMoreRecorded] = useState(false);
+  const [showMoreAppointment, setShowMoreAppointment] = useState(false);
   const isMultiBranch = canViewAllBranches(currentUser);
   const isSuperAdmin = currentUser?.role === "superadmin";
 
@@ -608,86 +611,114 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
         />
       )}
 
-      {/* Section 1: บันทึกวันนั้น */}
-      <CollapsibleCard
-        title={`� คิวที่บันทึก — ${rangeLabel}`}
-        subtitle="ลงทะเบียนเข้าระบบช่วงนี้ — นัดวันไหนก็ได้"
-        badge={
-          <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)", background: "var(--surface3)", borderRadius: 10, padding: "2px 10px", color: "var(--text2)" }}>
-            {recordedQueues.length} รายการ
-          </span>
-        }
-        defaultOpen={false}
-      >
-        <SectionStats queues={crossFilteredRecorded} procedures={procedures} />
-        {hasAnyCrossFilter && (
-          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginBottom: 8, padding: "6px 10px", background: "rgba(185,94,66,0.08)", borderRadius: 6, border: "1px solid var(--accent)" }}>
-            <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 700 }}>🔍 กรอง:</span>
-            {(["branch", "role", "room", "procedure", "recorder"]).flatMap((dim) =>
-              (crossFilter[dim] || []).map((v) => {
-                let label = v;
-                if (dim === "recorder") label = `👤 ${v}`;
-                return (
-                  <button
-                    key={`${dim}:${v}`}
-                    onClick={() => handleCrossFilter(dim, v)}
-                    title="คลิกเพื่อลบ"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 12, border: "1px solid var(--accent)", background: "var(--surface)", color: "var(--accent)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
-                  >{label} ✕</button>
-                );
-              })
-            )}
-            <button onClick={() => setCrossFilter({ branch: [], role: [], room: [], procedure: [], recorder: [] })} style={{ marginLeft: "auto", fontSize: 11, padding: "2px 10px", borderRadius: 6, border: "1px solid var(--accent)", background: "transparent", color: "var(--accent)", cursor: "pointer", fontWeight: 700 }}>✕ Clear all</button>
-          </div>
-        )}
-        {futureFromToday.length > 0 && (
-          <div style={{ fontSize: 12, color: "var(--blue)", marginBottom: 8, padding: "4px 10px", background: "var(--blue-soft)", borderRadius: 6 }}>
-            📌 ในจำนวนนี้ <strong>{futureFromToday.length}</strong> คิว บันทึกวันนี้แต่นัดวันอื่น (pre-book)
-          </div>
-        )}
-        {recordedQueues.length > 0 && (
-          <>
-          <DateDistributionChart title="📅 คิวไปนัดวันไหนบ้าง" queues={crossFilteredRecorded} />
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginTop: 12 }}>
-            {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} onSelect={(v) => handleCrossFilter("branch", v)} selectedValues={crossFilter.branch} />}
-            <MiniBarChart title="👤 ผู้บันทึก (ตามบทบาท)" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const s = staff?.find(x => x.id === q.recordedBy); const roleLabel = ROLES.find(r => r.value === s?.role)?.label || "ไม่ระบุ"; if (!m[roleLabel]) m[roleLabel] = { value: 0, revenue: 0 }; m[roleLabel].value++; m[roleLabel].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${260+i*25},60%,60%)`} onSelect={(v) => handleCrossFilter("role", v)} selectedValues={crossFilter.role} />
-            <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} onSelect={(v) => handleCrossFilter("room", v)} selectedValues={crossFilter.room} />
-            <MiniBarChart title="💉 หัตถการ" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} onSelect={(v) => handleCrossFilter("procedure", v)} selectedValues={crossFilter.procedure} />
-            <MiniBarChart title="👤 แอดมิน (บันทึกคิว)" data={(() => { const m = {}; const adminIds = new Set((staff || []).filter(s => s?.role === "admin").map(s => s.id)); crossFilteredRecorded.forEach(q => { if (!adminIds.has(q.recordedBy)) return; const s = staff.find(x => x.id === q.recordedBy); const k = s?.nickname || s?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${30+i*20},70%,55%)`} onSelect={(v) => handleCrossFilter("recorder", v)} selectedValues={crossFilter.recorder} />
-            <MiniBarChart title="🎁 โปร" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const p = promos.find(x => x.id === q.promoId); const k = p?.name || "ไม่ระบุโปร"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${15+i*22},75%,58%)`} />
-          </div>
-          </>
-        )}
-      </CollapsibleCard>
+      {/* ─── Tab bar ─── */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, borderBottom: "2px solid var(--border)" }}>
+        {[
+          { v: "appointment", l: "📅 คิวนัดทำ", n: appointmentQueues.length },
+          { v: "recorded", l: "📝 คิวบันทึก", n: recordedQueues.length },
+        ].map(({ v, l, n }) => (
+          <button
+            key={v}
+            onClick={() => setActiveTab(v)}
+            style={{
+              padding: "8px 16px", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer",
+              background: "transparent",
+              color: activeTab === v ? "var(--accent)" : "var(--text3)",
+              borderBottom: activeTab === v ? "3px solid var(--accent)" : "3px solid transparent",
+              marginBottom: -2,
+              display: "inline-flex", alignItems: "center", gap: 8,
+            }}
+          >
+            {l}
+            <span style={{ fontSize: 11, fontFamily: "var(--mono)", background: activeTab === v ? "var(--accent)" : "var(--surface3)", color: activeTab === v ? "#fff" : "var(--text2)", borderRadius: 10, padding: "1px 8px" }}>{n}</span>
+          </button>
+        ))}
+      </div>
 
-      {/* Section 2: นัดทำวันนั้น */}
-      <CollapsibleCard
-        title={`� คิวนัดทำ — ${rangeLabel}`}
-        subtitle="appointment ช่วงนี้ — บันทึกวันไหนก็ได้"
-        badge={
-          <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)", background: "var(--surface3)", borderRadius: 10, padding: "2px 10px", color: "var(--text2)" }}>
-            {appointmentQueues.length} รายการ
-          </span>
-        }
-        defaultOpen={true}
-      >
-        <SectionStats queues={appointmentQueues} procedures={procedures} showStatus={true} />
-        {advanceBookings.length > 0 && (
-          <div style={{ fontSize: 12, color: "var(--amber)", marginBottom: 8, padding: "4px 10px", background: "rgba(245,158,11,0.1)", borderRadius: 6 }}>
-            📌 ในจำนวนนี้ <strong>{advanceBookings.length}</strong> คิว จองล่วงหน้ามาจากวันก่อนหน้า
-          </div>
-        )}
-        {appointmentQueues.length > 0 && (
-          <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginTop: 12 }}>
-            {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; appointmentQueues.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} />}
-            <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; appointmentQueues.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} />
-            <MiniBarChart title="💉 หัตถการ" data={(() => { const m = {}; appointmentQueues.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} />
-            <MiniBarChart title="🎁 โปร" data={(() => { const m = {}; appointmentQueues.forEach(q => { const p = promos.find(x => x.id === q.promoId); const k = p?.name || "ไม่ระบุโปร"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${15+i*22},75%,58%)`} />
-          </div>
-          </>
-        )}
-      </CollapsibleCard>
+      {/* Tab content: คิวบันทึก */}
+      {activeTab === "recorded" && (
+        <div>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8 }}>ลงทะเบียนเข้าระบบช่วงนี้ — นัดวันไหนก็ได้</div>
+          <SectionStats queues={crossFilteredRecorded} procedures={procedures} />
+          {hasAnyCrossFilter && (
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginBottom: 8, padding: "6px 10px", background: "rgba(185,94,66,0.08)", borderRadius: 6, border: "1px solid var(--accent)" }}>
+              <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 700 }}>🔍 กรอง:</span>
+              {(["branch", "role", "room", "procedure", "recorder"]).flatMap((dim) =>
+                (crossFilter[dim] || []).map((v) => {
+                  let label = v;
+                  if (dim === "recorder") label = `👤 ${v}`;
+                  return (
+                    <button
+                      key={`${dim}:${v}`}
+                      onClick={() => handleCrossFilter(dim, v)}
+                      title="คลิกเพื่อลบ"
+                      style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 12, border: "1px solid var(--accent)", background: "var(--surface)", color: "var(--accent)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                    >{label} ✕</button>
+                  );
+                })
+              )}
+              <button onClick={() => setCrossFilter({ branch: [], role: [], room: [], procedure: [], recorder: [] })} style={{ marginLeft: "auto", fontSize: 11, padding: "2px 10px", borderRadius: 6, border: "1px solid var(--accent)", background: "transparent", color: "var(--accent)", cursor: "pointer", fontWeight: 700 }}>✕ Clear all</button>
+            </div>
+          )}
+          {futureFromToday.length > 0 && (
+            <div style={{ fontSize: 12, color: "var(--blue)", marginBottom: 8, padding: "4px 10px", background: "var(--blue-soft)", borderRadius: 6 }}>
+              📌 ในจำนวนนี้ <strong>{futureFromToday.length}</strong> คิว บันทึกวันนี้แต่นัดวันอื่น (pre-book)
+            </div>
+          )}
+          {recordedQueues.length > 0 && (
+            <>
+              <DateDistributionChart title="📅 คิวไปนัดวันไหนบ้าง" queues={crossFilteredRecorded} />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginTop: 12 }}>
+                {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} onSelect={(v) => handleCrossFilter("branch", v)} selectedValues={crossFilter.branch} />}
+                <MiniBarChart title="� หัตถการ" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} onSelect={(v) => handleCrossFilter("procedure", v)} selectedValues={crossFilter.procedure} />
+                <MiniBarChart title="🎁 โปร" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const p = promos.find(x => x.id === q.promoId); const k = p?.name || "ไม่ระบุโปร"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${15+i*22},75%,58%)`} />
+                <MiniBarChart title="� แอดมิน (บันทึกคิว)" data={(() => { const m = {}; const adminIds = new Set((staff || []).filter(s => s?.role === "admin").map(s => s.id)); crossFilteredRecorded.forEach(q => { if (!adminIds.has(q.recordedBy)) return; const s = staff.find(x => x.id === q.recordedBy); const k = s?.nickname || s?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${30+i*20},70%,55%)`} onSelect={(v) => handleCrossFilter("recorder", v)} selectedValues={crossFilter.recorder} />
+                {showMoreRecorded && (
+                  <>
+                    <MiniBarChart title="� ห้อง" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} onSelect={(v) => handleCrossFilter("room", v)} selectedValues={crossFilter.room} />
+                    <MiniBarChart title="👤 ผู้บันทึก (ตามบทบาท)" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const s = staff?.find(x => x.id === q.recordedBy); const roleLabel = ROLES.find(r => r.value === s?.role)?.label || "ไม่ระบุ"; if (!m[roleLabel]) m[roleLabel] = { value: 0, revenue: 0 }; m[roleLabel].value++; m[roleLabel].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${260+i*25},60%,60%)`} onSelect={(v) => handleCrossFilter("role", v)} selectedValues={crossFilter.role} />
+                  </>
+                )}
+              </div>
+              <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
+                <button onClick={() => setShowMoreRecorded((v) => !v)} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", color: "var(--text2)", cursor: "pointer" }}>
+                  {showMoreRecorded ? "▴ ซ่อน (ห้อง / role)" : "▾ ดูเพิ่ม (ห้อง / role)"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Tab content: คิวนัดทำ */}
+      {activeTab === "appointment" && (
+        <div>
+          <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8 }}>appointment ช่วงนี้ — บันทึกวันไหนก็ได้</div>
+          <SectionStats queues={appointmentQueues} procedures={procedures} showStatus={true} />
+          {advanceBookings.length > 0 && (
+            <div style={{ fontSize: 12, color: "var(--amber)", marginBottom: 8, padding: "4px 10px", background: "rgba(245,158,11,0.1)", borderRadius: 6 }}>
+              📌 ในจำนวนนี้ <strong>{advanceBookings.length}</strong> คิว จองล่วงหน้ามาจากวันก่อนหน้า
+            </div>
+          )}
+          {appointmentQueues.length > 0 && (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginTop: 12 }}>
+                {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; appointmentQueues.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} />}
+                <MiniBarChart title="� หัตถการ" data={(() => { const m = {}; appointmentQueues.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} />
+                <MiniBarChart title="🎁 โปร" data={(() => { const m = {}; appointmentQueues.forEach(q => { const p = promos.find(x => x.id === q.promoId); const k = p?.name || "ไม่ระบุโปร"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${15+i*22},75%,58%)`} />
+                {showMoreAppointment && (
+                  <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; appointmentQueues.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} />
+                )}
+              </div>
+              <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
+                <button onClick={() => setShowMoreAppointment((v) => !v)} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 700, borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", color: "var(--text2)", cursor: "pointer" }}>
+                  {showMoreAppointment ? "▴ ซ่อน (ห้อง)" : "▾ ดูเพิ่ม (ห้อง)"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </>
   );
 }
