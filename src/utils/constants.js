@@ -130,7 +130,7 @@ export const ROLES = [
     label: "CEO",
     color: "#b45309",
     bg: "rgba(180,83,9,0.1)",
-    pages: ["ceo-dashboard"],
+    pages: ["ceo-dashboard","summary"],
   },
   {
     value: "superadmin",
