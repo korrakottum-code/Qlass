@@ -8,19 +8,19 @@ const S = { card: { background: "#fff", borderRadius: 16, padding: "20px 22px", 
 
 function StatCard({ icon, label, value, sub, accent = "#E8B4B8" }) {
   return (
-    <div style={{ ...S.card, position: "relative", overflow: "hidden" }}>
+    <div className="ceo-stat-card" style={{ ...S.card, position: "relative", overflow: "hidden" }}>
       <div style={{ position: "absolute", top: -20, right: -20, width: 70, height: 70, borderRadius: "50%", background: `${accent}18` }} />
-      <div style={{ fontSize: 13, color: "#999", fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
+      <div className="ceo-stat-card-label" style={{ fontSize: 13, color: "#999", fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
         <span style={{ fontSize: 16 }}>{icon}</span>{label}
       </div>
-      <div style={{ fontSize: 28, fontWeight: 700, color: "#2d2a26", marginTop: 6 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>{sub}</div>}
+      <div className="ceo-stat-card-value" style={{ fontSize: 28, fontWeight: 700, color: "#2d2a26", marginTop: 6 }}>{value}</div>
+      {sub && <div className="ceo-stat-card-sub" style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }
 
 function SectionCard({ title, children }) {
-  return <div style={S.card}><div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#2d2a26" }}>{title}</div>{children}</div>;
+  return <div className="ceo-section-card" style={S.card}><div className="ceo-section-card-title" style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#2d2a26" }}>{title}</div>{children}</div>;
 }
 
 export default function CeoDashboardPage({ queues, allQueues, branches, rooms, procedures, promos, staff, currentUser }) {
@@ -87,17 +87,42 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
   const oldC = dayANO.filter(q => q.customerType==="old").length;
   const newPct = dayANO.length > 0 ? Math.round((newC/dayANO.length)*100) : 0;
 
+  const selectedDays = useMemo(() => {
+    const s = new Date(startDate);
+    const e = new Date(endDate);
+    return Math.max(1, Math.floor((e - s) / (1000 * 60 * 60 * 24)) + 1);
+  }, [startDate, endDate]);
+
+  const trendRange = useMemo(() => {
+    if (rangeKey === "today") {
+      const end = new Date(singleDate);
+      const start = new Date(end);
+      start.setDate(end.getDate() - 6);
+      return {
+        start: isoToLocalDateStr(start),
+        end: isoToLocalDateStr(end),
+        label: `7 วันล่าสุด ถึง ${formatThaiDate(singleDate)}`,
+      };
+    }
+
+    return {
+      start: startDate,
+      end: endDate,
+      label: rangeLabel,
+    };
+  }, [rangeKey, singleDate, startDate, endDate, rangeLabel]);
+
   // daily trend within selected range
   const trend = useMemo(() => {
-    const arr = [], s = new Date(startDate), e = new Date(endDate);
+    const arr = [], s = new Date(trendRange.start), e = new Date(trendRange.end);
     for (let d = new Date(s); d <= e; d.setDate(d.getDate()+1)) {
       const k = isoToLocalDateStr(d);
-      const c = all.filter(q => adminIds.has(q.recordedBy) && (q.customerType==="new"||q.customerType==="old") && getLD(q)===k).length;
+      const c = all.filter(q => q.date === k).length;
       const dt = new Date(k);
       arr.push({day:k, label:["อา","จ","อ","พ","พฤ","ศ","ส"][dt.getDay()]+" "+dt.getDate()+"/"+(dt.getMonth()+1), q:c});
     }
     return arr;
-  }, [all, adminIds, startDate, endDate]);
+  }, [all, trendRange.start, trendRange.end]);
   const tMax = Math.max(...trend.map(d=>d.q), 1);
 
   const bStats = useMemo(() => {
@@ -113,8 +138,29 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
   }, [dayANO, staffMap]);
 
   const sStats = useMemo(() => {
-    const m = {}; QUEUE_STATUSES.forEach(s => { m[s.value]=0; }); dayQ.forEach(q => { m[q.status]=(m[q.status]||0)+1; });
-    return QUEUE_STATUSES.map(s => ({...s, count:m[s.value]||0})).filter(s=>s.count>0);
+    const counts = {};
+    dayQ.forEach((q) => {
+      if (!q?.status) return;
+      counts[q.status] = (counts[q.status] || 0) + 1;
+    });
+
+    const knownValues = new Set(QUEUE_STATUSES.map((s) => s.value));
+    const known = QUEUE_STATUSES
+      .map((s) => ({ ...s, count: counts[s.value] || 0 }))
+      .filter((s) => s.count > 0);
+
+    const unknown = Object.entries(counts)
+      .filter(([value, count]) => !knownValues.has(value) && count > 0)
+      .map(([value, count]) => ({
+        value,
+        label: value,
+        emoji: "•",
+        color: "#6b7280",
+        bg: "#f3f4f6",
+        count,
+      }));
+
+    return [...known, ...unknown];
   }, [dayQ]);
 
   const pStats = useMemo(() => {
@@ -181,18 +227,53 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
     return Object.values(m).filter(p=>p.total>=3).sort((a,b)=>(b.new/b.total)-(a.new/a.total)).slice(0,8);
   }, [dayQ, promoMap]);
 
+  const quickSummary = useMemo(() => {
+    const trendText = dayANO.length > prevANO.length
+      ? "จำนวนคิวที่แอดมินบันทึกเพิ่มขึ้นจากช่วงก่อนหน้า"
+      : dayANO.length < prevANO.length
+        ? "จำนวนคิวที่แอดมินบันทึกลดลงจากช่วงก่อนหน้า"
+        : "จำนวนคิวที่แอดมินบันทึกใกล้เคียงช่วงก่อนหน้า";
+
+    const customerText = newPct >= 50
+      ? "ลูกค้าใหม่มากกว่าหรือเท่ากับลูกค้าเก่า"
+      : "ลูกค้าเก่ากลับมาใช้บริการมากกว่าลูกค้าใหม่";
+
+    const riskText = lostPct <= 5
+      ? "ความเสี่ยงต่ำ อัตรายกเลิก/ไม่มาค่อนข้างน้อย"
+      : lostPct <= 15
+        ? "ความเสี่ยงปานกลาง ควรติดตามลูกค้าก่อนวันนัด"
+        : "ความเสี่ยงสูง ควรเร่งติดตามลูกค้าเพื่อลดการหลุดนัด";
+
+    return [
+      { icon: "📈", title: "แนวโน้มคิว", detail: trendText },
+      { icon: "👥", title: "ภาพรวมลูกค้า", detail: `${customerText} (ใหม่ ${newPct}%)` },
+      { icon: "🛟", title: "จุดที่ควรระวัง", detail: `${riskText} (ยืนยัน ${confRate}%)` },
+    ];
+  }, [dayANO.length, prevANO.length, newPct, lostPct, confRate]);
+
+  const topPromos = pStats.slice(0, 3);
+  const topBranches = bStats.filter((b) => b.total > 0).slice(0, 3);
+  const lowBranches = [...bStats].filter((b) => b.total > 0).sort((a, b) => a.total - b.total).slice(0, 3);
+  const topAdmins = aPerf.slice(0, 3);
+  const lowAdmins = [...aPerf].sort((a, b) => a.total - b.total).slice(0, 3);
+
+  const isExecutive = true;
+
+  const gridTwo = { display: "grid", gap: 16, marginBottom: 16 };
+  const gridTwoNoBottom = { display: "grid", gap: 16 };
+
   return (
-    <div style={{ fontFamily: "'Sarabun','Noto Sans Thai',sans-serif", background: "#FAF7F5", minHeight: "100vh", padding: "24px 20px", margin: "-20px", color: "#2d2a26" }}>
+    <div className="ceo-dashboard-page" style={{ fontFamily: "'Sarabun','Noto Sans Thai',sans-serif", background: "#FAF7F5", minHeight: "100vh", padding: "24px 20px", margin: "-20px", color: "#2d2a26" }}>
 
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, flexWrap: "wrap", gap: 12 }}>
+      <div className="ceo-dashboard-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, flexWrap: "wrap", gap: 12 }}>
         <div>
           <div style={{ fontSize: 11, fontWeight: 600, color: "#C9A9A6", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>✦ CEO Dashboard</div>
           <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: "#2d2a26" }}>Qlass Clinic</h1>
           <div style={{ fontSize: 13, color: "#aaa", marginTop: 4 }}>📅 {rangeKey === "today" ? formatThaiDate(singleDate) : `${formatThaiDate(startDate)} — ${formatThaiDate(endDate)}`}</div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div className="ceo-dashboard-controls" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+          <div className="ceo-dashboard-range-buttons" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {RANGES.map(r => (
               <button key={r.key} onClick={() => { setRangeKey(r.key); if (r.key === "today") setSingleDate(todayKey); }} style={{
                 padding: "6px 14px", borderRadius: 20, border: "1px solid #e8e0dc",
@@ -203,7 +284,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
             ))}
           </div>
           {rangeKey === "today" && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div className="ceo-dashboard-date-controls" style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <button onClick={() => { const d = new Date(singleDate); d.setDate(d.getDate()-1); setSingleDate(isoToLocalDateStr(d)); }}
                 style={{ padding: "5px 10px", borderRadius: 20, border: "1px solid #e8e0dc", background: "#fff", cursor: "pointer", fontSize: 13, color: "#888" }}>◀</button>
               <input type="date" value={singleDate} onChange={e => setSingleDate(e.target.value)}
@@ -219,14 +300,108 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
         </div>
       </div>
 
+      <div className="ceo-quick-summary">
+        <div className="ceo-quick-summary-title">สรุปสั้นๆ สำหรับผู้บริหาร</div>
+        <div className="ceo-quick-summary-grid">
+          {quickSummary.map((item) => (
+            <div key={item.title} className="ceo-quick-summary-item">
+              <div className="ceo-quick-summary-item-title">{item.icon} {item.title}</div>
+              <div className="ceo-quick-summary-item-detail">{item.detail}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* KPI Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 14, marginBottom: 24 }}>
-        <StatCard icon="📋" label={`คิวแอดมิน (${dateLabel})`} value={fmtNum(dayANO.length)}
-          sub={<span style={{color:dColor(dayANO.length,prevANO.length)}}>{delta(dayANO.length,prevANO.length)} vs ช่วงก่อนหน้า</span>} accent="#E8B4B8" />
-        <StatCard icon="👤" label="ลูกค้าใหม่ / เก่า" value={`${newC} / ${oldC}`}
+        <StatCard icon="📋" label={`คิวที่แอดมินบันทึก (${dateLabel})`} value={fmtNum(dayANO.length)}
+          sub={<span style={{color:dColor(dayANO.length,prevANO.length)}}>{delta(dayANO.length,prevANO.length)} เทียบช่วงก่อนหน้า</span>} accent="#E8B4B8" />
+        <StatCard icon="👤" label="ลูกค้าใหม่ เทียบ ลูกค้าเก่า" value={`${newC} / ${oldC}`}
           sub={`ใหม่ ${newPct}% · เก่า ${100-newPct}%`} accent="#DDA0A0" />
-        <StatCard icon="📋" label={`คิวทั้งหมด`} value={fmtNum(dayQ.length)} accent="#A9C9C3" />
-        <StatCard icon="📊" label="เฉลี่ย/วัน" value={trend.length>0 ? Math.round(dayANO.length/trend.length) : 0} sub={`จาก ${trend.length} วัน`} accent="#B8A9C9" />
+        <StatCard icon="📋" label="คิวทั้งหมดในช่วงที่เลือก" value={fmtNum(dayQ.length)} accent="#A9C9C3" />
+        <StatCard icon="📊" label="ค่าเฉลี่ยคิวต่อวัน" value={Math.round(dayQ.length / selectedDays)} sub={`คำนวณจาก ${selectedDays} วัน`} accent="#B8A9C9" />
+      </div>
+
+      <div className="ceo-rank-grid">
+        <SectionCard title="🏷️ โปรเด่น 3 อันดับ">
+          {topPromos.length === 0 ? <div style={{ color: "#ccc", fontSize: 13 }}>ไม่มีข้อมูล</div> : (
+            <div className="ceo-rank-list">
+              {topPromos.map((p, i) => (
+                <div key={p.name + i} className="ceo-rank-item">
+                  <span className="ceo-rank-badge">#{i + 1}</span>
+                  <span className="ceo-rank-name">{p.name}</span>
+                  <span className="ceo-rank-value">{p.count} คิว</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard title="🏢 สาขาเด่น 3 / สาขาที่ควรระวัง 3">
+          <div className="ceo-dual-rank">
+            <div>
+              <div className="ceo-dual-rank-title">ดี</div>
+              {topBranches.length === 0 ? <div style={{ color: "#ccc", fontSize: 13 }}>ไม่มีข้อมูล</div> : (
+                <div className="ceo-rank-list">
+                  {topBranches.map((b, i) => (
+                    <div key={b.name + i} className="ceo-rank-item good">
+                      <span className="ceo-rank-badge">#{i + 1}</span>
+                      <span className="ceo-rank-name">{b.name}</span>
+                      <span className="ceo-rank-value">{b.total} คิว</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="ceo-dual-rank-title">แย่</div>
+              {lowBranches.length === 0 ? <div style={{ color: "#ccc", fontSize: 13 }}>ไม่มีข้อมูล</div> : (
+                <div className="ceo-rank-list">
+                  {lowBranches.map((b, i) => (
+                    <div key={`low-${b.name}-${i}`} className="ceo-rank-item bad">
+                      <span className="ceo-rank-badge">#{i + 1}</span>
+                      <span className="ceo-rank-name">{b.name}</span>
+                      <span className="ceo-rank-value">{b.total} คิว</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </SectionCard>
+
+        <SectionCard title="👤 แอดมินเด่น 3 / แอดมินที่ควรโค้ช 3">
+          <div className="ceo-dual-rank">
+            <div>
+              <div className="ceo-dual-rank-title">ดี</div>
+              {topAdmins.length === 0 ? <div style={{ color: "#ccc", fontSize: 13 }}>ไม่มีข้อมูล</div> : (
+                <div className="ceo-rank-list">
+                  {topAdmins.map((a, i) => (
+                    <div key={a.name + i} className="ceo-rank-item good">
+                      <span className="ceo-rank-badge">#{i + 1}</span>
+                      <span className="ceo-rank-name">{a.name}</span>
+                      <span className="ceo-rank-value">{a.total} คิว</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="ceo-dual-rank-title">แย่</div>
+              {lowAdmins.length === 0 ? <div style={{ color: "#ccc", fontSize: 13 }}>ไม่มีข้อมูล</div> : (
+                <div className="ceo-rank-list">
+                  {lowAdmins.map((a, i) => (
+                    <div key={`low-admin-${a.name}-${i}`} className="ceo-rank-item bad">
+                      <span className="ceo-rank-badge">#{i + 1}</span>
+                      <span className="ceo-rank-name">{a.name}</span>
+                      <span className="ceo-rank-value">{a.total} คิว</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </SectionCard>
       </div>
 
       {/* Ad Spend */}
@@ -235,10 +410,10 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
       </div>
 
       {/* Charts Row */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+      <div className="ceo-grid-2" style={gridTwo}>
 
         {/* Trend */}
-        <SectionCard title={`📈 แนวโน้มรายวัน — ${dateLabel}`}>
+        <SectionCard title={`📈 แนวโน้มรายวัน — ${trendRange.label}`}>
           <div style={{ display: "flex", alignItems: "flex-end", gap: trend.length>14?1:4, height: 140, padding: "0 4px" }}>
             {trend.map(({day,label,q},i)=>{const isLast=i===trend.length-1; return (
               <div key={day} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
@@ -253,7 +428,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
         </SectionCard>
 
         {/* Analytics */}
-        <SectionCard title="🧠 วิเคราะห์ภาพรวม">
+        <SectionCard title="🧠 สรุปภาพรวมแบบเร็ว">
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {/* New/Old ratio bar */}
             <div>
@@ -294,8 +469,8 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
         </SectionCard>
       </div>
 
-      {/* Promo + Admin Row */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+      {!isExecutive && (
+      <div className="ceo-grid-2" style={gridTwo}>
 
         {/* Top Promos */}
         <SectionCard title={`🏷️ โปรโมชั่นยอดนิยม (${pStats.reduce((s,p)=>s+p.count,0)} คิว)`}>
@@ -321,7 +496,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
         </SectionCard>
 
         {/* Admin Performance */}
-        <SectionCard title={`🏆 Performance แอดมิน — ${dateLabel}`}>
+        <SectionCard title={`🏆 ผลงานแอดมิน — ${dateLabel}`}>
           {aPerf.length===0 ? <div style={{ color: "#ccc", fontSize: 13, textAlign: "center", padding: 20 }}>ยังไม่มีข้อมูล</div> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {aPerf.map((a,i)=>{const medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":`#${i+1}`; const max=aPerf[0]?.total||1; return (
@@ -343,17 +518,19 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
           )}
         </SectionCard>
       </div>
+      )}
 
       {/* Branch + Status Row */}
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, marginBottom: 16 }}>
+      <div className={isExecutive ? "ceo-grid-2" : "ceo-grid-2-1"} style={gridTwo}>
 
         {/* Branch Breakdown */}
+        {!isExecutive && (
         <SectionCard title={`🏢 เปรียบเทียบสาขา — ${dateLabel}`}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {bStats.filter(b=>b.total>0).map((b,i) => (
               <div key={b.name} style={{ padding: 14, borderRadius: 14, background: "#faf7f5", border: "1px solid #f0ebe8" }}>
                 <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>{b.name}</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, fontSize: 11 }}>
+                <div className="ceo-branch-metrics" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, fontSize: 11 }}>
                   <div><div style={{ color: "#bbb" }}>คิวทั้งหมด</div><div style={{ fontWeight: 700, fontSize: 18, color: "#2d2a26" }}>{b.total}</div></div>
                   <div><div style={{ color: "#bbb" }}>🆕 ใหม่</div><div style={{ fontWeight: 700, fontSize: 16, color: "#3b82f6" }}>{b.new}</div></div>
                   <div><div style={{ color: "#bbb" }}>🔄 เก่า</div><div style={{ fontWeight: 700, fontSize: 16, color: "#f59e0b" }}>{b.old}</div></div>
@@ -363,6 +540,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
             {bStats.filter(b=>b.total>0).length===0 && <div style={{ textAlign: "center", color: "#ccc", padding: 20 }}>ไม่มีข้อมูล</div>}
           </div>
         </SectionCard>
+        )}
 
         {/* Queue Status */}
         <SectionCard title={`🎯 สถานะคิว (${dayQ.length})`}>
@@ -380,9 +558,10 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
       </div>
 
       {/* ─── Deep Analytics ─── */}
+      {!isExecutive && (
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: "#2d2a26", marginBottom: 12 }}>🔬 วิเคราะห์เชิงลึก</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#2d2a26", marginBottom: 12 }}>🔬 วิเคราะห์เชิงลึก (สำหรับดูรายละเอียดเพิ่มเติม)</div>
+        <div className="ceo-grid-2" style={gridTwo}>
 
           {/* 1. Day of week */}
           <SectionCard title="📅 วันไหนคิวเยอะที่สุด">
@@ -416,7 +595,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
           </SectionCard>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+        <div className="ceo-grid-2" style={gridTwo}>
 
           {/* 2. New/Old ratio comparison */}
           <SectionCard title="📈 สัดส่วนลูกค้าใหม่ เทียบช่วงก่อน">
@@ -462,7 +641,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
           </SectionCard>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div className="ceo-grid-2" style={gridTwoNoBottom}>
 
           {/* 5. Admin new customer ranking */}
           <SectionCard title="👑 แอดมิน — ดึงลูกค้าใหม่เก่งสุด">
@@ -503,6 +682,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
           </SectionCard>
         </div>
       </div>
+      )}
 
       <div style={{ textAlign: "center", fontSize: 11, color: "#ccc", marginTop: 20, padding: 10 }}>
         Qlass Clinic — CEO Dashboard
