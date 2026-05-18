@@ -4,7 +4,13 @@ on:
   schedule:
     # Every day at 03:00 ICT (20:00 UTC previous day)
     - cron: '0 20 * * *'
-  workflow_dispatch: # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      full_sync:
+        description: 'Full sync (re-fetch all customers)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   sync:
@@ -53,7 +59,13 @@ jobs:
           fi
 
       - name: Run HN Sync
-        run: cd hn_sync && python -u sync.py
+        run: |
+          cd hn_sync
+          if [ "${{ inputs.full_sync }}" = "true" ]; then
+            python -u sync.py --full
+          else
+            python -u sync.py
+          fi
 
       - name: Save sync state cache
         if: always()
