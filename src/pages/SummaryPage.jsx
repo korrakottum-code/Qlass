@@ -56,14 +56,15 @@ function DateDistributionChart({ title, queues }) {
 // ─── Mini Bar Chart ───
 function MiniBarChart({ title, data, colorFn, onSelect, selectedValues }) {
   if (!data || data.length === 0) return null;
-  const max = Math.max(...data.map((d) => d.value), 1);
+  const displayData = data.slice(0, 10);
+  const max = Math.max(...displayData.map((d) => d.value), 1);
   const selected = Array.isArray(selectedValues) ? selectedValues : [];
   const hasSelection = selected.length > 0;
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text2)", marginBottom: 8 }}>{title}</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text2)", marginBottom: 8 }}>{title}{data.length > 10 && <span style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400, marginLeft: 4 }}>top 10/{data.length}</span>}</div>
       <div style={{ display: "grid", gap: 5 }}>
-        {data.map((d, i) => {
+        {displayData.map((d, i) => {
           const isSelected = selected.includes(d.label);
           const dimmed = hasSelection && !isSelected;
           return (
@@ -688,6 +689,7 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
           )}
           {recordedQueues.length > 0 && (
             <>
+              <div style={{ maxHeight: 360, overflowY: "auto", overflowX: "hidden", borderRadius: 8, paddingRight: 4 }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginTop: 4 }}>
                 {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} onSelect={(v) => handleCrossFilter("branch", v)} selectedValues={crossFilter.branch} />}
                 <MiniBarChart title="� หัตถการ" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} onSelect={(v) => handleCrossFilter("procedure", v)} selectedValues={crossFilter.procedure} />
@@ -705,6 +707,7 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
                     <MiniBarChart title="👤 ผู้บันทึก (ตามบทบาท)" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const s = staff?.find(x => x.id === q.recordedBy); const roleLabel = ROLES.find(r => r.value === s?.role)?.label || "ไม่ระบุ"; if (!m[roleLabel]) m[roleLabel] = { value: 0, revenue: 0 }; m[roleLabel].value++; m[roleLabel].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${260+i*25},60%,60%)`} onSelect={(v) => handleCrossFilter("role", v)} selectedValues={crossFilter.role} />
                   </>
                 )}
+              </div>
               </div>
               {showMoreRecorded && (
                 <>
@@ -729,6 +732,7 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
           )}
           {appointmentQueues.length > 0 && (
             <>
+              <div style={{ maxHeight: 360, overflowY: "auto", overflowX: "hidden", borderRadius: 8, paddingRight: 4 }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginTop: 4 }}>
                 {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; appointmentQueues.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} />}
                 <MiniBarChart title="� หัตถการ" data={(() => { const m = {}; appointmentQueues.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} />
@@ -742,6 +746,7 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
                 {showMoreAppointment && (
                   <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; appointmentQueues.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} />
                 )}
+              </div>
               </div>
               {showMoreAppointment && (
                 <div style={{ display: "flex", justifyContent: "center", marginTop: 8 }}>
