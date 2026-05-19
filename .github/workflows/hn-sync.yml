@@ -11,11 +11,16 @@ on:
         required: false
         type: boolean
         default: false
+      resume_from:
+        description: 'Resume from page number (e.g. 9500)'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
 
     steps:
       - uses: actions/checkout@v4
@@ -61,7 +66,9 @@ jobs:
       - name: Run HN Sync
         run: |
           cd hn_sync
-          if [ "${{ inputs.full_sync }}" = "true" ]; then
+          if [ -n "${{ inputs.resume_from }}" ]; then
+            python -u sync.py --from=${{ inputs.resume_from }}
+          elif [ "${{ inputs.full_sync }}" = "true" ]; then
             python -u sync.py --full
           else
             python -u sync.py

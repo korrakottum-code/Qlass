@@ -25,9 +25,9 @@ SUPABASE_KEY       = os.getenv("SUPABASE_SERVICE_KEY")
 
 LOGIN_URL   = "https://proclinicth.com/login"
 API_URL     = "https://proclinicth.com/admin/api/customer"
-CONCURRENCY = 20
-BATCH_SIZE  = 100
-DELAY       = 0.3
+CONCURRENCY = 50
+BATCH_SIZE  = 200
+DELAY       = 0.1
 COOKIE_FILE = os.path.join(os.path.dirname(__file__), "cookies.json")
 STATE_FILE  = os.path.join(os.path.dirname(__file__), "sync_state.json")
 
@@ -231,6 +231,32 @@ async def fetch_new_customers(session: aiohttp.ClientSession) -> list:
     return all_customers
 
 
+async def fetch_from_page(session: aiohttp.ClientSession, start_page: int) -> list:
+    """Fetch customers starting from a specific page to the end."""
+    print(f"[2/3] Fetching from page {start_page}...")
+
+    # Get total pages
+    async with session.get(API_URL, params={"page": 1}) as resp:
+        first = await resp.json(content_type=None)
+    total_pages = first["last_page"]
+    total = first["total"]
+    print(f"  Total: {total:,} records, {total_pages:,} pages. Fetching {start_page} → {total_pages}")
+
+    all_customers = []
+    sem = asyncio.Semaphore(CONCURRENCY)
+    for start in range(start_page, total_pages + 1, BATCH_SIZE):
+        end = min(start + BATCH_SIZE - 1, total_pages)
+        tasks = [fetch_page(session, sem, p) for p in range(start, end + 1)]
+        results = await asyncio.gather(*tasks)
+        for rows in results:
+            all_customers.extend(rows)
+        print(f"  {len(all_customers):,} fetched (page {end}/{total_pages})")
+        await asyncio.sleep(DELAY)
+
+    print(f"  [OK] Fetched {len(all_customers):,} customers from page {start_page}")
+    return all_customers
+
+
 def upsert_to_supabase(customers: list):
     """Upsert all customers to Supabase hn_customers table via REST API."""
     print("[3/3] Upserting to Supabase...")
@@ -281,8 +307,15 @@ async def main():
         return
 
     full_sync = "--full" in sys.argv
+    resume_page = None
+    for arg in sys.argv:
+        if arg.startswith("--from="):
+            resume_page = int(arg.split("=")[1])
+
     if full_sync:
         print("[MODE] Full sync (--full flag detected)\n")
+    if resume_page:
+        print(f"[MODE] Resume from page {resume_page}\n")
 
     cookies = await auto_login()
     jar = aiohttp.CookieJar()
@@ -290,7 +323,9 @@ async def main():
         # Set cookies from Playwright login
         for name, value in cookies.items():
             jar.update_cookies({name: value}, response_url=yarl.URL("https://proclinicth.com"))
-        if full_sync:
+        if resume_page:
+            customers = await fetch_from_page(session, resume_page)
+        elif full_sync:
             customers = await fetch_all_customers(session)
         else:
             customers = await fetch_new_customers(session)
