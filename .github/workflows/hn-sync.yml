@@ -47,6 +47,7 @@ jobs:
           PROCLINIC_PASSWORD=${{ secrets.PROCLINIC_PASSWORD }}
           SUPABASE_URL=${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_URL=${{ secrets.SUPABASE_DB_URL }}
           EOF
           sed -i 's/^          //' hn_sync/.env
 
@@ -67,9 +68,9 @@ jobs:
         run: |
           cd hn_sync
           if [ -n "${{ inputs.resume_from }}" ]; then
-            python -u sync.py --from=${{ inputs.resume_from }}
+            python -u bulk_sync.py --from=${{ inputs.resume_from }}
           elif [ "${{ inputs.full_sync }}" = "true" ]; then
-            python -u sync.py --full
+            python -u bulk_sync.py
           else
             python -u sync.py
           fi
