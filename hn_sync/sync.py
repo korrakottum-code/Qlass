@@ -25,9 +25,9 @@ SUPABASE_KEY       = os.getenv("SUPABASE_SERVICE_KEY")
 
 LOGIN_URL   = "https://proclinicth.com/login"
 API_URL     = "https://proclinicth.com/admin/api/customer"
-CONCURRENCY = 50
-BATCH_SIZE  = 200
-DELAY       = 0.1
+CONCURRENCY = 10
+BATCH_SIZE  = 50
+DELAY       = 0.5
 COOKIE_FILE = os.path.join(os.path.dirname(__file__), "cookies.json")
 STATE_FILE  = os.path.join(os.path.dirname(__file__), "sync_state.json")
 
@@ -232,7 +232,7 @@ async def fetch_new_customers(session: aiohttp.ClientSession) -> list:
 
 
 async def fetch_from_page(session: aiohttp.ClientSession, start_page: int) -> list:
-    """Fetch customers starting from a specific page to the end."""
+    """Fetch customers from a specific page and upsert in chunks along the way."""
     print(f"[2/3] Fetching from page {start_page}...")
 
     # Get total pages
@@ -242,19 +242,31 @@ async def fetch_from_page(session: aiohttp.ClientSession, start_page: int) -> li
     total = first["total"]
     print(f"  Total: {total:,} records, {total_pages:,} pages. Fetching {start_page} → {total_pages}")
 
-    all_customers = []
+    buffer = []
+    total_upserted = 0
     sem = asyncio.Semaphore(CONCURRENCY)
     for start in range(start_page, total_pages + 1, BATCH_SIZE):
         end = min(start + BATCH_SIZE - 1, total_pages)
         tasks = [fetch_page(session, sem, p) for p in range(start, end + 1)]
         results = await asyncio.gather(*tasks)
         for rows in results:
-            all_customers.extend(rows)
-        print(f"  {len(all_customers):,} fetched (page {end}/{total_pages})")
+            buffer.extend(rows)
+        print(f"  {total_upserted + len(buffer):,} fetched (page {end}/{total_pages})")
         await asyncio.sleep(DELAY)
 
-    print(f"  [OK] Fetched {len(all_customers):,} customers from page {start_page}")
-    return all_customers
+        # Upsert every 2000 records to avoid memory + timeout issues
+        if len(buffer) >= 2000:
+            upsert_to_supabase(buffer)
+            total_upserted += len(buffer)
+            buffer = []
+
+    # Upsert remaining
+    if buffer:
+        upsert_to_supabase(buffer)
+        total_upserted += len(buffer)
+
+    print(f"  [OK] Total upserted {total_upserted:,} customers from page {start_page}")
+    return []  # Already upserted along the way
 
 
 def upsert_to_supabase(customers: list):
