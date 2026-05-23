@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
 import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime } from "./utils/helpers";
-import { 
+import {
   getAllStaff, getAllBranches, getAllProcedures, getAllPromos, getAllRooms, getAllRoomSchedules, getAllQueues,
   createBranch, updateBranch, deleteBranch as deleteBranchDB,
   createProcedure, updateProcedure, deleteProcedure as deleteProcedureDB,
@@ -51,7 +51,7 @@ import ActivityLogPage from "./pages/ActivityLogPage";
 import CeoDashboardPage from "./pages/CeoDashboardPage";
 
 export default function App() {
-  
+
   // ─── Master data from Supabase only ───
   const [branches, setBranches] = useState([]);
   const [procedures, setProcedures] = useState([]);
@@ -76,7 +76,7 @@ export default function App() {
     try { return localStorage.getItem("qlass_page") || "booking"; } catch { return "booking"; }
   });
   const navigateTo = useCallback((p) => {
-    try { localStorage.setItem("qlass_page", p); } catch {}
+    try { localStorage.setItem("qlass_page", p); } catch { }
     setPage(p);
   }, []);
   const [toast, setToast] = useState(null);
@@ -108,7 +108,7 @@ export default function App() {
           getAllCategories().catch(() => null),
           fetchTickets().catch(() => null),
         ]);
-        
+
         setStaff(staffData || []);
         setBranches(branchData || []);
         setProcedures(procedureData || []);
@@ -206,7 +206,7 @@ export default function App() {
         const allowed = ROLES.find((r) => r.value === currentUser.role)?.pages || [];
         // Hidden pages accessible via hash only
         const hiddenPages = ["ai-chat"];
-        if (hiddenPages.includes(hash) && ["superadmin","head_admin","admin"].includes(currentUser.role)) {
+        if (hiddenPages.includes(hash) && ["superadmin", "head_admin", "admin"].includes(currentUser.role)) {
           navigateTo(hash);
         } else if (allowed.includes(hash)) {
           navigateTo(hash);
@@ -223,19 +223,19 @@ export default function App() {
     if (!currentUser) return;
     // Hidden pages: check by role, not allowedPages
     if (page === "ai-chat") {
-      if (!["superadmin","head_admin","admin"].includes(currentUser.role)) {
+      if (!["superadmin", "head_admin", "admin"].includes(currentUser.role)) {
         const target = allowedPages[0] || "queue-table";
-        try { localStorage.setItem("qlass_page", target); } catch {}
+        try { localStorage.setItem("qlass_page", target); } catch { }
         setPage(target);
       }
       return;
     }
     if (allowedPages.length > 0 && !allowedPages.includes(page)) {
       const target = allowedPages[0] || "queue-table";
-      try { localStorage.setItem("qlass_page", target); } catch {}
+      try { localStorage.setItem("qlass_page", target); } catch { }
       setPage(target);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, allowedPages, page]);
 
   // ─── Toast auto-dismiss ───
@@ -353,11 +353,15 @@ export default function App() {
       showToast("success", "แก้ไขคิวเรียบร้อย");
       setEditingQueueId(null);
     } else {
-      await createQueue({
+      const newQueue = await createQueue({
         ...form,
         createdAt: getTodayStr(),
         recordedBy: currentUser?.id || null,
       });
+      // อัปเดต state ทันที ไม่รอ Realtime (ป้องกันคิวไม่ขึ้นถ้า Realtime ช้า)
+      if (newQueue) {
+        setQueues((prev) => prev.some((q) => q.id === newQueue.id) ? prev : [...prev, newQueue]);
+      }
       showToast("success", "บันทึกคิวเรียบร้อย ✓");
     }
 
@@ -430,7 +434,7 @@ export default function App() {
 
     setModal(null);
     const st = payload.status;
-    const labels = { confirmed:"ยืนยันแล้ว ✅", rescheduled:"เลื่อนออก 📤", rescheduled_in:"เลื่อนมา (ใหม่) �", no_show:"บันทึก: ไม่มาตามนัด 🚫", cancelled:"ยกเลิกแล้ว ❌", done:"เสร็จสิ้น 🎉", follow1:"บันทึก: โทรตาม ×1", follow2:"บันทึก: โทรตาม ×2", follow3:"บันทึก: โทรตาม ×3 📞" };
+    const labels = { confirmed: "ยืนยันแล้ว ✅", rescheduled: "เลื่อนออก 📤", rescheduled_in: "เลื่อนมา (ใหม่) �", no_show: "บันทึก: ไม่มาตามนัด 🚫", cancelled: "ยกเลิกแล้ว ❌", done: "เสร็จสิ้น 🎉", follow1: "บันทึก: โทรตาม ×1", follow2: "บันทึก: โทรตาม ×2", follow3: "บันทึก: โทรตาม ×3 📞" };
     showToast("success", labels[st] || "อัปเดตสถานะแล้ว");
   }, [showToast, queues, currentUser]);
 
@@ -730,7 +734,7 @@ export default function App() {
         currentPage={page}
         onNavigate={navigateTo}
         branchCount={filteredBranches.length}
-        queueCount={filteredQueues.filter(q => q.date?.startsWith(new Date().toISOString().slice(0,7)) && ["new","old"].includes(q.customerType)).length}
+        queueCount={filteredQueues.filter(q => q.date?.startsWith(new Date().toISOString().slice(0, 7)) && ["new", "old"].includes(q.customerType)).length}
         currentUser={currentUser}
         onLogout={handleLogout}
       />
@@ -769,7 +773,7 @@ export default function App() {
                 onQuickAddPromo={quickAddPromo}
                 parseHints={parseHints || { branchAliases: {}, procedureAliases: {}, promoAliases: {}, roomAliases: {}, procedureToRoom: {} }}
                 onSmartApply={(fields, rawText) => {
-                  setForm((f) => ({ ...f, ...Object.fromEntries(Object.entries(fields).filter(([,v]) => v !== undefined && v !== null && v !== "")) }));
+                  setForm((f) => ({ ...f, ...Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined && v !== null && v !== "")) }));
                   setLastParseSnapshot({ rawText, fields });
                 }}
                 onBulkBooking={async (allFields) => {
@@ -887,23 +891,30 @@ export default function App() {
                     showToast("error", `⚠️ ${dup.name} (${dup.phone}) มีคิววันนี้แล้ว (${dup.timeBlock !== null ? blockToTime(dup.timeBlock) : "ไม่ระบุเวลา"})`);
                     return false;
                   }
-                  // conflict check
+                  // conflict check (ใช้ durationBlocks ก่อน fallback ไป proc.blocks)
                   if (bookingForm.timeBlock !== null && bookingForm.roomId && bookingForm.procedureId) {
                     const proc = procedures.find((p) => p.id === bookingForm.procedureId);
-                    const dur = proc?.blocks || 0;
+                    const dur = bookingForm.durationBlocks ?? proc?.blocks ?? 0;
                     const conflict = queues.find((q) => {
                       if (q.roomId !== bookingForm.roomId) return false;
                       if (q.date !== bookingForm.date) return false;
                       if (q.timeBlock === null) return false;
-                      const qDur = procedures.find((p) => p.id === q.procedureId)?.blocks || 1;
+                      const qProc = procedures.find((p) => p.id === q.procedureId);
+                      const qDur = q.durationBlocks ?? qProc?.blocks ?? 1;
                       return bookingForm.timeBlock < q.timeBlock + qDur && q.timeBlock < bookingForm.timeBlock + dur;
                     });
                     if (conflict) {
-                      showToast("error", `เวลาชนกับคิวของ ${conflict.name} (${blockToTime(conflict.timeBlock)})`);
+                      const cProc = procedures.find((p) => p.id === conflict.procedureId);
+                      const cDur = conflict.durationBlocks ?? cProc?.blocks ?? 0;
+                      showToast("error", `เวลาชนกับคิวของ ${conflict.name} (${blockToTime(conflict.timeBlock)}–${blockToTime(conflict.timeBlock + cDur)})`);
                       return false;
                     }
                   }
-                  await createQueue({ ...bookingForm, createdAt: getTodayStr(), recordedBy: currentUser?.id || null });
+                  // บันทึกลง Supabase และอัปเดต state ทันที ไม่รอ Realtime
+                  const newQueue = await createQueue({ ...bookingForm, recordedBy: currentUser?.id || null });
+                  if (newQueue) {
+                    setQueues((prev) => prev.some((q) => q.id === newQueue.id) ? prev : [...prev, newQueue]);
+                  }
                   showToast("success", "บันทึกคิวเรียบร้อย ✓");
                   return true;
                 }}
