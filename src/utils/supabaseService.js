@@ -821,6 +821,20 @@ export const getAllRooms = fetchRooms;
 export const getAllRoomSchedules = fetchRoomSchedules;
 export const getAllStaff = fetchStaff;
 export const getAllQueues = fetchQueues;
+
+// ─── ดึงคิวเฉพาะห้อง+วัน (สำหรับเช็ค conflict จาก DB สด ก่อน save) ───
+// query เล็กมาก (ห้องเดียว วันเดียว) เร็ว ไม่กระทบ performance
+export async function fetchQueuesForRoomDate(roomId, date) {
+  if (!roomId || !date) return [];
+  const { data, error } = await supabase
+    .from("queues")
+    .select("*")
+    .eq("room_id", roomId)
+    .eq("date", date)
+    .not("status", "in", "(cancelled,no_show)");
+  if (error) throw error;
+  return (data || []).map(mapQueueRow);
+}
 export const getAllCategories = fetchCategories;
 
 // ═══════════════════════════════════════════════════════════

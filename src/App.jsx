@@ -13,7 +13,7 @@ import {
   getAllCategories, createCategory as createCategoryDB, deleteCategory as deleteCategoryDB,
   fetchTickets, createTicketDB, updateTicketDB, deleteTicketDB,
   createActivityLog, fetchActivityLogs,
-  mapQueueRow
+  mapQueueRow, fetchQueuesForRoomDate
 } from "./utils/supabaseService";
 import { supabase } from "./utils/supabaseClient";
 import { learnFromCorrection } from "./utils/smartParser";
@@ -321,17 +321,24 @@ export default function App() {
       }
     }
 
-    // ─── ตรวจสอบเวลาชนกัน ───
+    // ─── ตรวจสอบเวลาชนกัน (ดึงจาก DB สด ป้องกัน race condition หลายเครื่อง) ───
     if (form.timeBlock !== null && form.roomId && form.procedureId) {
       const proc = procedures.find((p) => p.id === form.procedureId);
       const dur = form.durationBlocks ?? proc?.blocks ?? 0;
       const startA = form.timeBlock;
       const endA = startA + dur;
 
-      const conflict = queues.find((q) => {
+      // ดึงคิวห้องนี้ วันนี้ จาก DB สด ไม่ใช้ state (กัน 2 คนจองห้องเดียวกันพร้อมกัน)
+      let freshRoomQueues = [];
+      try {
+        freshRoomQueues = await fetchQueuesForRoomDate(form.roomId, form.date);
+      } catch {
+        // fallback ใช้ state ถ้า DB ล้มเหลว
+        freshRoomQueues = queues.filter(q => q.roomId === form.roomId && q.date === form.date);
+      }
+
+      const conflict = freshRoomQueues.find((q) => {
         if (q.id === editingQueueId) return false;
-        if (q.roomId !== form.roomId) return false;
-        if (q.date !== form.date) return false;
         if (q.timeBlock === null) return false;
         const qProc = procedures.find((p) => p.id === q.procedureId);
         const qDur = q.durationBlocks ?? qProc?.blocks ?? 1;
@@ -891,13 +898,20 @@ export default function App() {
                     showToast("error", `⚠️ ${dup.name} (${dup.phone}) มีคิววันนี้แล้ว (${dup.timeBlock !== null ? blockToTime(dup.timeBlock) : "ไม่ระบุเวลา"})`);
                     return false;
                   }
-                  // conflict check (ใช้ durationBlocks ก่อน fallback ไป proc.blocks)
+                  // conflict check — ดึงจาก DB สด ป้องกัน race condition หลายเครื่อง
                   if (bookingForm.timeBlock !== null && bookingForm.roomId && bookingForm.procedureId) {
                     const proc = procedures.find((p) => p.id === bookingForm.procedureId);
                     const dur = bookingForm.durationBlocks ?? proc?.blocks ?? 0;
-                    const conflict = queues.find((q) => {
-                      if (q.roomId !== bookingForm.roomId) return false;
-                      if (q.date !== bookingForm.date) return false;
+
+                    // ดึงคิวห้องนี้ วันนี้ จาก DB สด
+                    let freshRoomQueues = [];
+                    try {
+                      freshRoomQueues = await fetchQueuesForRoomDate(bookingForm.roomId, bookingForm.date);
+                    } catch {
+                      freshRoomQueues = queues.filter(q => q.roomId === bookingForm.roomId && q.date === bookingForm.date);
+                    }
+
+                    const conflict = freshRoomQueues.find((q) => {
                       if (q.timeBlock === null) return false;
                       const qProc = procedures.find((p) => p.id === q.procedureId);
                       const qDur = q.durationBlocks ?? qProc?.blocks ?? 1;
