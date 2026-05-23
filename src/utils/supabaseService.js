@@ -916,12 +916,32 @@ export async function deleteAllAiMemory() {
 // ═══════════════════════════════════════════════════════════
 
 export async function searchHnCustomers(query) {
-  if (!query || query.trim().length < 3) return [];
+  if (!query || query.trim().length < 2) return [];
   const q = query.trim();
 
-  // Search by phone (digits) or by name (text)
-  const isPhone = /^\d+$/.test(q);
+  // ── 1. ลอง Edge Function (Pro Clinic ทุก clinic, real-time) ──
+  try {
+    const { data, error } = await supabase.functions.invoke("search-hn", {
+      body: { q },
+    });
+    if (!error && data?.data) {
+      return data.data.map((c) => ({
+        hnId: c.hnId,
+        firstname: c.firstname || "",
+        lastname: c.lastname || "",
+        nickname: c.nickname || "",
+        telephone: c.telephone || "",
+        birthdate: c.birthdate || "",
+        source: data.source || "proclinic",
+        cookiesExpired: data.cookiesExpired || false,
+      }));
+    }
+  } catch {
+    // Edge Function ไม่พร้อม → fallback ด้านล่าง
+  }
 
+  // ── 2. Fallback: Supabase hn_customers โดยตรง ──
+  const isPhone = /^\d+$/.test(q);
   let supaQuery;
   if (isPhone) {
     supaQuery = supabase
@@ -930,13 +950,9 @@ export async function searchHnCustomers(query) {
       .ilike("telephone", `%${q}%`)
       .limit(10);
   } else {
-    // Split into tokens by whitespace so "วิราพร ไชย" matches a row where
-    // firstname="วิราพร" and lastname="ไชยมาตย์" (each token must match any
-    // of firstname/lastname/nickname; tokens are AND'd together).
     const tokens = q.split(/\s+/).filter((t) => t.length > 0);
     supaQuery = supabase.from("hn_customers").select("*").limit(10);
     for (const t of tokens) {
-      // escape PostgREST special chars in the token to keep .or() filter safe
       const safe = t.replace(/[(),]/g, "");
       if (!safe) continue;
       supaQuery = supaQuery.or(
@@ -946,13 +962,16 @@ export async function searchHnCustomers(query) {
   }
 
   const { data, error } = await supaQuery;
-  if (error) { console.error("searchHnCustomers:", error); return []; }
-  return (data || []).map(c => ({
+  if (error) { console.error("searchHnCustomers fallback:", error); return []; }
+  return (data || []).map((c) => ({
     hnId: c.hn_id,
     firstname: c.firstname || "",
     lastname: c.lastname || "",
     nickname: c.nickname || "",
     telephone: c.telephone || "",
     birthdate: c.birthdate || "",
+    source: "supabase",
+    cookiesExpired: true,
   }));
 }
+

@@ -1,0 +1,69 @@
+name: HN Full Sync (One-time)
+
+on:
+  workflow_dispatch:  # กดรันเองจาก GitHub UI ได้
+
+jobs:
+  full-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350   # รันได้สูงสุด ~6 ชั่วโมง
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Restore progress จาก cache — ถ้ามีจากรอบก่อน resume ต่อได้
+      - name: Restore sync progress
+        uses: actions/cache@v4
+        with:
+          path: hn_sync/sync_progress.json
+          key: hn-full-sync-progress-${{ github.run_number }}
+          restore-keys: |
+            hn-full-sync-progress-
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install aiohttp httpx python-dotenv curl_cffi
+
+      - name: Write cookies from secret
+        run: |
+          echo "${{ secrets.PROCLINIC_COOKIES_B64 }}" | base64 -d > hn_sync/cookies.json
+
+      - name: Write .env
+        run: |
+          cat > hn_sync/.env << EOF
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
+          PROCLINIC_EMAIL=${{ secrets.PROCLINIC_EMAIL }}
+          PROCLINIC_PASSWORD=${{ secrets.PROCLINIC_PASSWORD }}
+          EOF
+
+      - name: Run Full Sync (auto-retry until done)
+        run: |
+          cd hn_sync
+          attempt=1
+          while [ $attempt -le 20 ]; do
+            echo "━━━ Attempt $attempt — $(date '+%H:%M:%S') ━━━"
+            python3 -u sync.py --full
+            EXIT_CODE=$?
+            if [ $EXIT_CODE -eq 0 ] && [ ! -f sync_progress.json ]; then
+              echo "✅ Full sync เสร็จสมบูรณ์!"
+              exit 0
+            fi
+            echo "⚠️  หยุดกลางคัน (exit: $EXIT_CODE) — resume ใน 5s..."
+            sleep 5
+            attempt=$((attempt + 1))
+          done
+          echo "❌ หมด attempts แต่ progress บันทึกไว้แล้ว — รัน workflow ใหม่เพื่อ resume"
+          exit 1
+
+      # Save progress ไว้ถ้า timeout — รัน workflow ใหม่จะ resume ต่อ
+      - name: Save progress on failure
+        if: failure()
+        uses: actions/cache/save@v4
+        with:
+          path: hn_sync/sync_progress.json
+          key: hn-full-sync-progress-${{ github.run_number }}
