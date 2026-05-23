@@ -42,19 +42,27 @@ async def auto_login() -> dict:
         with open(COOKIE_FILE, "r") as f:
             saved = json.load(f)
         cookie_dict = {c["name"]: c["value"] for c in saved if "proclinicth" in c.get("domain", "")}
-        # Quick validation
+        # Quick validation — ส่ง header เหมือน browser จริงเพื่อไม่ให้ server block
+        browser_headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Accept-Language": "th,en;q=0.9",
+            "Referer": "https://proclinicth.com/admin/customer",
+            "X-Requested-With": "XMLHttpRequest",
+        }
         jar = aiohttp.CookieJar()
-        async with aiohttp.ClientSession(cookie_jar=jar) as session:
+        async with aiohttp.ClientSession(cookie_jar=jar, headers=browser_headers) as session:
             for name, value in cookie_dict.items():
                 jar.update_cookies({name: value}, response_url=yarl.URL("https://proclinicth.com"))
             try:
                 async with session.get(API_URL, params={"page": 1}, timeout=aiohttp.ClientTimeout(total=15)) as r:
                     text = await r.text()
+                    print(f"  Cookie test: HTTP {r.status}, response starts with: {text[:80]!r}")
                     if text.strip().startswith("{") and '"data"' in text:
                         print("  [OK] Saved cookies still valid")
                         return cookie_dict
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  Cookie test error: {e}")
         print("  Saved cookies expired, re-login needed...")
 
     # Headed login (reCAPTCHA requires visible browser — only works locally)
@@ -75,17 +83,27 @@ async def auto_login() -> dict:
         await page.fill('input[name="email"]', PROCLINIC_EMAIL)
         await page.fill('input[name="password"]', PROCLINIC_PASSWORD)
 
-        await page.wait_for_timeout(3000)
-        await page.evaluate("""() => {
-            document.getElementById('form-submit').disabled = false;
-            document.getElementById('form-submit').type = 'submit';
-        }""")
-        await page.click('#form-submit')
-        await page.wait_for_timeout(5000)
+        print("  ✋ กรุณา tick reCAPTCHA แล้วกด Login")
+        print("  ⚠️  อย่าปิด browser — รอให้ script ปิดให้เองอัตโนมัติ")
+        print("  รอสูงสุด 3 นาที...")
 
-        if "login" in page.url:
+        # Polling ทุก 1 วินาที รอจนกว่า URL ไม่ใช่ login page
+        import time as _time
+        deadline = _time.time() + 180  # 3 นาที
+        while _time.time() < deadline:
+            await asyncio.sleep(1)
+            try:
+                current_url = page.url
+                print(f"  URL: {current_url}", flush=True)
+                if "login" not in current_url:
+                    print("  [OK] Login สำเร็จ!")
+                    break
+            except Exception:
+                # browser ถูกปิด
+                raise RuntimeError("Browser ถูกปิดก่อน login เสร็จ — อย่าปิด browser เอง")
+        else:
             await browser.close()
-            raise RuntimeError(f"Login failed - still on: {page.url}")
+            raise RuntimeError("Login timeout 3 นาที")
 
         cookies = await page.context.cookies()
         await browser.close()
@@ -331,8 +349,15 @@ async def main():
 
     cookies = await auto_login()
     jar = aiohttp.CookieJar()
-    async with aiohttp.ClientSession(cookie_jar=jar) as session:
-        # Set cookies from Playwright login
+    browser_headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "th,en;q=0.9",
+        "Referer": "https://proclinicth.com/admin/customer",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+    async with aiohttp.ClientSession(cookie_jar=jar, headers=browser_headers) as session:
+        # Set cookies
         for name, value in cookies.items():
             jar.update_cookies({name: value}, response_url=yarl.URL("https://proclinicth.com"))
         if resume_page:
