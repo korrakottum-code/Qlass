@@ -28,8 +28,9 @@ API_URL     = "https://proclinicth.com/admin/api/customer"
 CONCURRENCY = 10
 BATCH_SIZE  = 50
 DELAY       = 0.5
-COOKIE_FILE = os.path.join(os.path.dirname(__file__), "cookies.json")
-STATE_FILE  = os.path.join(os.path.dirname(__file__), "sync_state.json")
+COOKIE_FILE    = os.path.join(os.path.dirname(__file__), "cookies.json")
+STATE_FILE     = os.path.join(os.path.dirname(__file__), "sync_state.json")
+PROGRESS_FILE  = os.path.join(os.path.dirname(__file__), "sync_progress.json")
 
 
 async def auto_login() -> dict:
@@ -250,11 +251,13 @@ async def fetch_new_customers(session: aiohttp.ClientSession) -> list:
 
 
 async def fetch_from_page(session: aiohttp.ClientSession, start_page: int) -> list:
-    """Fetch customers from a specific page and upsert in chunks along the way."""
+    """Fetch customers from a specific page and upsert in chunks along the way.
+    Saves progress after each batch so it can resume if interrupted.
+    """
     print(f"[2/3] Fetching from page {start_page}...")
 
     # Get total pages
-    async with session.get(API_URL, params={"page": 1}) as resp:
+    async with session.get(API_URL, params={"page": 1}, timeout=aiohttp.ClientTimeout(total=30)) as resp:
         first = await resp.json(content_type=None)
     total_pages = first["last_page"]
     total = first["total"]
@@ -269,8 +272,13 @@ async def fetch_from_page(session: aiohttp.ClientSession, start_page: int) -> li
         results = await asyncio.gather(*tasks)
         for rows in results:
             buffer.extend(rows)
-        print(f"  {total_upserted + len(buffer):,} fetched (page {end}/{total_pages})")
+        pct = (total_upserted + len(buffer)) / total * 100
+        print(f"  {total_upserted + len(buffer):,} / {total:,} ({pct:.1f}%) — page {end}/{total_pages}")
         await asyncio.sleep(DELAY)
+
+        # บันทึก progress ทุก batch — ถ้า crash จะ resume จากหน้านี้
+        with open(PROGRESS_FILE, "w") as f:
+            json.dump({"last_page": end, "total_upserted": total_upserted + len(buffer)}, f)
 
         # Upsert every 2000 records to avoid memory + timeout issues
         if len(buffer) >= 2000:
@@ -283,6 +291,10 @@ async def fetch_from_page(session: aiohttp.ClientSession, start_page: int) -> li
         upsert_to_supabase(buffer)
         total_upserted += len(buffer)
 
+    # ลบ progress file เมื่อเสร็จ + บันทึก state
+    if os.path.exists(PROGRESS_FILE):
+        os.remove(PROGRESS_FILE)
+    save_state(total)
     print(f"  [OK] Total upserted {total_upserted:,} customers from page {start_page}")
     return []  # Already upserted along the way
 
@@ -353,9 +365,16 @@ async def main():
         if arg.startswith("--from="):
             resume_page = int(arg.split("=")[1])
 
-    if full_sync:
+    # Auto-resume: ถ้ามี progress file แสดงว่า sync หยุดกลางคัน
+    if full_sync and not resume_page and os.path.exists(PROGRESS_FILE):
+        with open(PROGRESS_FILE) as f:
+            prog = json.load(f)
+        resume_page = prog.get("last_page", 1)
+        full_sync = False  # ใช้ resume mode แทน
+        print(f"[MODE] Auto-resume จาก page {resume_page} (sync หยุดกลางคัน)\n")
+    elif full_sync:
         print("[MODE] Full sync (--full flag detected)\n")
-    if resume_page:
+    if resume_page and not full_sync:
         print(f"[MODE] Resume from page {resume_page}\n")
 
     cookies = await auto_login()
@@ -374,7 +393,8 @@ async def main():
         if resume_page:
             customers = await fetch_from_page(session, resume_page)
         elif full_sync:
-            customers = await fetch_all_customers(session)
+            # ใช้ fetch_from_page (streaming) แทน fetch_all_customers (memory hog)
+            customers = await fetch_from_page(session, 1)
         else:
             customers = await fetch_new_customers(session)
 
