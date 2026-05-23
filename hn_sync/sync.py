@@ -303,18 +303,29 @@ def upsert_to_supabase(customers: list):
     for c in customers:
         c["synced_at"] = now
 
+    # Deduplicate by hn_id — เอา record ล่าสุดถ้า hn_id ซ้ำกันใน batch เดียวกัน
+    seen = {}
+    for c in customers:
+        seen[c["hn_id"]] = c
+    customers = list(seen.values())
+    print(f"  (after dedup: {len(customers):,} unique records)")
+
     # Upsert in chunks of 500
     chunk_size = 500
     total = len(customers)
+    errors = 0
     with httpx.Client(timeout=60) as client:
         for i in range(0, total, chunk_size):
             chunk = customers[i : i + chunk_size]
             resp = client.post(url, headers=headers, json=chunk)
             if resp.status_code not in (200, 201):
-                print(f"  [ERROR] chunk {i}: {resp.status_code} {resp.text[:200]}")
+                print(f"  [ERROR] chunk {i//chunk_size}: {resp.status_code} {resp.text[:200]}")
+                errors += 1
             else:
                 print(f"  {min(i + chunk_size, total):,} / {total:,}")
 
+    if errors:
+        print(f"  [WARN] {errors} chunk(s) failed — ข้อมูลบางส่วนอาจไม่ได้ถูก upsert")
     print(f"  [OK] Upserted {total:,} records to hn_customers")
 
 
