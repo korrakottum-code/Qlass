@@ -176,7 +176,6 @@ export function exportQueueData(queues, branches, rooms, procedures, promos, sta
     if (startDate && q.date < startDate) return false;
     if (endDate && q.date > endDate) return false;
     if (branchId !== "all" && q.branchId !== branchId) return false;
-    if (q.status !== "done") return false; // เฉพาะคิวที่แอดมินปิดแล้ว
     if (q.customerType === "course") return false; // ไม่รวมใช้คอร์ส
     return true;
   });
