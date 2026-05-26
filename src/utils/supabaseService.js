@@ -915,6 +915,34 @@ export async function deleteAllAiMemory() {
 // HN CUSTOMERS (Pro Clinic lookup)
 // ═══════════════════════════════════════════════════════════
 
+export async function fetchAllHnCustomers() {
+  const PAGE_SIZE = 1000;
+  const { count, error: countError } = await supabase
+    .from("hn_customers")
+    .select("*", { count: "exact", head: true });
+  if (countError) throw countError;
+  if (!count || count === 0) return [];
+
+  const numPages = Math.ceil(count / PAGE_SIZE);
+  const promises = [];
+  for (let i = 0; i < numPages; i++) {
+    promises.push(
+      supabase
+        .from("hn_customers")
+        .select("*")
+        .order("hn_id", { ascending: true })
+        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
+    );
+  }
+  const results = await Promise.all(promises);
+  const allData = [];
+  for (const { data, error } of results) {
+    if (error) throw error;
+    if (data) allData.push(...data);
+  }
+  return allData;
+}
+
 export async function searchHnCustomers(query) {
   if (!query || query.trim().length < 2) return [];
   const q = query.trim();

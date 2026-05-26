@@ -7,13 +7,103 @@ import {
   exportSummaryData,
   exportBranchesData,
   exportStaffData,
+  exportHnCustomers,
+  exportBookingReport,
+  exportCustomerTypeReport,
   backupAllData,
 } from "../utils/exportService";
+import { fetchAllHnCustomers } from "../utils/supabaseService";
+
+// ── Date preset helpers ─────────────────────────────────────
+
+function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function getPresets() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const d = now.getDate();
+
+  // วันนี้
+  const today = toDateStr(now);
+
+  // เมื่อวาน
+  const yd = new Date(y, m, d - 1);
+  const yesterday = toDateStr(yd);
+
+  // สัปดาห์นี้ (จันทร์ - วันนี้)
+  const dayOfWeek = now.getDay(); // 0=Sun
+  const monday = new Date(y, m, d - ((dayOfWeek + 6) % 7));
+  const thisWeekStart = toDateStr(monday);
+
+  // สัปดาห์ที่แล้ว
+  const lastMonday = new Date(y, m, d - ((dayOfWeek + 6) % 7) - 7);
+  const lastSunday = new Date(y, m, d - ((dayOfWeek + 6) % 7) - 1);
+  const lastWeekStart = toDateStr(lastMonday);
+  const lastWeekEnd = toDateStr(lastSunday);
+
+  // เดือนนี้
+  const thisMonthStart = toDateStr(new Date(y, m, 1));
+  const thisMonthEnd = toDateStr(new Date(y, m + 1, 0));
+
+  // เดือนที่แล้ว
+  const lastMonthStart = toDateStr(new Date(y, m - 1, 1));
+  const lastMonthEnd = toDateStr(new Date(y, m, 0));
+
+  // ไตรมาสนี้
+  const qStart = Math.floor(m / 3) * 3;
+  const thisQStart = toDateStr(new Date(y, qStart, 1));
+  const thisQEnd = toDateStr(new Date(y, qStart + 3, 0));
+
+  // ปีนี้
+  const thisYearStart = toDateStr(new Date(y, 0, 1));
+  const thisYearEnd = toDateStr(new Date(y, 11, 31));
+
+  return [
+    { label: "วันนี้", start: today, end: today },
+    { label: "เมื่อวาน", start: yesterday, end: yesterday },
+    { label: "สัปดาห์นี้", start: thisWeekStart, end: today },
+    { label: "สัปดาห์ที่แล้ว", start: lastWeekStart, end: lastWeekEnd },
+    { label: "เดือนนี้", start: thisMonthStart, end: thisMonthEnd },
+    { label: "เดือนที่แล้ว", start: lastMonthStart, end: lastMonthEnd },
+    { label: "ไตรมาสนี้", start: thisQStart, end: thisQEnd },
+    { label: "ปีนี้", start: thisYearStart, end: thisYearEnd },
+  ];
+}
+
+// ── Main Component ──────────────────────────────────────────
 
 export default function ExportPage({ queues, branches, rooms, procedures, promos, staff, roomSchedules }) {
   const [startDate, setStartDate] = useState(getTodayStr());
   const [endDate, setEndDate] = useState(getTodayStr());
   const [filterBranch, setFilterBranch] = useState("all");
+  const [hnLoading, setHnLoading] = useState(false);
+
+  const presets = getPresets();
+
+  function applyPreset(preset) {
+    setStartDate(preset.start);
+    setEndDate(preset.end);
+  }
+
+  async function handleExportHn() {
+    setHnLoading(true);
+    try {
+      const customers = await fetchAllHnCustomers();
+      if (!customers || customers.length === 0) {
+        alert("ไม่พบข้อมูล HN ในระบบ — รัน HN Sync ก่อนนะครับ");
+        return;
+      }
+      exportHnCustomers(customers);
+    } catch (err) {
+      console.error("HN export error:", err);
+      alert("เกิดข้อผิดพลาด: " + (err.message || err));
+    } finally {
+      setHnLoading(false);
+    }
+  }
 
   return (
     <div>
@@ -21,7 +111,7 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
         📊 Export ข้อมูล
       </h1>
 
-      {/* Date Range Selector */}
+      {/* ── Date Range Selector ───────────────────────────── */}
       <div style={{
         background: "#fff",
         borderRadius: 12,
@@ -29,9 +119,37 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
         marginBottom: 24,
         border: "1px solid #e5e7eb",
       }}>
-        <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: "#374151" }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 14, color: "#374151" }}>
           เลือกช่วงวันที่
         </h3>
+
+        {/* Preset buttons */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+          {presets.map((p) => {
+            const active = startDate === p.start && endDate === p.end;
+            return (
+              <button
+                key={p.label}
+                onClick={() => applyPreset(p)}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 20,
+                  border: active ? "none" : "1.5px solid #d1d5db",
+                  background: active ? "#2563eb" : "#f9fafb",
+                  color: active ? "#fff" : "#374151",
+                  fontSize: 13,
+                  fontWeight: active ? 700 : 500,
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Date pickers + branch filter */}
         <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
           <div>
             <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#6b7280" }}>
@@ -41,13 +159,7 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1.5px solid #d1d5db",
-                fontSize: 14,
-                outline: "none",
-              }}
+              style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #d1d5db", fontSize: 14, outline: "none" }}
             />
           </div>
           <div>
@@ -58,13 +170,7 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1.5px solid #d1d5db",
-                fontSize: 14,
-                outline: "none",
-              }}
+              style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #d1d5db", fontSize: 14, outline: "none" }}
             />
           </div>
           <div>
@@ -82,31 +188,12 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
               ))}
             </select>
           </div>
-          <div style={{ marginLeft: "auto" }}>
-            <button
-              onClick={() => {
-                setStartDate(getTodayStr());
-                setEndDate(getTodayStr());
-              }}
-              style={{
-                padding: "8px 16px",
-                borderRadius: 8,
-                border: "1.5px solid #d1d5db",
-                background: "#fff",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
-                color: "#374151",
-              }}
-            >
-              วันนี้
-            </button>
-          </div>
         </div>
       </div>
 
-      {/* Export Sections */}
+      {/* ── Export Sections ───────────────────────────────── */}
       <div style={{ display: "grid", gap: 20 }}>
+
         {/* Commission Exports */}
         <ExportSection
           title="💰 ค่าคอมมิชชั่น"
@@ -114,11 +201,11 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
           color="#059669"
           buttons={[
             {
-              label: "Export รายละเอียดค่าคอม",
+              label: "📥 รายละเอียดค่าคอม",
               onClick: () => exportCommissionData(queues, staff, branches, procedures, promos, startDate, endDate, filterBranch),
             },
             {
-              label: "Export สรุปค่าคอมพนักงาน",
+              label: "📥 สรุปค่าคอมพนักงาน",
               onClick: () => exportCommissionSummary(queues, staff, branches, startDate, endDate, filterBranch),
             },
           ]}
@@ -131,7 +218,7 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
           color="#2563eb"
           buttons={[
             {
-              label: "Export ข้อมูลคิว",
+              label: "📥 ข้อมูลคิว",
               onClick: () => exportQueueData(queues, branches, rooms, procedures, promos, staff, startDate, endDate, filterBranch),
             },
           ]}
@@ -144,8 +231,48 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
           color="#7c3aed"
           buttons={[
             {
-              label: "Export สรุปรายได้",
+              label: "📥 สรุปรายได้",
               onClick: () => exportSummaryData(queues, branches, procedures, startDate, endDate, filterBranch),
+            },
+          ]}
+        />
+
+        {/* HN Customers Export */}
+        <ExportSection
+          title="🏥 ลูกค้า HN (Pro Clinic)"
+          description="Export ข้อมูลลูกค้าทั้งหมดที่ sync มาจาก Pro Clinic (HN ID, ชื่อ, เบอร์โทร, วันเกิด)"
+          color="#0891b2"
+          buttons={[
+            {
+              label: hnLoading ? "⏳ กำลังโหลด..." : "📥 Export HN ลูกค้า",
+              onClick: handleExportHn,
+              disabled: hnLoading,
+            },
+          ]}
+        />
+
+        {/* Booking Report */}
+        <ExportSection
+          title="🗓️ รายงานตรวจสอบการจอง"
+          description="ตรวจสอบสถานะคิวทั้งหมด — รอยืนยัน, ยืนยันแล้ว, ไม่มา, ยกเลิก พร้อมสรุปจำนวนแต่ละสถานะ (2 sheets)"
+          color="#0f766e"
+          buttons={[
+            {
+              label: "📥 รายงานการจอง",
+              onClick: () => exportBookingReport(queues, branches, rooms, procedures, promos, staff, startDate, endDate, filterBranch),
+            },
+          ]}
+        />
+
+        {/* Customer Type Report */}
+        <ExportSection
+          title="👥 รายงานลูกค้าใหม่/เก่า/คอร์ส"
+          description="เปรียบเทียบสัดส่วนและรายได้ตามประเภทลูกค้า แยกตามสาขา / รายวัน / หัตถการ (3 sheets)"
+          color="#be185d"
+          buttons={[
+            {
+              label: "📥 รายงานประเภทลูกค้า",
+              onClick: () => exportCustomerTypeReport(queues, branches, procedures, startDate, endDate, filterBranch),
             },
           ]}
         />
@@ -157,11 +284,11 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
           color="#d97706"
           buttons={[
             {
-              label: "Export ข้อมูลสาขา",
+              label: "📥 ข้อมูลสาขา",
               onClick: () => exportBranchesData(branches, rooms),
             },
             {
-              label: "Export ข้อมูลพนักงาน",
+              label: "📥 ข้อมูลพนักงาน",
               onClick: () => exportStaffData(staff, branches),
             },
           ]}
@@ -170,7 +297,7 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
         {/* Backup */}
         <ExportSection
           title="💾 Backup ข้อมูลทั้งหมด"
-          description="สำรองข้อมูลทุกอย่าง (คิว, สาขา, ห้อง, หัตถการ, โปร, พนักงาน) เป็นไฟล์ JSON เพื่อเก็บไว้หรือกู้คืนภายหลัง"
+          description="สำรองข้อมูลทุกอย่าง (คิว, สาขา, ห้อง, หัตถการ, โปร, พนักงาน) เป็นไฟล์ JSON"
           color="#6b21a8"
           buttons={[
             {
@@ -191,11 +318,13 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
         fontSize: 13,
         color: "#1e40af",
       }}>
-        <strong>💡 หมายเหตุ:</strong> ไฟล์ที่ Export จะอยู่ในรูปแบบ CSV สามารถเปิดด้วย Excel หรือ Google Sheets ได้
+        <strong>💡 หมายเหตุ:</strong> ไฟล์ที่ Export จะอยู่ในรูปแบบ <strong>.xlsx</strong> (Excel) พร้อมสกุลเงิน ฿ — เปิดได้ด้วย Excel และ Google Sheets
       </div>
     </div>
   );
 }
+
+// ── ExportSection component ─────────────────────────────────
 
 function ExportSection({ title, description, color, buttons }) {
   return (
@@ -218,20 +347,24 @@ function ExportSection({ title, description, color, buttons }) {
           <button
             key={idx}
             onClick={btn.onClick}
+            disabled={btn.disabled}
             style={{
               padding: "10px 20px",
               borderRadius: 8,
               border: "none",
-              background: color,
+              background: btn.disabled ? "#9ca3af" : color,
               color: "#fff",
               fontSize: 14,
               fontWeight: 600,
-              cursor: "pointer",
+              cursor: btn.disabled ? "not-allowed" : "pointer",
               transition: "all 0.2s",
+              opacity: btn.disabled ? 0.7 : 1,
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.opacity = "0.85";
-              e.currentTarget.style.transform = "translateY(-1px)";
+              if (!btn.disabled) {
+                e.currentTarget.style.opacity = "0.85";
+                e.currentTarget.style.transform = "translateY(-1px)";
+              }
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.opacity = "1";
