@@ -4,15 +4,10 @@ import {
   exportCommissionData,
   exportCommissionSummary,
   exportQueueData,
-  exportSummaryData,
-  exportBranchesData,
-  exportStaffData,
-  exportHnCustomers,
-  exportBookingReport,
   exportCustomerTypeReport,
   backupAllData,
 } from "../utils/exportService";
-import { fetchAllHnCustomers } from "../utils/supabaseService";
+
 
 // ── Date preset helpers ─────────────────────────────────────
 
@@ -79,7 +74,6 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
   const [startDate, setStartDate] = useState(getTodayStr());
   const [endDate, setEndDate] = useState(getTodayStr());
   const [filterBranch, setFilterBranch] = useState("all");
-  const [hnLoading, setHnLoading] = useState(false);
 
   const presets = getPresets();
 
@@ -88,22 +82,6 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
     setEndDate(preset.end);
   }
 
-  async function handleExportHn() {
-    setHnLoading(true);
-    try {
-      const customers = await fetchAllHnCustomers();
-      if (!customers || customers.length === 0) {
-        alert("ไม่พบข้อมูล HN ในระบบ — รัน HN Sync ก่อนนะครับ");
-        return;
-      }
-      exportHnCustomers(customers);
-    } catch (err) {
-      console.error("HN export error:", err);
-      alert("เกิดข้อผิดพลาด: " + (err.message || err));
-    } finally {
-      setHnLoading(false);
-    }
-  }
 
   return (
     <div>
@@ -224,46 +202,6 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
           ]}
         />
 
-        {/* Summary Exports */}
-        <ExportSection
-          title="📊 สรุปรายได้"
-          description="Export สรุปรายได้ตามสาขาและหัตถการ"
-          color="#7c3aed"
-          buttons={[
-            {
-              label: "📥 สรุปรายได้",
-              onClick: () => exportSummaryData(queues, branches, procedures, startDate, endDate, filterBranch),
-            },
-          ]}
-        />
-
-        {/* HN Customers Export */}
-        <ExportSection
-          title="🏥 ลูกค้า HN (Pro Clinic)"
-          description="Export ข้อมูลลูกค้าทั้งหมดที่ sync มาจาก Pro Clinic (HN ID, ชื่อ, เบอร์โทร, วันเกิด)"
-          color="#0891b2"
-          buttons={[
-            {
-              label: hnLoading ? "⏳ กำลังโหลด..." : "📥 Export HN ลูกค้า",
-              onClick: handleExportHn,
-              disabled: hnLoading,
-            },
-          ]}
-        />
-
-        {/* Booking Report */}
-        <ExportSection
-          title="🗓️ รายงานตรวจสอบการจอง"
-          description="ตรวจสอบสถานะคิวทั้งหมด — รอยืนยัน, ยืนยันแล้ว, ไม่มา, ยกเลิก พร้อมสรุปจำนวนแต่ละสถานะ (2 sheets)"
-          color="#0f766e"
-          buttons={[
-            {
-              label: "📥 รายงานการจอง",
-              onClick: () => exportBookingReport(queues, branches, rooms, procedures, promos, staff, startDate, endDate, filterBranch),
-            },
-          ]}
-        />
-
         {/* Customer Type Report */}
         <ExportSection
           title="👥 รายงานลูกค้าใหม่/เก่า/คอร์ส"
@@ -273,23 +211,6 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
             {
               label: "📥 รายงานประเภทลูกค้า",
               onClick: () => exportCustomerTypeReport(queues, branches, procedures, startDate, endDate, filterBranch),
-            },
-          ]}
-        />
-
-        {/* Master Data Exports */}
-        <ExportSection
-          title="🏢 ข้อมูลหลัก"
-          description="Export ข้อมูลสาขา พนักงาน และอื่นๆ"
-          color="#d97706"
-          buttons={[
-            {
-              label: "📥 ข้อมูลสาขา",
-              onClick: () => exportBranchesData(branches, rooms),
-            },
-            {
-              label: "📥 ข้อมูลพนักงาน",
-              onClick: () => exportStaffData(staff, branches),
             },
           ]}
         />
