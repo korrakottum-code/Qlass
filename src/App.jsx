@@ -488,6 +488,22 @@ export default function App() {
     showToast("success", "บันทึกโปรเรียบร้อย");
   }, [showToast]);
 
+  const reorderPromo = useCallback(async (promoId, direction) => {
+    const idx = promos.findIndex((p) => p.id === promoId);
+    if (idx < 0) return;
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= promos.length) return;
+    const a = promos[idx];
+    const b = promos[swapIdx];
+    // swap sort_order values (use index as fallback if both are 0)
+    const orderA = a.sortOrder ?? idx;
+    const orderB = b.sortOrder ?? swapIdx;
+    await updatePromo(a.id, { sortOrder: orderB });
+    await updatePromo(b.id, { sortOrder: orderA });
+    const updatedPromos = await getAllPromos();
+    setPromos(updatedPromos || []);
+  }, [promos]);
+
   const quickAddPromo = useCallback(async (data) => {
     const newPromo = await createPromo(data);
     const updatedPromos = await getAllPromos();
@@ -870,6 +886,7 @@ export default function App() {
                 onAdd={() => setModal({ type: "promo", data: null })}
                 onEdit={(p) => setModal({ type: "promo", data: p })}
                 onDelete={deletePromo}
+                onReorder={reorderPromo}
               />
             )}
 
