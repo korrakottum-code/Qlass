@@ -493,15 +493,30 @@ export default function App() {
     if (idx < 0) return;
     const swapIdx = direction === "up" ? idx - 1 : idx + 1;
     if (swapIdx < 0 || swapIdx >= promos.length) return;
-    const a = promos[idx];
-    const b = promos[swapIdx];
-    // swap sort_order values (use index as fallback when both share the same value e.g. 0)
-    const orderA = a.sortOrder === b.sortOrder ? idx : a.sortOrder;
-    const orderB = a.sortOrder === b.sortOrder ? swapIdx : b.sortOrder;
-    await updatePromo(a.id, { sortOrder: orderB });
-    await updatePromo(b.id, { sortOrder: orderA });
-    const updatedPromos = await getAllPromos();
-    setPromos(updatedPromos || []);
+
+    // Swap in a local copy
+    const reordered = [...promos];
+    [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+
+    // Optimistic UI — assign sort_order = position index immediately
+    setPromos(reordered.map((p, i) => ({ ...p, sortOrder: i })));
+
+    // Collect items whose sort_order needs updating in DB
+    // First time: all 252 items (lazy init), subsequent swaps: only 2 items
+    const updateFns = [];
+    for (let i = 0; i < reordered.length; i++) {
+      if (reordered[i].sortOrder !== i) {
+        const item = reordered[i];
+        const newOrder = i;
+        updateFns.push(() => updatePromo(item.id, { sortOrder: newOrder }));
+      }
+    }
+
+    // Batch in chunks to avoid overwhelming the API
+    const CHUNK = 50;
+    for (let i = 0; i < updateFns.length; i += CHUNK) {
+      await Promise.all(updateFns.slice(i, i + CHUNK).map((fn) => fn()));
+    }
   }, [promos]);
 
   const quickAddPromo = useCallback(async (data) => {
