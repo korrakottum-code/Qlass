@@ -128,6 +128,7 @@ export async function fetchPromos() {
   const { data, error } = await supabase
     .from("promos")
     .select("*")
+    .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
   
   if (error) throw error;
@@ -137,6 +138,7 @@ export async function fetchPromos() {
     procedureId: p.procedure_id,
     price: parseFloat(p.price),
     active: p.active,
+    sortOrder: p.sort_order ?? 0,
   }));
 }
 
@@ -148,6 +150,7 @@ export async function createPromo(promo) {
       procedure_id: promo.procedureId,
       price: promo.price,
       active: promo.active,
+      sort_order: promo.sortOrder ?? 0,
     }])
     .select()
     .single();
@@ -159,18 +162,21 @@ export async function createPromo(promo) {
     procedureId: data.procedure_id,
     price: parseFloat(data.price),
     active: data.active,
+    sortOrder: data.sort_order ?? 0,
   };
 }
 
 export async function updatePromo(id, promo) {
+  const payload = {};
+  if (promo.name !== undefined) payload.name = promo.name;
+  if (promo.procedureId !== undefined) payload.procedure_id = promo.procedureId;
+  if (promo.price !== undefined) payload.price = promo.price;
+  if (promo.active !== undefined) payload.active = promo.active;
+  if (promo.sortOrder !== undefined) payload.sort_order = promo.sortOrder;
+  
   const { data, error } = await supabase
     .from("promos")
-    .update({
-      name: promo.name,
-      procedure_id: promo.procedureId,
-      price: promo.price,
-      active: promo.active,
-    })
+    .update(payload)
     .eq("id", id)
     .select()
     .single();
@@ -182,6 +188,7 @@ export async function updatePromo(id, promo) {
     procedureId: data.procedure_id,
     price: parseFloat(data.price),
     active: data.active,
+    sortOrder: data.sort_order ?? 0,
   };
 }
 

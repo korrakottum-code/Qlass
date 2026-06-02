@@ -488,6 +488,37 @@ export default function App() {
     showToast("success", "บันทึกโปรเรียบร้อย");
   }, [showToast]);
 
+  const reorderPromo = useCallback(async (promoId, direction) => {
+    const idx = promos.findIndex((p) => p.id === promoId);
+    if (idx < 0) return;
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= promos.length) return;
+
+    // Swap in a local copy
+    const reordered = [...promos];
+    [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+
+    // Optimistic UI — assign sort_order = position index immediately
+    setPromos(reordered.map((p, i) => ({ ...p, sortOrder: i })));
+
+    // Collect items whose sort_order needs updating in DB
+    // First time: all 252 items (lazy init), subsequent swaps: only 2 items
+    const updateFns = [];
+    for (let i = 0; i < reordered.length; i++) {
+      if (reordered[i].sortOrder !== i) {
+        const item = reordered[i];
+        const newOrder = i;
+        updateFns.push(() => updatePromo(item.id, { sortOrder: newOrder }));
+      }
+    }
+
+    // Batch in chunks to avoid overwhelming the API
+    const CHUNK = 50;
+    for (let i = 0; i < updateFns.length; i += CHUNK) {
+      await Promise.all(updateFns.slice(i, i + CHUNK).map((fn) => fn()));
+    }
+  }, [promos]);
+
   const quickAddPromo = useCallback(async (data) => {
     const newPromo = await createPromo(data);
     const updatedPromos = await getAllPromos();
@@ -870,6 +901,7 @@ export default function App() {
                 onAdd={() => setModal({ type: "promo", data: null })}
                 onEdit={(p) => setModal({ type: "promo", data: p })}
                 onDelete={deletePromo}
+                onReorder={reorderPromo}
               />
             )}
 
