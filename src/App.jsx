@@ -495,9 +495,9 @@ export default function App() {
     if (swapIdx < 0 || swapIdx >= promos.length) return;
     const a = promos[idx];
     const b = promos[swapIdx];
-    // swap sort_order values (use index as fallback if both are 0)
-    const orderA = a.sortOrder ?? idx;
-    const orderB = b.sortOrder ?? swapIdx;
+    // swap sort_order values (use index as fallback when both share the same value e.g. 0)
+    const orderA = a.sortOrder === b.sortOrder ? idx : a.sortOrder;
+    const orderB = a.sortOrder === b.sortOrder ? swapIdx : b.sortOrder;
     await updatePromo(a.id, { sortOrder: orderB });
     await updatePromo(b.id, { sortOrder: orderA });
     const updatedPromos = await getAllPromos();
