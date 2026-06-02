@@ -182,7 +182,7 @@ export default function QueueTablePage({
             }}>
               <span style={{ fontSize: 16, fontWeight: 700, color: "var(--accent)" }}>🏢 {branchName}</span>
               <span style={{ fontSize: 11, fontFamily: "var(--mono)", fontWeight: 600, background: "var(--surface3)", borderRadius: 10, padding: "1px 8px", color: "var(--text3)" }}>
-                {branchRooms.reduce((sum, r) => sum + r.items.length, 0)} คิว
+                {branchRooms.reduce((sum, r) => sum + r.items.filter(q => q.status !== "rescheduled_in").length, 0)} คิว
               </span>
             </div>
 
@@ -215,7 +215,7 @@ export default function QueueTablePage({
                     )}
                   </h3>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 12, color: "var(--text3)" }}>{items.length} คิว</span>
+                    <span style={{ fontSize: 12, color: "var(--text3)" }}>{items.filter(q => q.status !== "rescheduled_in").length} คิว{items.some(q => q.status === "rescheduled_in") ? ` (+${items.filter(q => q.status === "rescheduled_in").length} เลื่อนมา)` : ""}</span>
                     <span style={{ fontSize: 16, color: "var(--text3)", transition: "transform 0.2s", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", display: "inline-block" }}>▾</span>
                   </div>
                 </div>
