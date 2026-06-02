@@ -296,6 +296,12 @@ export default function App() {
       return;
     }
 
+    // ─── ตรวจสอบวันย้อนหลัง ───
+    if (!editingQueueId && form.date < getTodayStr()) {
+      showToast("error", "❌ ไม่สามารถบันทึกคิวย้อนหลังได้");
+      return;
+    }
+
     // ─── ตรวจสอบห้องปิดรับคิว ───
     if (form.roomId && form.date) {
       const roomScheds = roomSchedules.filter(

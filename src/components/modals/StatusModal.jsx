@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
 import { QUEUE_STATUSES } from "../../utils/constants";
-import { blockToTime, formatThaiDate } from "../../utils/helpers";
+import { blockToTime, formatThaiDate, getTodayStr } from "../../utils/helpers";
 
 // flow: pending → follow1/2/3 → confirmed → done | no_show
 //       any → rescheduled | cancelled
@@ -32,6 +32,10 @@ export default function StatusModal({ queue, procedures, queues = [], onSave, on
     if (status === "rescheduled") {
       const nb = newTime ? timeToBlock(newTime) : queue.timeBlock;
       const nd = newDate || queue.date;
+      if (nd < getTodayStr()) {
+        setConflictError("⚠️ ไม่สามารถเลื่อนนัดไปวันที่ผ่านมาแล้ว");
+        return;
+      }
       if (newDate) payload.date = nd;
       if (newTime) payload.timeBlock = nb;
       payload.status = "rescheduled";
@@ -167,6 +171,7 @@ export default function StatusModal({ queue, procedures, queues = [], onSave, on
                 <input
                   type="date"
                   value={newDate}
+                  min={getTodayStr()}
                   onChange={(e) => setNewDate(e.target.value)}
                   style={{ width: "100%" }}
                 />

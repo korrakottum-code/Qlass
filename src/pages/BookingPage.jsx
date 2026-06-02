@@ -427,6 +427,7 @@ export default function BookingPage({
               <input
                 type="date"
                 value={form.date}
+                min={!editingQueueId ? getTodayStr() : undefined}
                 onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
               />
             </div>
