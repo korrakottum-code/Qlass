@@ -1010,3 +1010,36 @@ export async function searchHnCustomers(query) {
   }));
 }
 
+
+
+// ═══════════════════════════════════════════════════════════
+// PARSE HINTS
+// ═══════════════════════════════════════════════════════════
+
+export async function fetchParseHints() {
+  const { data, error } = await supabase
+    .from("parse_hints")
+    .select("hints")
+    .eq("id", 1)
+    .single();
+  if (error) {
+    console.error("fetchParseHints:", error);
+    return null;
+  }
+  return data ? data.hints : null;
+}
+
+export async function updateParseHints(hints) {
+  const { data, error } = await supabase
+    .from("parse_hints")
+    .update({ hints, updated_at: new Date().toISOString() })
+    .eq("id", 1)
+    .select()
+    .single();
+  
+  if (error) {
+    console.error("updateParseHints:", error);
+    throw error;
+  }
+  return data.hints;
+}
