@@ -454,36 +454,36 @@ export default function App() {
   // ═══════ CRUD HELPERS ═══════
   const saveBranch = useCallback(async (data) => {
     if (data.id) {
-      await updateBranch(data.id, data);
+      const updated = await updateBranch(data.id, data);
+      setBranches(prev => prev.map(b => b.id === data.id ? updated : b));
     } else {
-      await createBranch(data);
+      const created = await createBranch(data);
+      setBranches(prev => [...prev, created]);
     }
-    const updatedBranches = await getAllBranches();
-    setBranches(updatedBranches || []);
     setModal(null);
     showToast("success", "บันทึกสาขาเรียบร้อย");
   }, [showToast]);
 
   const saveProcedure = useCallback(async (data) => {
     if (data.id) {
-      await updateProcedure(data.id, data);
+      const updated = await updateProcedure(data.id, data);
+      setProcedures(prev => prev.map(p => p.id === data.id ? updated : p));
     } else {
-      await createProcedure(data);
+      const created = await createProcedure(data);
+      setProcedures(prev => [...prev, created]);
     }
-    const updatedProcedures = await getAllProcedures();
-    setProcedures(updatedProcedures || []);
     setModal(null);
     showToast("success", "บันทึกหัตถการเรียบร้อย");
   }, [showToast]);
 
   const savePromo = useCallback(async (data) => {
     if (data.id) {
-      await updatePromo(data.id, data);
+      const updated = await updatePromo(data.id, data);
+      setPromos(prev => prev.map(p => p.id === data.id ? updated : p));
     } else {
-      await createPromo(data);
+      const created = await createPromo(data);
+      setPromos(prev => [...prev, created]);
     }
-    const updatedPromos = await getAllPromos();
-    setPromos(updatedPromos || []);
     setModal(null);
     showToast("success", "บันทึกโปรเรียบร้อย");
   }, [showToast]);
@@ -521,8 +521,7 @@ export default function App() {
 
   const quickAddPromo = useCallback(async (data) => {
     const newPromo = await createPromo(data);
-    const updatedPromos = await getAllPromos();
-    setPromos(updatedPromos || []);
+    setPromos(prev => [...prev, newPromo]);
     showToast("success", `เพิ่มโปร "${newPromo.name}" แล้ว`);
     return newPromo;
   }, [showToast]);
@@ -530,23 +529,21 @@ export default function App() {
   const saveRoom = useCallback(async (data) => {
     if (data.bulk) {
       // Bulk mode: สร้างห้องหลายสาขาพร้อมกัน
+      const created = [];
       for (const item of data.items) {
-        await createRoom(item);
+        created.push(await createRoom(item));
       }
-      const updatedRooms = await getAllRooms();
-      setRooms(updatedRooms || []);
+      setRooms(prev => [...prev, ...created]);
       setModal(null);
       showToast("success", `สร้าง ${data.items.length} ห้องเรียบร้อย 🚀`);
     } else if (data.id) {
-      await updateRoom(data.id, data);
-      const updatedRooms = await getAllRooms();
-      setRooms(updatedRooms || []);
+      const updated = await updateRoom(data.id, data);
+      setRooms(prev => prev.map(r => r.id === data.id ? updated : r));
       setModal(null);
       showToast("success", "บันทึกห้องเรียบร้อย");
     } else {
-      await createRoom(data);
-      const updatedRooms = await getAllRooms();
-      setRooms(updatedRooms || []);
+      const created = await createRoom(data);
+      setRooms(prev => [...prev, created]);
       setModal(null);
       showToast("success", "บันทึกห้องเรียบร้อย");
     }
@@ -556,32 +553,32 @@ export default function App() {
     if (data.id) {
       const { roomIds, dates, ...rest } = data;
       const sharedDate = dates?.[0] ?? rest.date ?? "";
-      await updateRoomSchedule(data.id, { ...rest, roomId: roomIds[0], date: sharedDate });
-      let created = 0;
+      const updated = await updateRoomSchedule(data.id, { ...rest, roomId: roomIds[0], date: sharedDate });
+      setRoomSchedules(prev => prev.map(s => s.id === data.id ? updated : s));
+      const newItems = [];
       for (const roomId of roomIds.slice(1)) {
-        await createRoomSchedule({ ...rest, roomId, date: sharedDate });
-        created++;
+        newItems.push(await createRoomSchedule({ ...rest, roomId, date: sharedDate }));
       }
-      showToast("success", created > 0 ? `แก้ไขตารางเรียบร้อย (+${created} ห้องใหม่)` : "แก้ไขตารางเรียบร้อย");
+      if (newItems.length > 0) setRoomSchedules(prev => [...prev, ...newItems]);
+      showToast("success", newItems.length > 0 ? `แก้ไขตารางเรียบร้อย (+${newItems.length} ห้องใหม่)` : "แก้ไขตารางเรียบร้อย");
     } else {
       const { roomIds, dates, ...rest } = data;
-      let created = 0;
+      const newItems = [];
       for (const roomId of roomIds) {
         for (const date of (dates || [""])) {
-          await createRoomSchedule({ ...rest, roomId, date });
-          created++;
+          newItems.push(await createRoomSchedule({ ...rest, roomId, date }));
         }
       }
-      showToast("success", `เพิ่มตาราง ${created} รายการเรียบร้อย 🗓️`);
+      setRoomSchedules(prev => [...prev, ...newItems]);
+      showToast("success", `เพิ่มตาราง ${newItems.length} รายการเรียบร้อย 🗓️`);
     }
-    const updatedSchedules = await getAllRoomSchedules();
-    setRoomSchedules(updatedSchedules || []);
     setModal(null);
   }, [showToast]);
 
   const saveStaff = useCallback(async (data) => {
     if (data.id) {
-      await updateStaff(data.id, data);
+      const updated = await updateStaff(data.id, data);
+      setStaff(prev => prev.map(s => s.id === data.id ? updated : s));
       // อัปเดต currentUser ถ้าแก้ไขตัวเอง (ไม่เก็บ PIN)
       if (currentUser?.id === data.id) {
         const { pin: _pin, ...safeData } = data;
@@ -589,10 +586,9 @@ export default function App() {
         localStorage.setItem('qlass_user', JSON.stringify(safeData));
       }
     } else {
-      await createStaff(data);
+      const created = await createStaff(data);
+      setStaff(prev => [...prev, created]);
     }
-    const updatedStaff = await getAllStaff();
-    setStaff(updatedStaff || []);
     setModal(null);
     showToast("success", "บันทึกข้อมูลพนักงานเรียบร้อย");
   }, [showToast, currentUser]);
@@ -600,15 +596,13 @@ export default function App() {
   // ─── Delete helpers ───
   const deleteBranch = useCallback(async (id) => {
     await deleteBranchDB(id);
-    const updatedBranches = await getAllBranches();
-    setBranches(updatedBranches || []);
+    setBranches(prev => prev.filter(b => b.id !== id));
     showToast("success", "ลบสาขาแล้ว");
   }, [showToast]);
 
   const deleteProcedure = useCallback(async (id) => {
     await deleteProcedureDB(id);
-    const updatedProcedures = await getAllProcedures();
-    setProcedures(updatedProcedures || []);
+    setProcedures(prev => prev.filter(p => p.id !== id));
     showToast("success", "ลบหัตถการแล้ว");
   }, [showToast]);
 
@@ -617,9 +611,8 @@ export default function App() {
     if (!trimmed) return;
     if (categories.includes(trimmed)) return;
     try {
-      await createCategoryDB(trimmed);
-      const updated = await getAllCategories();
-      setCategories(updated || [...categories, trimmed]);
+      const created = await createCategoryDB(trimmed);
+      setCategories(prev => prev.includes(created) ? prev : [...prev, created]);
     } catch {
       // Fallback: just add locally
       setCategories((prev) => prev.includes(trimmed) ? prev : [...prev, trimmed]);
@@ -629,48 +622,40 @@ export default function App() {
   const deleteCategory = useCallback(async (name) => {
     try {
       await deleteCategoryDB(name);
-      const updated = await getAllCategories();
-      setCategories(updated || categories.filter((c) => c !== name));
-    } catch {
-      setCategories((prev) => prev.filter((c) => c !== name));
-    }
+    } catch { /* ignore */ }
+    setCategories(prev => prev.filter(c => c !== name));
     showToast("success", `ลบหมวด "${name}" แล้ว`);
-  }, [showToast, categories]);
+  }, [showToast]);
 
   const deletePromo = useCallback(async (id) => {
     await deletePromoDB(id);
-    const updatedPromos = await getAllPromos();
-    setPromos(updatedPromos || []);
+    setPromos(prev => prev.filter(p => p.id !== id));
     showToast("success", "ลบโปรแล้ว");
   }, [showToast]);
 
   const deleteRoom = useCallback(async (id) => {
     await deleteRoomDB(id);
-    const updatedRooms = await getAllRooms();
-    setRooms(updatedRooms || []);
+    setRooms(prev => prev.filter(r => r.id !== id));
     showToast("success", "ลบห้องแล้ว");
   }, [showToast]);
 
   const deleteRoomSchedule = useCallback(async (id) => {
     await deleteRoomScheduleDB(id);
-    const updatedSchedules = await getAllRoomSchedules();
-    setRoomSchedules(updatedSchedules || []);
+    setRoomSchedules(prev => prev.filter(s => s.id !== id));
     showToast("success", "ลบตารางแล้ว");
   }, [showToast]);
 
   const deleteStaff = useCallback(async (id) => {
     await deleteStaffDB(id);
-    const updatedStaff = await getAllStaff();
-    setStaff(updatedStaff || []);
+    setStaff(prev => prev.filter(s => s.id !== id));
     showToast("success", "ลบพนักงานแล้ว");
   }, [showToast]);
 
   const toggleStaffActive = useCallback(async (id) => {
     const staffMember = staff.find(s => s.id === id);
     if (staffMember) {
-      await updateStaff(id, { ...staffMember, active: !staffMember.active });
-      const updatedStaff = await getAllStaff();
-      setStaff(updatedStaff || []);
+      const updated = await updateStaff(id, { ...staffMember, active: !staffMember.active });
+      setStaff(prev => prev.map(s => s.id === id ? updated : s));
     }
   }, [staff]);
 
@@ -678,8 +663,7 @@ export default function App() {
   const createTicket = useCallback(async (ticketData, images) => {
     try {
       const newTicket = await createTicketDB(ticketData);
-      const updated = await fetchTickets();
-      setTickets(updated || []);
+      setTickets(prev => [newTicket, ...prev]);
       showToast("success", "ส่งคำร้องเรียบร้อย");
     } catch (err) {
       console.error("Create ticket error:", err);
@@ -689,9 +673,8 @@ export default function App() {
 
   const updateTicket = useCallback(async (id, updates) => {
     try {
-      await updateTicketDB(id, updates);
-      const updated = await fetchTickets();
-      setTickets(updated || []);
+      const updated = await updateTicketDB(id, updates);
+      setTickets(prev => prev.map(t => t.id === id ? updated : t));
       showToast("success", "อัปเดตสถานะแล้ว");
     } catch (err) {
       console.error("Update ticket error:", err);
@@ -702,8 +685,7 @@ export default function App() {
   const deleteTicket = useCallback(async (id) => {
     try {
       await deleteTicketDB(id);
-      const updated = await fetchTickets();
-      setTickets(updated || []);
+      setTickets(prev => prev.filter(t => t.id !== id));
       showToast("success", "ลบคำร้องแล้ว");
     } catch (err) {
       console.error("Delete ticket error:", err);
