@@ -538,12 +538,20 @@ export function mapQueueRow(q) {
 }
 
 export async function fetchQueues(opts = {}) {
-  const { sinceDate = null } = opts; // "YYYY-MM-DD" — include queues with date >= sinceDate (optional)
+  const { sinceDate = "default" } = opts; // "YYYY-MM-DD" — include queues with date >= sinceDate (optional)
+  
+  let targetSinceDate = sinceDate;
+  if (sinceDate === "default") {
+    const d = new Date();
+    d.setDate(d.getDate() - 60);
+    targetSinceDate = d.toISOString().split("T")[0];
+  }
+
   const PAGE_SIZE = 1000;
 
   // Get total count first, then fetch all pages in parallel
   let countQuery = supabase.from("queues").select("*", { count: "exact", head: true });
-  if (sinceDate) countQuery = countQuery.gte("date", sinceDate);
+  if (targetSinceDate) countQuery = countQuery.gte("date", targetSinceDate);
   const { count, error: countError } = await countQuery;
   if (countError) throw countError;
 
@@ -553,7 +561,7 @@ export async function fetchQueues(opts = {}) {
   const promises = [];
   for (let i = 0; i < numPages; i++) {
     let q = supabase.from("queues").select("*");
-    if (sinceDate) q = q.gte("date", sinceDate);
+    if (targetSinceDate) q = q.gte("date", targetSinceDate);
     q = q
       .order("date", { ascending: false })
       .order("time_block", { ascending: true })
