@@ -538,20 +538,12 @@ export function mapQueueRow(q) {
 }
 
 export async function fetchQueues(opts = {}) {
-  const { sinceDate = "default" } = opts; // "YYYY-MM-DD" — include queues with date >= sinceDate (optional)
-  
-  let targetSinceDate = sinceDate;
-  if (sinceDate === "default") {
-    const d = new Date();
-    d.setDate(d.getDate() - 60);
-    targetSinceDate = d.toISOString().split("T")[0];
-  }
-
+  const { sinceDate = null } = opts; // "YYYY-MM-DD" — include queues with date >= sinceDate (optional)
   const PAGE_SIZE = 1000;
 
   // Get total count first, then fetch all pages in parallel
   let countQuery = supabase.from("queues").select("*", { count: "exact", head: true });
-  if (targetSinceDate) countQuery = countQuery.gte("date", targetSinceDate);
+  if (sinceDate) countQuery = countQuery.gte("date", sinceDate);
   const { count, error: countError } = await countQuery;
   if (countError) throw countError;
 
@@ -561,7 +553,7 @@ export async function fetchQueues(opts = {}) {
   const promises = [];
   for (let i = 0; i < numPages; i++) {
     let q = supabase.from("queues").select("*");
-    if (targetSinceDate) q = q.gte("date", targetSinceDate);
+    if (sinceDate) q = q.gte("date", sinceDate);
     q = q
       .order("date", { ascending: false })
       .order("time_block", { ascending: true })
@@ -1018,36 +1010,3 @@ export async function searchHnCustomers(query) {
   }));
 }
 
-
-
-// ═══════════════════════════════════════════════════════════
-// PARSE HINTS
-// ═══════════════════════════════════════════════════════════
-
-export async function fetchParseHints() {
-  const { data, error } = await supabase
-    .from("parse_hints")
-    .select("hints")
-    .eq("id", 1)
-    .single();
-  if (error) {
-    console.error("fetchParseHints:", error);
-    return null;
-  }
-  return data ? data.hints : null;
-}
-
-export async function updateParseHints(hints) {
-  const { data, error } = await supabase
-    .from("parse_hints")
-    .update({ hints, updated_at: new Date().toISOString() })
-    .eq("id", 1)
-    .select()
-    .single();
-  
-  if (error) {
-    console.error("updateParseHints:", error);
-    throw error;
-  }
-  return data.hints;
-}
