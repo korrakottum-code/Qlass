@@ -2,7 +2,12 @@
 
 ข้อมูลขึ้นช้ามาก + บางครั้ง timeout จนขึ้น "ไม่พบข้อมูลพนักงาน". แผนนี้แก้ที่ root cause โดย**ไม่ให้กระทบผู้ใช้ ~100 คนที่ใช้งานอยู่**.
 
-> สถานะ: **รอทำตอนดึก (คนใช้น้อย)** — frontend แก้ไว้แล้วใน working tree (ยังไม่ commit/push), รอเพิ่ม index ใน Supabase
+> สถานะ: **PR พร้อมแล้ว — รอเพิ่ม index ก่อน merge**
+>
+> - Branch: `perf/faster-login-load` (push แล้ว)
+> - PR: https://github.com/korrakottum-code/Qlass/pull/new/perf/faster-login-load
+>
+> ⚠️ **อย่า merge ก่อนเพิ่ม index** — Phase 2b โหลด queues 2 รอบ (~35+60 pages) แทนที่ 1 รอบ (~60 pages) → ถ้ายังไม่มี index จะ**เพิ่มภาระ DB มากกว่าเดิม** บน free tier + 100 คน
 
 ---
 
