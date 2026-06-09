@@ -862,12 +862,20 @@ export async function createActivityLog(log) {
   if (error) console.error("activity log error:", error);
 }
 
-export async function fetchActivityLogs({ limit = 100 } = {}) {
-  const { data, error } = await supabase
+export async function fetchActivityLogs({ limit = 100, date = null } = {}) {
+  let query = supabase
     .from("activity_logs")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(limit);
+  if (date) {
+    // filter created_at within the selected local day (browser timezone)
+    const start = new Date(`${date}T00:00:00`);
+    const end = new Date(`${date}T00:00:00`);
+    end.setDate(end.getDate() + 1);
+    query = query.gte("created_at", start.toISOString()).lt("created_at", end.toISOString());
+  }
+  const { data, error } = await query;
   if (error) throw error;
   return (data || []).map((r) => ({
     id: r.id,

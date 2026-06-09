@@ -82,6 +82,7 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isDataReady, setIsDataReady] = useState(false);
   const [supabaseError, setSupabaseError] = useState(null);
 
   // ─── Booking form ───
@@ -95,38 +96,63 @@ export default function App() {
   // ─── Load data from Supabase on initial mount ───
   useEffect(() => {
     async function loadFromSupabase() {
+      // Phase 1: Load staff only (fast, small table) — unblocks login screen
       try {
         setIsLoading(true);
-        const [staffData, branchData, procedureData, promoData, roomData, scheduleData, queueData, categoryData, ticketData] = await Promise.all([
-          getAllStaff(),
+        const staffData = await getAllStaff();
+        setStaff(staffData || []);
+      } catch (error) {
+        console.error('Error loading staff from Supabase:', error);
+        setSupabaseError(error.message);
+      } finally {
+        setIsLoading(false);
+      }
+
+      // Phase 2a: Load core data + RECENT queues (~30 days) — light & fast, makes app usable quickly
+      try {
+        const since = new Date();
+        since.setDate(since.getDate() - 30);
+        const sinceDate = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, "0")}-${String(since.getDate()).padStart(2, "0")}`;
+
+        const [branchData, procedureData, promoData, roomData, scheduleData, recentQueues, categoryData, ticketData] = await Promise.all([
           getAllBranches(),
           getAllProcedures(),
           getAllPromos(),
           getAllRooms(),
           getAllRoomSchedules(),
-          getAllQueues(),
+          getAllQueues({ sinceDate }),
           getAllCategories().catch(() => null),
           fetchTickets().catch(() => null),
         ]);
-
-        setStaff(staffData || []);
         setBranches(branchData || []);
         setProcedures(procedureData || []);
         setPromos(promoData || []);
         setRooms(roomData || []);
         setRoomSchedules(scheduleData || []);
-        setQueues(queueData || []);
+        setQueues(recentQueues || []);
         if (categoryData && categoryData.length > 0) {
           setCategories(categoryData);
         }
         if (ticketData) {
           setTickets(ticketData);
         }
+        setIsDataReady(true);
       } catch (error) {
-        console.error('Error loading from Supabase:', error);
-        setSupabaseError(error.message);
-      } finally {
-        setIsLoading(false);
+        console.error('Error loading core data from Supabase:', error);
+        setIsDataReady(true);
+      }
+
+      // Phase 2b: Load FULL queue history in background, merge in (Export/Commission need old data)
+      try {
+        const allQueues = await getAllQueues();
+        setQueues((prev) => {
+          const byId = new Map(allQueues.map((q) => [q.id, q]));
+          // keep any realtime updates that arrived for recent queues
+          for (const q of prev) byId.set(q.id, q);
+          return Array.from(byId.values());
+        });
+      } catch (error) {
+        console.error('Error loading full queue history from Supabase:', error);
       }
     }
     loadFromSupabase();
@@ -697,6 +723,21 @@ export default function App() {
 
   // ─── Public AI chat (no login required) — accessible via #ai-chat ───
   const isPublicAiChat = typeof window !== "undefined" && window.location.hash.replace("#", "").startsWith("ai-chat");
+
+  // login แล้ว แต่ข้อมูลเบื้องหลัง (queues ฯลฯ) ยังโหลดไม่เสร็จ → แสดง loading กันเห็นข้อมูลว่าง
+  if (currentUser && !isDataReady && !isPublicAiChat) {
+    return (
+      <div style={{
+        position: "fixed", inset: 0, zIndex: 9999,
+        background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        gap: 16, color: "#fff",
+      }}>
+        <div style={{ fontSize: 40 }}>⏳</div>
+        <div style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.7)" }}>กำลังโหลดข้อมูล...</div>
+      </div>
+    );
+  }
 
   // ยังโหลดข้อมูลอยู่ (และยังไม่มี currentUser จาก localStorage) → แสดง loading แทน
   if (isLoading && !currentUser) {
