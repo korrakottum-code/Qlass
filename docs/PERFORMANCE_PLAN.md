@@ -2,12 +2,11 @@
 
 ข้อมูลขึ้นช้ามาก + บางครั้ง timeout จนขึ้น "ไม่พบข้อมูลพนักงาน". แผนนี้แก้ที่ root cause โดย**ไม่ให้กระทบผู้ใช้ ~100 คนที่ใช้งานอยู่**.
 
-> สถานะ: **PR พร้อมแล้ว — รอเพิ่ม index ก่อน merge**
+> สถานะ: **✅ เฟส 1 + 2 เสร็จแล้ว — ระบบกลับมาใช้งานได้ปกติ**
 >
-> - Branch: `perf/faster-login-load` (push แล้ว)
-> - PR: https://github.com/korrakottum-code/Qlass/pull/new/perf/faster-login-load
->
-> ⚠️ **อย่า merge ก่อนเพิ่ม index** — Phase 2b โหลด queues 2 รอบ (~35+60 pages) แทนที่ 1 รอบ (~60 pages) → ถ้ายังไม่มี index จะ**เพิ่มภาระ DB มากกว่าเดิม** บน free tier + 100 คน
+> - ✅ เฟส 1: เพิ่ม index 5 ตัว — **เสร็จ 11 มิ.ย. 2026** (query เร็วขึ้น 20-30 เท่า)
+> - ✅ เฟส 2: แยก staff load + progressive queue (2-phase) — **ทำไว้แล้วใน App.jsx**
+> - ⏳ เฟส 3: Lazy-load queues เก่า — ยังไม่ทำ (ไม่จำเป็นแล้วเพราะ index เร็วพอ)
 
 ---
 
@@ -72,71 +71,55 @@
 
 ## แผนทำจริง (เรียงตามคุ้มค่า/เสี่ยงต่ำ)
 
-| เฟส | สิ่งที่ทำ | ผลลัพธ์ | กระทบผู้ใช้ | เสี่ยงพัง | แก้ที่ |
-|---|---|---|---|---|---|
-| 1 | **เพิ่ม index บน `queues` + `room_schedules`** 🔴จำเป็น | เร็วขึ้น 10-50 เท่า (แก้ root cause) | ❌ ไม่กระทบ (CONCURRENTLY) | ต่ำมาก | Supabase SQL |
-| 2 | แยก staff load + progressive queue (2-phase) | login ขึ้นเร็ว, ไม่ค้าง | ❌ ไม่กระทบ | ต่ำ | `App.jsx` ✅ทำแล้ว |
-| 3 | ลด sinceDate window เหลือ ~7 วัน (หลังมี index) | โหลดแรกเบาลงอีก | ❌ ไม่กระทบ | ต่ำ | `App.jsx` |
+| เฟส | สิ่งที่ทำ | ผลลัพธ์ | สถานะ |
+|---|---|---|---|
+| 1 | **เพิ่ม index บน `queues` + `room_schedules`** | เร็วขึ้น 20-30 เท่า (แก้ root cause) | ✅ **เสร็จ 11 มิ.ย. 2026** |
+| 2 | แยก staff load + progressive queue (2-phase) | login ขึ้นเร็ว, ไม่ค้าง | ✅ **เสร็จ (อยู่ใน App.jsx)** |
+| 3 | ลด sinceDate window เหลือ ~7 วัน (หลังมี index) | โหลดแรกเบาลงอีก | ⏳ ยังไม่ทำ (ไม่จำเป็นแล้ว) |
 
 ---
 
-### เฟส 1 — เพิ่ม Index (ทำก่อน, คุ้มสุด, เสี่ยงต่ำสุด)
+### เฟส 1 — เพิ่ม Index ✅ เสร็จแล้ว (11 มิ.ย. 2026)
 
-**ทำใน Supabase Dashboard → SQL Editor** (ไม่ต้อง deploy code)
+**รันผ่าน Supabase Dashboard → SQL Editor** — ทีละคำสั่ง (CONCURRENTLY)
 
-ใช้ `CREATE INDEX CONCURRENTLY` เพื่อ**ไม่ล็อกตารางระหว่างสร้าง** (ผู้ใช้ยังเขียน/อ่านได้ปกติ):
-
+Indexes ที่สร้าง:
 ```sql
--- index หลัก: เร่ง ORDER BY date + filter ตามวัน
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_queues_date
-  ON queues (date DESC);
-
--- เร่งการเช็ค conflict ห้อง+วัน (fetchQueuesForRoomDate)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_queues_room_date
-  ON queues (room_id, date);
-
--- เร่ง filter ตามสาขา
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_queues_branch_id
-  ON queues (branch_id);
-
--- เร่งคำนวณคอมมิชชั่นรายพนักงาน
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_queues_recorded_by
-  ON queues (recorded_by);
-
--- room_schedules: เร่ง map ตามห้อง
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_room_schedules_room_id
-  ON room_schedules (room_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_queues_date ON queues (date DESC);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_queues_room_date ON queues (room_id, date);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_queues_branch_id ON queues (branch_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_queues_recorded_by ON queues (recorded_by);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_room_schedules_room_id ON room_schedules (room_id);
 ```
 
-**หมายเหตุ:** `CREATE INDEX CONCURRENTLY` ต้องรัน**ทีละคำสั่ง** (ห้ามอยู่ใน transaction block เดียวกัน) — รันทีละบรรทัด
+**📊 ผลวัดจริง (ก่อน vs หลัง):**
 
-**วิธีตรวจว่าได้ผล (ก่อน/หลัง):**
+| Query | ก่อน (ไม่มี index) | หลัง (มี index) | เร็วขึ้น |
+|---|---|---|---|
+| staff (64 rows) | 6,653 ms | **334 ms** | ~20x |
+| queues ORDER BY date (59K rows) | 8,963 ms | **292 ms** | ~30x |
+
+**Rollback (ถ้าต้องการ):**
 ```sql
-EXPLAIN ANALYZE
-SELECT * FROM queues ORDER BY date DESC, time_block ASC LIMIT 1000;
+DROP INDEX CONCURRENTLY idx_queues_date;
+DROP INDEX CONCURRENTLY idx_queues_room_date;
+DROP INDEX CONCURRENTLY idx_queues_branch_id;
+DROP INDEX CONCURRENTLY idx_queues_recorded_by;
+DROP INDEX CONCURRENTLY idx_room_schedules_room_id;
 ```
-- ก่อน: เห็น `Seq Scan` + เวลานาน
-- หลัง: เห็น `Index Scan using idx_queues_date` + เวลาลดลงมาก
-
-**ผลกระทบผู้ใช้:** ❌ ไม่มี — แค่เร็วขึ้น
-**Rollback:** `DROP INDEX CONCURRENTLY idx_queues_date;` (ฯลฯ)
 
 ---
 
-### เฟส 2 — แยก Staff Load (2-Phase)
+### เฟส 2 — แยก Staff Load (2-Phase) ✅ เสร็จแล้ว
 
-แก้ `App.jsx` `loadFromSupabase()`:
+อยู่ใน `App.jsx` `loadFromSupabase()` แล้ว:
 
 - **Phase 1:** `getAllStaff()` อย่างเดียว → set staff → `setIsLoading(false)` → login ขึ้นทันที
-- **Phase 2:** ตารางที่เหลือ (รวม queues) ใน `Promise.all` แยก try/catch → ถ้า queue ล้ม ก็ไม่กระทบ staff/login
+- **Phase 2a:** โหลด core data + queues ล่าสุด 30 วัน → `setIsDataReady(true)` → แอปใช้งานได้
+- **Phase 2b:** โหลด queues ทั้งหมดใน background → merge เข้า state → Export/Commission ย้อนหลังได้ครบ
 
 **กันปัญหา "login เร็วแต่ข้อมูลยังไม่ขึ้น":**
-- เพิ่ม state `isDataReady` (default false) → set true เมื่อ Phase 2 เสร็จ
-- ถ้า `currentUser && !isDataReady` → แสดง overlay "กำลังโหลดข้อมูล..." จนข้อมูลครบ
-
-**ผลกระทบผู้ใช้:** ❌ ไม่มี — UX เหมือนเดิม แค่ login ขึ้นเร็วขึ้นและไม่ค้างถ้า queue ช้า
-**ทดสอบ:** login ครบทุก role (cashier/admin/superadmin/ceo/branch_manager) — เห็นข้อมูลครบ
-**Rollback:** revert commit เดียว
+- state `isDataReady` → ถ้า `currentUser && !isDataReady` → แสดง overlay "กำลังโหลดข้อมูล..." จนข้อมูลครบ
 
 ---
 
@@ -155,22 +138,22 @@ SELECT * FROM queues ORDER BY date DESC, time_block ASC LIMIT 1000;
 
 ---
 
-## ลำดับทำตอนดึก (คนใช้น้อย)
+## ✅ สิ่งที่ทำเสร็จแล้ว
 
-1. รัน SQL เฟส 1 (index) ใน Supabase Dashboard — ทีละบรรทัด (CONCURRENTLY)
-2. วัดซ้ำด้วย `node scripts/perf_probe.mjs` — queues page1 ควรลดจาก ~9,000 ms เหลือหลักร้อย ms
-3. ถ้า index ได้ผล → ลด sinceDate window ใน `App.jsx` Phase 2a จาก 30 → 7 วัน
-4. ทดสอบ local ทุก role → commit → branch + PR → Vercel deploy
+### 11 มิ.ย. 2026
+- ✅ รัน SQL เฟส 1 (index) ใน Supabase Dashboard — 5 indexes ทั้งหมด
+- ✅ วัดผลจริง — query เร็วขึ้น 20-30 เท่า (staff: 6.6s→0.3s, queues: 9s→0.3s)
+- ✅ ปัญหา "ไม่พบข้อมูลพนักงาน" + timeout หายไปแล้ว
 
-## ✅ สิ่งที่ทำไว้แล้ว (frontend, ยังไม่ commit — อยู่ใน working tree)
+### ก่อนหน้า
+- ✅ `App.jsx`: แยก staff load (Phase 1) + progressive queue load (Phase 2a 30วัน / Phase 2b ทั้งหมด background merge) + `isDataReady` overlay
+- ✅ `supabaseService.js` + `ActivityLogPage.jsx`: เพิ่ม date filter หน้าประวัติการลบ (default วันนี้)
+- ✅ `scripts/perf_probe.mjs`: สคริปต์วัดเวลา query (read-only)
 
-- `App.jsx`: แยก staff load (Phase 1) + progressive queue load (Phase 2a 30วัน / Phase 2b ทั้งหมด background merge) + `isDataReady` overlay
-- `supabaseService.js` + `ActivityLogPage.jsx`: เพิ่ม date filter หน้าประวัติการลบ (default วันนี้)
-- `scripts/perf_probe.mjs`: สคริปต์วัดเวลา query (read-only)
+## ⏳ สิ่งที่ยังไม่ได้ทำ (ไม่จำเป็นเร่งด่วน)
 
-> หมายเหตุ: fix Marketing/PR (`helpers.js` — branchId null) **ยังไม่ได้ทำ** (หายตอน reset) — ทำแยกทีหลังถ้าต้องการ
-
-> ⚠️ ถ้า reset/clean working tree จะหายทั้งหมด — ถ้าจะเก็บให้ commit ลง branch ก่อน
+- เฟส 3: ลด sinceDate window จาก 30 → 7 วัน (ทำได้ แต่ไม่จำเป็นแล้วเพราะ index เร็วพอ)
+- fix Marketing/PR (`helpers.js` — branchId null) — ทำแยกทีหลังถ้าต้องการ
 
 ## วิธีทดสอบก่อน deploy (กันพังกับ 100 คน)
 1. เฟส 1: รัน SQL บน Supabase ได้เลย (CONCURRENTLY ไม่ล็อก) — วัด EXPLAIN ANALYZE ก่อน/หลัง
