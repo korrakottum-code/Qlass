@@ -1,17 +1,19 @@
 import { useState, useEffect } from "react";
 import { fetchActivityLogs } from "../utils/supabaseService";
-import { blockToTime, formatThaiDate } from "../utils/helpers";
+import { blockToTime, formatThaiDate, getTodayStr } from "../utils/helpers";
 
 export default function ActivityLogPage({ rooms, procedures }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filterDate, setFilterDate] = useState(getTodayStr());
 
   useEffect(() => {
-    fetchActivityLogs({ limit: 200 })
+    setLoading(true);
+    fetchActivityLogs({ limit: 200, date: filterDate || null })
       .then(setLogs)
       .catch(() => setLogs([]))
       .finally(() => setLoading(false));
-  }, []);
+  }, [filterDate]);
 
   function getDetail(log) {
     try { return JSON.parse(log.detail); } catch { return null; }
@@ -19,9 +21,24 @@ export default function ActivityLogPage({ rooms, procedures }) {
 
   return (
     <>
-      <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>🔍 ประวัติการลบคิว</h2>
-        <span style={{ fontSize: 12, color: "var(--text3)" }}>{logs.length} รายการ</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <label style={{ fontSize: 12, color: "var(--text3)", fontWeight: 600 }}>วันที่ลบ</label>
+          <input
+            type="date"
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid var(--border2)", fontSize: 13, background: "var(--surface)", color: "var(--text1)", outline: "none" }}
+          />
+          <button
+            onClick={() => setFilterDate(getTodayStr())}
+            style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border2)", background: filterDate === getTodayStr() ? "var(--accent)" : "var(--surface2)", color: filterDate === getTodayStr() ? "#fff" : "var(--text2)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+          >
+            วันนี้
+          </button>
+          <span style={{ fontSize: 12, color: "var(--text3)" }}>{logs.length} รายการ</span>
+        </div>
       </div>
 
       {loading ? (
