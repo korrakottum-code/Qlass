@@ -209,6 +209,7 @@ export async function fetchRooms() {
   const { data, error } = await supabase
     .from("rooms")
     .select("*")
+    .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
   
   if (error) throw error;
@@ -220,6 +221,7 @@ export async function fetchRooms() {
     notes: r.notes || "",
     openBlock: r.open_block,
     closeBlock: r.close_block,
+    sortOrder: r.sort_order ?? 0,
   }));
 }
 
@@ -233,6 +235,7 @@ export async function createRoom(room) {
       notes: room.notes,
       open_block: room.openBlock,
       close_block: room.closeBlock,
+      sort_order: room.sortOrder ?? 0,
     }])
     .select()
     .single();
@@ -246,20 +249,23 @@ export async function createRoom(room) {
     notes: data.notes || "",
     openBlock: data.open_block,
     closeBlock: data.close_block,
+    sortOrder: data.sort_order ?? 0,
   };
 }
 
 export async function updateRoom(id, room) {
+  const payload = {};
+  if (room.name !== undefined) payload.name = room.name;
+  if (room.branchId !== undefined) payload.branch_id = room.branchId;
+  if (room.type !== undefined) payload.type = room.type;
+  if (room.notes !== undefined) payload.notes = room.notes;
+  if (room.openBlock !== undefined) payload.open_block = room.openBlock;
+  if (room.closeBlock !== undefined) payload.close_block = room.closeBlock;
+  if (room.sortOrder !== undefined) payload.sort_order = room.sortOrder;
+
   const { data, error } = await supabase
     .from("rooms")
-    .update({
-      name: room.name,
-      branch_id: room.branchId,
-      type: room.type,
-      notes: room.notes,
-      open_block: room.openBlock,
-      close_block: room.closeBlock,
-    })
+    .update(payload)
     .eq("id", id)
     .select()
     .single();
@@ -273,6 +279,7 @@ export async function updateRoom(id, room) {
     notes: data.notes || "",
     openBlock: data.open_block,
     closeBlock: data.close_block,
+    sortOrder: data.sort_order ?? 0,
   };
 }
 

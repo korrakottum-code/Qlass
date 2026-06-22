@@ -1,6 +1,6 @@
 import { blockToTime } from "../utils/helpers";
 
-export default function RoomsPage({ branches, rooms, onAdd, onBulkAdd, onEdit, onDelete }) {
+export default function RoomsPage({ branches, rooms, onAdd, onBulkAdd, onEdit, onDelete, onReorder }) {
   return (
     <>
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
@@ -40,6 +40,7 @@ export default function RoomsPage({ branches, rooms, onAdd, onBulkAdd, onEdit, o
               <table className="data-table">
                 <thead>
                   <tr>
+                    <th style={{ width: 48, textAlign: "center" }}>ลำดับ</th>
                     <th>ชื่อห้อง</th>
                     <th>ประเภท</th>
                     <th>เวลาทำการ</th>
@@ -48,8 +49,41 @@ export default function RoomsPage({ branches, rooms, onAdd, onBulkAdd, onEdit, o
                   </tr>
                 </thead>
                 <tbody>
-                  {bRooms.map((r) => (
+                  {bRooms.map((r, idx) => (
                     <tr key={r.id}>
+                      <td style={{ textAlign: "center", padding: "4px 2px" }}>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                          <button
+                            onClick={() => onReorder && onReorder(r.id, "up")}
+                            disabled={idx === 0}
+                            style={{
+                              background: "none", border: "1px solid var(--border)",
+                              borderRadius: 4, cursor: idx === 0 ? "not-allowed" : "pointer",
+                              padding: "1px 6px", fontSize: 11, lineHeight: 1.2,
+                              color: idx === 0 ? "var(--text3)" : "var(--text1)",
+                              opacity: idx === 0 ? 0.4 : 1,
+                              transition: "all 0.15s",
+                            }}
+                            title="เลื่อนขึ้น"
+                          >▲</button>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text3)", fontFamily: "var(--mono)" }}>
+                            {idx + 1}
+                          </span>
+                          <button
+                            onClick={() => onReorder && onReorder(r.id, "down")}
+                            disabled={idx === bRooms.length - 1}
+                            style={{
+                              background: "none", border: "1px solid var(--border)",
+                              borderRadius: 4, cursor: idx === bRooms.length - 1 ? "not-allowed" : "pointer",
+                              padding: "1px 6px", fontSize: 11, lineHeight: 1.2,
+                              color: idx === bRooms.length - 1 ? "var(--text3)" : "var(--text1)",
+                              opacity: idx === bRooms.length - 1 ? 0.4 : 1,
+                              transition: "all 0.15s",
+                            }}
+                            title="เลื่อนลง"
+                          >▼</button>
+                        </div>
+                      </td>
                       <td style={{ fontWeight: 600, fontFamily: "var(--mono)" }}>{r.name}</td>
                       <td>
                         <span
