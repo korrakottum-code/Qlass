@@ -181,8 +181,9 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                         {filteredRooms.map((room) => {
                           const q = roomOccupied[room.id]?.[b];
                           const isBooked = !!q;
+                          const isCourse = q?.customerType === "course";
                           const isM = room.type === "M";
-                          const bookedBg = isM ? "#fde8e8" : "#dcfce7";
+                          const bookedBg = isCourse ? "#fef9c3" : isM ? "#fde8e8" : "#dcfce7";
                           const emptyBg = isHourStart ? "rgba(0,0,0,0.02)" : "transparent";
 
                           return (
@@ -219,11 +220,11 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                                   display: "flex", flexDirection: "column", justifyContent: "center",
                                   overflow: "hidden",
                                 }}>
-                                  <div style={{ fontSize: 11, fontWeight: 700, color: isM ? "#991b1b" : "#166534", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: isCourse ? "#92400e" : isM ? "#991b1b" : "#166534", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {q.name}
                                   </div>
                                   {q.procName && (
-                                    <div style={{ fontSize: 9, color: isM ? "#b91c1c" : "#166534", opacity: 0.8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    <div style={{ fontSize: 9, color: isCourse ? "#b45309" : isM ? "#b91c1c" : "#166534", opacity: 0.8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                       {q.procName}
                                     </div>
                                   )}
@@ -242,7 +243,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
 
           {/* Legend */}
           <div style={{ display: "flex", gap: 12, padding: "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap" }}>
-            {[["#fde8e8","มีคิว (M)"],["#dcfce7","มีคิว (T)"],["transparent","ว่าง"]].map(([c, l]) => (
+            {[["#fde8e8","มีคิว (M)"],["#dcfce7","มีคิว (T)"],["#fef9c3","ใช้คอร์ส"],["transparent","ว่าง"]].map(([c, l]) => (
               <span key={l} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text2)" }}>
                 <span style={{ width: 12, height: 12, borderRadius: 3, background: c, border: "1px solid var(--border)", display: "inline-block" }} />{l}
               </span>
