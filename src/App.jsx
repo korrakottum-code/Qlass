@@ -545,6 +545,40 @@ export default function App() {
     }
   }, [promos]);
 
+  const reorderRoom = useCallback(async (roomId, direction) => {
+    // หา branch ของห้องนี้ แล้ว reorder เฉพาะห้องใน branch เดียวกัน
+    const room = rooms.find((r) => r.id === roomId);
+    if (!room) return;
+    const branchRooms = rooms.filter((r) => r.branchId === room.branchId);
+    const idx = branchRooms.findIndex((r) => r.id === roomId);
+    if (idx < 0) return;
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= branchRooms.length) return;
+
+    // Swap in a local copy
+    const reordered = [...branchRooms];
+    [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+
+    // Optimistic UI — update sort_order for all rooms (keep other branches' rooms intact)
+    const otherRooms = rooms.filter((r) => r.branchId !== room.branchId);
+    const updatedBranchRooms = reordered.map((r, i) => ({ ...r, sortOrder: i }));
+    setRooms([...otherRooms, ...updatedBranchRooms].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || 0));
+
+    // Persist to DB — only items whose sort_order changed
+    const updateFns = [];
+    for (let i = 0; i < reordered.length; i++) {
+      if (reordered[i].sortOrder !== i) {
+        const item = reordered[i];
+        const newOrder = i;
+        updateFns.push(() => updateRoom(item.id, { sortOrder: newOrder }));
+      }
+    }
+    const CHUNK = 50;
+    for (let i = 0; i < updateFns.length; i += CHUNK) {
+      await Promise.all(updateFns.slice(i, i + CHUNK).map((fn) => fn()));
+    }
+  }, [rooms]);
+
   const quickAddPromo = useCallback(async (data) => {
     const newPromo = await createPromo(data);
     setPromos(prev => [...prev, newPromo]);
@@ -936,6 +970,7 @@ export default function App() {
                 onBulkAdd={() => setModal({ type: "room", data: null, bulkMode: true })}
                 onEdit={(r) => setModal({ type: "room", data: r })}
                 onDelete={deleteRoom}
+                onReorder={reorderRoom}
               />
             )}
 
