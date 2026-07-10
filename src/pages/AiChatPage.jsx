@@ -19,9 +19,9 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
 
   // นับตาม "วันที่บันทึกคิว" (createdAt) — ใช้เมื่อผู้ใช้ถามเรื่อง "คิวที่บันทึก"
   const recordedDateOf = (q) => q.createdAt ? isoToLocalDateStr(q.createdAt) : (q.date || "");
-  const todayRecorded = queues.filter(q => recordedDateOf(q) === today);
-  const monthRecorded = queues.filter(q => recordedDateOf(q).startsWith(monthStr));
-  const lastMonthRecorded = queues.filter(q => recordedDateOf(q).startsWith(lastMonthStr));
+  const todayRecorded = queues.filter(q => q.status !== "rescheduled_in" && recordedDateOf(q) === today);
+  const monthRecorded = queues.filter(q => q.status !== "rescheduled_in" && recordedDateOf(q).startsWith(monthStr));
+  const lastMonthRecorded = queues.filter(q => q.status !== "rescheduled_in" && recordedDateOf(q).startsWith(lastMonthStr));
   const preBookCount = monthRecorded.filter(q => q.date && q.date !== recordedDateOf(q)).length;
 
   // ─── "แอดมินปิดได้" = คิวที่ recordedBy.role === "admin" + ไม่ใช่ customerType "course" ───
@@ -29,6 +29,7 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
   const isAdminClosed = (q) => {
     if (!q.recordedBy) return false;
     if (q.customerType === "course") return false;
+    if (q.status === "rescheduled_in") return false;
     const s = (staff || []).find(x => x.id === q.recordedBy);
     return s?.role === "admin";
   };

@@ -481,10 +481,10 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
     return dateStr >= dateRange.start && dateStr <= dateRange.end;
   }, [dateRange]);
 
-  // คิวที่ถูกบันทึกในช่วงนี้ (createdAt)
+  // คิวที่ถูกบันทึกในช่วงนี้ (createdAt) — ไม่นับ rescheduled_in (คิวเลื่อน ไม่ใช่คิวใหม่)
   const recordedQueues = useMemo(() =>
     filteredQueues
-      .filter((q) => inRange(q.createdAt ? isoToLocalDateStr(q.createdAt) : (q.date || "")))
+      .filter((q) => q.status !== "rescheduled_in" && inRange(q.createdAt ? isoToLocalDateStr(q.createdAt) : (q.date || "")))
       .sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.timeBlock || 0) - (b.timeBlock || 0)),
     [filteredQueues, inRange]
   );

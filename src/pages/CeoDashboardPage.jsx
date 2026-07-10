@@ -80,8 +80,8 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
   const all = allQueues || queues || [];
 
   const dayQ = useMemo(() => all.filter(q => inRange(q.date, startDate, endDate)), [all, startDate, endDate]);
-  const dayANO = useMemo(() => all.filter(q => adminIds.has(q.recordedBy) && (q.customerType==="new"||q.customerType==="old") && inRange(getLD(q), startDate, endDate)), [all, adminIds, startDate, endDate]);
-  const prevANO = useMemo(() => all.filter(q => adminIds.has(q.recordedBy) && (q.customerType==="new"||q.customerType==="old") && inRange(getLD(q), prevStart, prevEnd)), [all, adminIds, prevStart, prevEnd]);
+  const dayANO = useMemo(() => all.filter(q => adminIds.has(q.recordedBy) && (q.customerType==="new"||q.customerType==="old") && q.status !== "rescheduled_in" && inRange(getLD(q), startDate, endDate)), [all, adminIds, startDate, endDate]);
+  const prevANO = useMemo(() => all.filter(q => adminIds.has(q.recordedBy) && (q.customerType==="new"||q.customerType==="old") && q.status !== "rescheduled_in" && inRange(getLD(q), prevStart, prevEnd)), [all, adminIds, prevStart, prevEnd]);
 
   const newC = dayANO.filter(q => q.customerType==="new").length;
   const oldC = dayANO.filter(q => q.customerType==="old").length;
