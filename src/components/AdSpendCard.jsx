@@ -122,6 +122,7 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
       if (!q || !q.recordedBy) return;
       if (!adminIds.has(q.recordedBy)) return;
       if (q.customerType !== "new" && q.customerType !== "old") return;
+      if (q.status === "rescheduled_in") return;
       const key = q.createdAt ? isoToLocalDateStr(q.createdAt) : (q.date || "");
       if (!key) return;
       m[key] = (m[key] || 0) + 1;

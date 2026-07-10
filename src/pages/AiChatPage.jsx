@@ -29,6 +29,7 @@ function buildContext(queues, branches, procedures, promos, staff, rooms, today)
   const isAdminClosed = (q) => {
     if (!q.recordedBy) return false;
     if (q.customerType === "course") return false;
+    if (q.status === "rescheduled_in") return false;
     const s = (staff || []).find(x => x.id === q.recordedBy);
     return s?.role === "admin";
   };
