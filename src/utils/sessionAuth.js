@@ -2,6 +2,14 @@ import { supabase } from "./supabaseClient";
 
 export const useServerSession = import.meta.env.VITE_USE_SERVER_SESSION === "true";
 
+export function getServerSessionToken() {
+  try {
+    return localStorage.getItem("qlass_session") || "";
+  } catch {
+    return "";
+  }
+}
+
 async function callSessionFunction(body) {
   const { data, error } = await supabase.functions.invoke("staff-session", { body });
   if (error) throw error;
