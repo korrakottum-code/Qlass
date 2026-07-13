@@ -9,7 +9,7 @@ handover, not a schema migration.
 | Consumer | Required configuration | Target key type |
 | --- | --- | --- |
 | Qlass browser build (Vercel production, preview and local) | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Publishable key |
-| `staff-session`, `search-hn`, `search-hn-recovery` Edge Functions | Supabase-managed URL plus `SUPABASE_SERVICE_ROLE_KEY` | Secret key |
+| `staff-session`, `search-hn`, `search-hn-recovery` Edge Functions | Supabase-managed URL plus custom `QLASS_SUPABASE_SECRET_KEY` | Secret key |
 | GitHub Actions HN sync | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, optionally `SUPABASE_DB_URL` | Secret key / database credential |
 | `scripts/perf_probe.mjs` | caller-provided `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Publishable key |
 
@@ -26,10 +26,12 @@ variable.
    loads with the existing configured key.
 3. On the restore-verification project, create new publishable and secret API
    keys. Keep legacy keys active during the rehearsal.
-4. Update the clone browser variable, Edge Function secret, and any clone sync
-   credentials. A function that receives browser calls must be tested with the
-   new publishable key before production because legacy JWT verification and
-   opaque API keys have different gateway behavior.
+4. Update the clone browser variable, custom `QLASS_SUPABASE_SECRET_KEY` Edge
+   Function secret, and any clone sync credentials. The function code falls
+   back to the Supabase-managed legacy value until the migration is complete.
+   A function that receives browser calls must be tested with the new
+   publishable key before production because legacy JWT verification and opaque
+   API keys have different gateway behavior.
 5. Rehearse: login, session refresh, logout, HN lookup, booking create/update,
    Realtime update, and HN sync. Record row counts before and after.
 6. After the PR is merged and a production go/no-go is given, repeat the same
