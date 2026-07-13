@@ -2,11 +2,12 @@ import { useState, useRef, useEffect } from "react";
 import { ROLES } from "../utils/constants";
 import qlassLogo from "../assets/qlass-logo.svg";
 
-export default function LoginScreen({ staff, onLogin, supabaseError }) {
+export default function LoginScreen({ staff, onLogin, supabaseError, serverSessionEnabled = false }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(null);
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const inputRef = useRef(null);
   const loginBackground = "linear-gradient(135deg, #000000 0%, #022c22 45%, #064e3b 100%)";
 
@@ -85,20 +86,28 @@ export default function LoginScreen({ staff, onLogin, supabaseError }) {
     setQuery("");
   }
 
-  function handlePinDigit(d) {
-    if (pin.length >= 4) return;
+  async function handlePinDigit(d) {
+    if (pin.length >= 4 || isSubmitting) return;
     const next = pin + d;
     setPin(next);
     setError(false);
     if (next.length === 4) {
-      setTimeout(() => {
-        if (next === selected.pin) {
-          onLogin(selected);
-        } else {
+      if (serverSessionEnabled) {
+        setIsSubmitting(true);
+        try {
+          await onLogin(selected, next);
+        } catch {
           setError(true);
           setPin("");
+        } finally {
+          setIsSubmitting(false);
         }
-      }, 150);
+      } else if (next === selected.pin) {
+        onLogin(selected);
+      } else {
+        setError(true);
+        setPin("");
+      }
     }
   }
 
@@ -289,7 +298,7 @@ export default function LoginScreen({ staff, onLogin, supabaseError }) {
               <button
                 key={i}
                 onClick={() => d === "⌫" ? handlePinBack() : d !== "" ? handlePinDigit(String(d)) : null}
-                disabled={d === ""}
+                disabled={d === "" || isSubmitting}
                 style={{
                   width: 60, height: 60, borderRadius: 12,
                   fontSize: d === "⌫" ? 20 : 22, fontWeight: 700,

@@ -17,6 +17,7 @@ import {
 } from "./utils/supabaseService";
 import { supabase } from "./utils/supabaseClient";
 import { learnFromCorrection } from "./utils/smartParser";
+import { fetchLoginDirectory, loginWithPin, restoreServerSession, revokeServerSession, useServerSession } from "./utils/sessionAuth";
 
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
@@ -64,6 +65,7 @@ export default function App() {
 
   // ─── Auth (persist across refresh) ───
   const [currentUser, setCurrentUser] = useState(() => {
+    if (useServerSession) return null;
     try {
       const saved = localStorage.getItem('qlass_user');
       return saved ? JSON.parse(saved) : null;
@@ -98,7 +100,7 @@ export default function App() {
       // Phase 1: Load staff only (fast, small table) — unblocks login screen
       try {
         setIsLoading(true);
-        const staffData = await getAllStaff();
+        const staffData = useServerSession ? await fetchLoginDirectory() : await getAllStaff();
         setStaff(staffData || []);
       } catch (error) {
         console.error('Error loading staff from Supabase:', error);
@@ -155,6 +157,15 @@ export default function App() {
       }
     }
     loadFromSupabase();
+  }, []);
+
+  useEffect(() => {
+    if (!useServerSession) return;
+    const token = localStorage.getItem("qlass_session");
+    if (!token) return;
+    restoreServerSession(token)
+      .then(({ user }) => setCurrentUser(user))
+      .catch(() => localStorage.removeItem("qlass_session"));
   }, []);
 
   // ─── Realtime subscription for queues ───
@@ -272,28 +283,33 @@ export default function App() {
   }, [filteredQueues]);
 
   // ─── Login / Logout ───
-  function handleLogin(user) {
+  async function handleLogin(user, pin) {
+    const authenticated = useServerSession ? await loginWithPin(user.id, pin) : { user };
+    const verifiedUser = authenticated.user;
     // เก็บเฉพาะข้อมูลที่จำเป็น ไม่เก็บ PIN
     const safeUser = {
-      id: user.id,
-      name: user.name,
-      nickname: user.nickname,
-      phone: user.phone,
-      branchId: user.branchId,
-      role: user.role,
-      active: user.active,
-      commissionRates: user.commissionRates,
+      id: verifiedUser.id,
+      name: verifiedUser.name,
+      nickname: verifiedUser.nickname,
+      phone: verifiedUser.phone || "",
+      branchId: verifiedUser.branchId,
+      role: verifiedUser.role,
+      active: verifiedUser.active,
+      commissionRates: verifiedUser.commissionRates,
     };
+    if (useServerSession) localStorage.setItem("qlass_session", authenticated.session.token);
     setCurrentUser(safeUser);
     localStorage.setItem('qlass_user', JSON.stringify(safeUser));
-    const pages = ROLES.find((r) => r.value === user.role)?.pages || [];
+    const pages = ROLES.find((r) => r.value === verifiedUser.role)?.pages || [];
     navigateTo(pages[0] || "queue-table");
-    showToast("success", `ยินดีต้อนรับ ${user.nickname || user.name} 👋`);
+    showToast("success", `ยินดีต้อนรับ ${verifiedUser.nickname || verifiedUser.name} 👋`);
   }
 
   function handleLogout() {
+    if (useServerSession) revokeServerSession(localStorage.getItem("qlass_session"));
     setCurrentUser(null);
     localStorage.removeItem('qlass_user');
+    localStorage.removeItem("qlass_session");
     setModal(null);
   }
 
@@ -772,7 +788,7 @@ export default function App() {
   }
 
   if (!currentUser) {
-    return <LoginScreen staff={staff} onLogin={handleLogin} supabaseError={supabaseError} />;
+    return <LoginScreen staff={staff} onLogin={handleLogin} supabaseError={supabaseError} serverSessionEnabled={useServerSession} />;
   }
 
   return (
