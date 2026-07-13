@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient";
+import { getServerSessionToken } from "./sessionAuth";
 
 // ═══════════════════════════════════════════════════════════
 // BRANCHES
@@ -931,11 +932,13 @@ export async function fetchAllHnCustomers() {
 export async function searchHnCustomers(query) {
   if (!query || query.trim().length < 2) return [];
   const q = query.trim();
+  const serverOnly = import.meta.env.VITE_USE_SERVER_HN_LOOKUP === "true";
 
   // ── 1. ลอง Edge Function (Pro Clinic ทุก clinic, real-time) ──
   try {
     const { data, error } = await supabase.functions.invoke("search-hn", {
       body: { q },
+      headers: { "X-Qlass-Session": getServerSessionToken() },
     });
     if (!error && data?.data) {
       return data.data.map((c) => ({
@@ -952,6 +955,10 @@ export async function searchHnCustomers(query) {
   } catch {
     // Edge Function ไม่พร้อม → fallback ด้านล่าง
   }
+
+  // Once enabled, never expose HN data through a direct browser-to-database
+  // fallback. Turning the flag off is the one-step compatibility rollback.
+  if (serverOnly) return [];
 
   // ── 2. Fallback: Supabase hn_customers โดยตรง ──
   const isPhone = /^\d+$/.test(q);
