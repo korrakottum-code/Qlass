@@ -1,114 +1,56 @@
-# แผนแก้ความปลอดภัย Qlass แบบไม่กระทบผู้ใช้ (Zero-Impact)
+# Qlass security plan with no data loss
 
-ประเมินผลกระทบของการแก้ช่องโหว่ความปลอดภัยต่อผู้ใช้ ~100 คนที่ใช้งานอยู่ พร้อมเสนอวิธีแก้แบบ backward-compatible ที่ผู้ใช้ไม่ต้อง login ใหม่หรือตั้ง PIN ใหม่.
+This document is an active safety roadmap for Qlass. Every production change is
+one Goal, one pull request, one review, and one explicit production go/no-go.
+No goal deletes customer, queue, staff, or operational data, and normal
+rollback must never require a database restore.
 
-> สถานะ: **แผน — ยังไม่เริ่มแก้** (เก็บไว้อ้างอิง)
+## Current baseline
 
----
+- Daily backups have been restored successfully to a separate verification
+  project.
+- PIN login is verified by the `staff-session` Edge Function and sessions are
+  server-checked.
+- HN lookup runs through a server-side function; public HN reads and writes are
+  disabled.
+- The browser client still needs a public Supabase key for non-HN application
+  flows. Public browser keys are not secrets: security must remain enforced by
+  server-side authorization and RLS.
 
-## ข้อจำกัดสำคัญ (อ่านก่อน)
+## Completed safety goals
 
-แอปปัจจุบัน **ไม่มี Supabase Auth session** — ทุก operation (อ่าน/เขียน/ลบ ทุกตาราง) วิ่งผ่าน **anon key ตัวเดียว** ที่ฝังในโค้ด (`src/utils/supabaseClient.js:5`).
+1. Recovery proof on a separate project.
+2. Removal of the unused AI route without deleting retained data.
+3. Server-verified staff sessions with a five-failure, fifteen-minute PIN lock.
+4. Server-only HN lookup, including audit logging and a recovery route.
+5. Removal of public HN table access, while preserving HN sync through the
+   server/CI path.
 
-ผลที่ตามมา:
-- **ห้ามเปิด RLS แบบ default-deny ทันที** → ถ้าทำ ทุกตารางจะถูกบล็อก ผู้ใช้ 100 คนใช้งานไม่ได้ทันที
-- การแก้ที่ "ไม่กระทบผู้ใช้" = พฤติกรรมหน้าจอเหมือนเดิมเป๊ะ (ยังกด PIN เท่าเดิม, ยังเห็นข้อมูลเท่าเดิม)
+## Goal 7 — migrate away from legacy API keys
 
----
+Remove legacy key values from tracked source and scripts, require the configured
+browser environment value, then migrate browser, Edge Function and CI consumers
+to Supabase publishable/secret API keys. The handover must be rehearsed on the
+restore-verification project first and must preserve login, booking, HN lookup,
+Realtime, sync, and all database rows.
 
-## ⚠️ ด่วนที่สุด — ทำก่อนทุกเฟส: Rotate Anon Key
+The runbook and rollback are in
+[`SUPABASE_KEY_HANDOVER.md`](SUPABASE_KEY_HANDOVER.md).
 
-`src/utils/supabaseClient.js:5` มี anon key **hardcode ตรงในโค้ด** (ไม่ใช่แค่อ่านจาก env var):
+## Later roadmap
 
-```js
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
-```
+1. Protect staff records further: do not expose PIN or commission columns to
+   browser reads; move privileged staff management behind server authorization.
+2. Migrate remaining operational writes one operation at a time behind
+   server-verified authorization before tightening their table policies.
+3. Hash legacy PIN values through a compatible staged migration, without forcing
+   a reset for active staff.
+4. Expand restore and incident drills, and separately approve any paid recovery
+   retention add-on.
 
-Key นี้อยู่ใน **git history ตลอดกาลแล้ว** — การแค่ลบออกจากโค้ดหรือย้ายไป env var ไม่เพียงพอ ใครที่เคย clone repo ไปแล้วมี key นี้อยู่
+## Non-negotiable rollout checks
 
-**สิ่งที่ต้องทำ:**
-1. ไปที่ Supabase Dashboard → Settings → API → Reveal → **Rotate anon key ใหม่**
-2. อัปเดต key ใหม่ใน Vercel/Netlify environment variables
-3. แก้ `supabaseClient.js` ให้อ่านจาก env var เท่านั้น (ลบ fallback hardcode ออก)
-4. Commit + deploy
-
-**ผลกระทบผู้ใช้:** ไม่มี — แอปทำงานเหมือนเดิม แค่ใช้ key ใหม่
-
----
-
-## สรุปความเสี่ยงที่จะแก้ (เรียงตามคุ้มค่า/ความเสี่ยงต่ำ)
-
-| # | ช่องโหว่ | วิธีแก้ zero-impact | กระทบผู้ใช้ | ความเสี่ยงพัง | ความยาก |
-|---|---|---|---|---|---|
-| 0 | Anon key hardcode ใน git history | Rotate key + ลบ fallback | ❌ ไม่กระทบ | ต่ำ | ต่ำ |
-| 1 | PIN ถูกดาวน์โหลดมา client + เช็คฝั่ง client | ย้ายไป RPC `verify_pin()` (server-side) | ❌ ไม่กระทบ (กด PIN เหมือนเดิม) | ต่ำ | ปานกลาง |
-| 2 | `staff.pin` + commission อ่านได้ผ่าน anon | ซ่อนคอลัมน์ด้วย VIEW + RPC | ❌ ไม่กระทบ | ปานกลาง | ปานกลาง |
-| 3 | `hn_customers` (เบอร์ลูกค้า 160K) เปิดสาธารณะ | ลบ fallback query + ปิด RLS (Edge Function มีอยู่แล้ว) | ❌ ไม่กระทบ | ต่ำ | ต่ำ |
-| 4 | PIN เก็บ plaintext | hash ตอน verify (เฟสหลัง) | ❌ ไม่กระทบ | ปานกลาง | สูง |
-| 5 | ตารางอื่นเปิด anon เขียน/ลบได้ | เฟสหลัง (ต้องมี auth จริงก่อน) | ⚠️ เสี่ยงกระทบ | สูง | สูง |
-
-> ข้อ 5 (RLS เต็มรูปแบบบนตาราง operational) **ทำไม่ได้แบบ zero-impact** เพราะต้องมี auth จริงก่อน — แยกเป็น roadmap ระยะยาว ไม่อยู่ในเฟสนี้.
-
----
-
-## แผนทำจริง (เฟสที่กระทบผู้ใช้ = ศูนย์)
-
-### เฟส 1 — ปกป้อง PIN (ข้อ 1+2)
-**เป้า:** anon key อ่าน PIN ไม่ได้อีกต่อไป แต่ผู้ใช้ยังกด PIN login ได้เหมือนเดิม
-
-1. สร้าง SQL ใหม่ (ไฟล์ `migrations/`):
-   - VIEW `staff_directory` = staff ทุกคอลัมน์ **ยกเว้น** `pin`, `commission_*` (ใช้สำหรับหน้า login picker)
-   - FUNCTION `verify_pin(p_staff_id uuid, p_pin text)` `SECURITY DEFINER` → คืน record (ไม่มี pin) ถ้า PIN ตรง, คืน null ถ้าผิด
-   - FUNCTION `get_staff_full(p_requestor_id uuid)` → คืนข้อมูลรวม commission **เฉพาะ** role admin/superadmin (สำหรับหน้า Staff/Commission)
-   - เปิด RLS บน `staff`: anon **SELECT ไม่ได้โดยตรง** แต่เข้าผ่าน view/function ได้
-2. แก้ฝั่ง client (ไม่เปลี่ยน UX):
-   - `LoginScreen.jsx:95` / `App.jsx`: เปลี่ยนจากเทียบ `next === selected.pin` → เรียก `supabase.rpc('verify_pin', ...)`
-   - `fetchStaff()` ในหน้า login → ดึงจาก `staff_directory` (ไม่มี pin)
-   - หน้า Staff/Commission (admin) → ดึงผ่าน `get_staff_full`
-   - `createStaff/updateStaff/deleteStaff` → ย้ายเป็น RPC `SECURITY DEFINER` (เขียน pin ได้แต่ anon อ่านไม่ได้)
-
-**ผลกระทบผู้ใช้:** ไม่มี — ยังกด PIN 4 หลักเหมือนเดิม, หน้าจอเหมือนเดิม
-
-### เฟส 2 — ปกป้องข้อมูลลูกค้า (ข้อ 3)
-**หมายเหตุ:** Edge Function `search-hn` มีอยู่แล้วใน `supabase/functions/search-hn/` และ `searchHnCustomers()` เรียกมันเป็นอันดับแรกอยู่แล้ว (`supabaseService.js:959`) งานที่เหลือมีแค่:
-
-1. ลบ fallback query ตรงบน `hn_customers` ออกจาก `searchHnCustomers()` (ประมาณ 20 บรรทัด)
-2. ปิด public SELECT policy บน `hn_customers`
-
-**ผลกระทบผู้ใช้:** ไม่มี — ช่อง HN Lookup ทำงานเหมือนเดิมผ่าน Edge Function
-
-### เฟส 3 (ทางเลือก/เฟสหลัง) — hash PIN
-- เพิ่ม `pin_hash` คู่กับ `pin`, ให้ `verify_pin` รองรับทั้งสอง, ทยอย migrate, แล้วลบ `pin` plaintext
-- ทำได้ทีหลังโดยไม่กระทบผู้ใช้
-
----
-
-## วิธีทดสอบก่อน deploy (กันพังกับ 100 คน)
-
-1. **ทดสอบบน branch + Supabase แยก** (หรือ staging) ก่อนแตะ production
-2. รัน SQL migration ทีละ statement, ตรวจ view/function คืนค่าถูก
-3. ทดสอบ login ครบทุก role (cashier/admin/superadmin/ceo) ว่ายัง login ได้
-4. ทดสอบ Staff CRUD + Commission ยังทำงาน
-5. ทดสอบ HN Lookup ยังค้นเจอ
-6. **Deploy นอกเวลาทำการ** + เตรียม rollback (ไฟล์ SQL `DROP`/คืน policy เดิม)
-
-## แผนถอย (Rollback)
-- ทุก migration เขียนคู่กับ script ย้อนกลับ
-- Client code merge เป็น PR แยกแต่ละเฟส — revert ได้ทีละเฟส
-- เก็บ anon SELECT policy เดิมไว้ใน comment เพื่อคืนเร็ว
-
----
-
-## สิ่งที่จะ "ไม่ทำ" ในเฟสนี้ (เพราะกระทบผู้ใช้)
-- ❌ เปลี่ยนไปใช้ Supabase Auth (ต้อง login ใหม่ทุกคน)
-- ❌ เปิด RLS default-deny บนตาราง operational (queues/procedures/rooms ฯลฯ)
-- ❌ บังคับตั้ง PIN ใหม่
-
-> หมายเหตุ: ตราบใดที่ตาราง operational ยังเปิด anon เขียนได้ ช่องโหว่ "ใครมี anon key ก็เขียน/ลบข้อมูลได้" ยังคงอยู่ — การปิดสมบูรณ์ต้องมี auth จริง (roadmap ระยะยาว แยกหารือ)
-
----
-
-## ลำดับถัดไป
-1. **ด่วน:** Rotate anon key ใน Supabase dashboard + ลบ hardcode fallback
-2. รออนุมัติแผน → เริ่มเฟส 1 (เขียน SQL migration + แก้ client โดยไม่เปลี่ยน UX)
-3. เฟส 2 (ลบ fallback HN query + ปิด RLS) — เร็วมาก เพราะ Edge Function มีอยู่แล้ว
+Before any production enforcement: test on the restore project, compare row
+counts, prove denied public access, prove the approved server path works, verify
+the live user flow, and retain a single, documented rollback that changes no
+application data.

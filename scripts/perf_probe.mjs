@@ -1,9 +1,13 @@
 // Read-only timing probe — measures how long each Supabase query takes.
-// Run: node scripts/perf_probe.mjs
+// Run: VITE_SUPABASE_URL=... VITE_SUPABASE_ANON_KEY=... node scripts/perf_probe.mjs
 import { createClient } from "@supabase/supabase-js";
 
-const url = process.env.VITE_SUPABASE_URL || "https://hjuvtsjjtucdirlkdgwa.supabase.co";
-const key = process.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhqdXZ0c2pqdHVjZGlybGtkZ3dhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNzIyODcsImV4cCI6MjA5MDk0ODI4N30.Why2fJ6oQnZxW_reiQo-RTMdjORlrwfH46kmbtL5Nzg";
+const url = process.env.VITE_SUPABASE_URL;
+const key = process.env.VITE_SUPABASE_ANON_KEY;
+
+if (!url || !key) {
+  throw new Error("Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY");
+}
 
 const supabase = createClient(url, key);
 
