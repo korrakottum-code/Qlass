@@ -932,11 +932,16 @@ export async function fetchAllHnCustomers() {
 export async function searchHnCustomers(query) {
   if (!query || query.trim().length < 2) return [];
   const q = query.trim();
-  const serverOnly = import.meta.env.VITE_USE_SERVER_HN_LOOKUP === "true";
+  const requestedFunction = import.meta.env.VITE_HN_LOOKUP_FUNCTION || "search-hn";
+  const lookupFunction = ["search-hn", "search-hn-recovery"].includes(requestedFunction)
+    ? requestedFunction
+    : "search-hn";
 
-  // ── 1. ลอง Edge Function (Pro Clinic ทุก clinic, real-time) ──
+  // HN data must only travel through an authenticated server function. The
+  // recovery function is a separately deployed, known-good server route that
+  // can be selected by a Vercel environment change and redeploy if needed.
   try {
-    const { data, error } = await supabase.functions.invoke("search-hn", {
+    const { data, error } = await supabase.functions.invoke(lookupFunction, {
       body: { q },
       headers: { "X-Qlass-Session": getServerSessionToken() },
     });
@@ -953,44 +958,7 @@ export async function searchHnCustomers(query) {
       }));
     }
   } catch {
-    // Edge Function ไม่พร้อม → fallback ด้านล่าง
+    // Keep HN data server-only even when a lookup function is unavailable.
   }
-
-  // Once enabled, never expose HN data through a direct browser-to-database
-  // fallback. Turning the flag off is the one-step compatibility rollback.
-  if (serverOnly) return [];
-
-  // ── 2. Fallback: Supabase hn_customers โดยตรง ──
-  const isPhone = /^\d+$/.test(q);
-  let supaQuery;
-  if (isPhone) {
-    supaQuery = supabase
-      .from("hn_customers")
-      .select("*")
-      .ilike("telephone", `%${q}%`)
-      .limit(10);
-  } else {
-    const tokens = q.split(/\s+/).filter((t) => t.length > 0);
-    supaQuery = supabase.from("hn_customers").select("*").limit(10);
-    for (const t of tokens) {
-      const safe = t.replace(/[(),]/g, "");
-      if (!safe) continue;
-      supaQuery = supaQuery.or(
-        `firstname.ilike.%${safe}%,lastname.ilike.%${safe}%,nickname.ilike.%${safe}%`
-      );
-    }
-  }
-
-  const { data, error } = await supaQuery;
-  if (error) { console.error("searchHnCustomers fallback:", error); return []; }
-  return (data || []).map((c) => ({
-    hnId: c.hn_id,
-    firstname: c.firstname || "",
-    lastname: c.lastname || "",
-    nickname: c.nickname || "",
-    telephone: c.telephone || "",
-    birthdate: c.birthdate || "",
-    source: "supabase",
-    cookiesExpired: true,
-  }));
+  return [];
 }
