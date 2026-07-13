@@ -50,10 +50,13 @@ def import_csv(csv_path: str):
     url = f"{SUPABASE_URL}/rest/v1/hn_customers"
     headers = {
         "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates",
     }
+    # Modern sb_secret keys must be sent through apikey only. Keep the
+    # Authorization header for the legacy JWT service_role key until it is retired.
+    if not SUPABASE_KEY.startswith("sb_"):
+        headers["Authorization"] = f"Bearer {SUPABASE_KEY}"
 
     chunk_size = 500
     total = len(records)
