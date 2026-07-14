@@ -11,7 +11,10 @@ created, updated, deleted, or restored.
 
 The restore-verification project was also queried read-only. Its direct counts
 show 99,247 queues, 180,012 HN customers, and 67 staff records, consistent with
-it being an older restore snapshot rather than a production cutover target.
+it being an older restore snapshot rather than a production cutover target. The
+same control-total, overlap, index, policy, column, and trigger queries executed
+there successfully (41 indexes, 46 public policies, 143 public columns, and no
+public-table triggers).
 
 ## Control totals
 
