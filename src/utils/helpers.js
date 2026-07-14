@@ -1,4 +1,4 @@
-import { DAY_START_BLOCK, DAY_END_BLOCK } from "./constants";
+import { DAY_START_BLOCK, DAY_END_BLOCK, ROLES } from "./constants";
 
 export function genId(prefix) {
   return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
@@ -105,8 +105,7 @@ export function calcCommission(doneQueues, staff) {
 // Branch filtering based on user role
 export function canViewAllBranches(user) {
   if (!user) return false;
-  // Admin roles can see all branches
-  return ["ceo", "superadmin", "head_admin", "admin"].includes(user.role);
+  return ROLES.find((role) => role.value === user.role)?.branchScope === "all";
 }
 
 export function filterByUserBranch(items, user, branchIdField = "branchId") {

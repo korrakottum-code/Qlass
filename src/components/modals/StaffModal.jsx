@@ -17,6 +17,13 @@ export default function StaffModal({ data, branches, onSave, onClose }) {
   const [commCourse, setCommCourse] = useState(data?.commissionRates?.course ?? 0);
 
   const roleInfo = ROLES.find((r) => r.value === role);
+  const hasAllBranchAccess = roleInfo?.branchScope === "all";
+
+  function handleRoleChange(nextRole) {
+    const nextRoleInfo = ROLES.find((r) => r.value === nextRole);
+    setRole(nextRole);
+    if (nextRoleInfo?.branchScope === "all") setBranchId(null);
+  }
 
   function handleSave() {
     if (!name.trim()) return;
@@ -24,12 +31,16 @@ export default function StaffModal({ data, branches, onSave, onClose }) {
       alert("PIN ต้องเป็นตัวเลข 4 หลัก");
       return;
     }
+    if (!hasAllBranchAccess && !branchId) {
+      alert("กรุณาเลือกสาขาประจำ");
+      return;
+    }
     onSave({
       id: data?.id,
       name: name.trim(),
       nickname: nickname.trim(),
       phone: phone.trim(),
-      branchId: branchId || null,
+      branchId: hasAllBranchAccess ? null : branchId,
       role,
       pin,
       active,
@@ -70,16 +81,29 @@ export default function StaffModal({ data, branches, onSave, onClose }) {
           {/* สาขา */}
           <div className="form-group">
             <label className="form-label">สาขาประจำ</label>
-            <select value={branchId || ""} onChange={(e) => setBranchId(e.target.value || null)}>
-              <option value="">ทุกสาขา</option>
-              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            <select
+              value={hasAllBranchAccess ? "" : (branchId || "")}
+              disabled={hasAllBranchAccess}
+              onChange={(e) => setBranchId(e.target.value || null)}
+            >
+              {hasAllBranchAccess ? (
+                <option value="">ทุกสาขา</option>
+              ) : (
+                <>
+                  <option value="" disabled>-- เลือกสาขา --</option>
+                  {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </>
+              )}
             </select>
+            <div style={{ fontSize: 11, marginTop: 4, color: "var(--text3)" }}>
+              {hasAllBranchAccess ? "บทบาทนี้เข้าถึงได้ทุกสาขา" : "บทบาทนี้ต้องเลือกสาขาประจำหนึ่งสาขา"}
+            </div>
           </div>
 
           {/* บทบาท */}
           <div className="form-group">
             <label className="form-label">บทบาท / สิทธิ์</label>
-            <select value={role} onChange={(e) => setRole(e.target.value)}>
+            <select value={role} onChange={(e) => handleRoleChange(e.target.value)}>
               {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
             {roleInfo && (
@@ -161,7 +185,11 @@ export default function StaffModal({ data, branches, onSave, onClose }) {
           </div>
         )}
       </ModalBody>
-      <ModalFooter onClose={onClose} onSave={handleSave} disabled={!name.trim() || pin.length !== 4} />
+      <ModalFooter
+        onClose={onClose}
+        onSave={handleSave}
+        disabled={!name.trim() || pin.length !== 4 || (!hasAllBranchAccess && !branchId)}
+      />
     </>
   );
 }
