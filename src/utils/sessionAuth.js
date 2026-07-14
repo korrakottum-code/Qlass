@@ -22,6 +22,11 @@ export async function fetchLoginDirectory() {
   return data.staff || [];
 }
 
+export async function fetchAuthenticatedStaff(token) {
+  const data = await callSessionFunction({ action: "staff-details", token });
+  return data.staff || [];
+}
+
 export async function loginWithPin(staffId, pin) {
   return callSessionFunction({ action: "login", staffId, pin });
 }

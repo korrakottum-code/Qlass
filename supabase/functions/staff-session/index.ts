@@ -50,6 +50,23 @@ function publicStaff(staff: Record<string, unknown>) {
   };
 }
 
+const authenticatedRoles = new Set(["ceo", "superadmin", "head_admin", "admin", "branch_manager", "cashier"]);
+const staffManagementRoles = new Set(["superadmin", "head_admin"]);
+
+function staffDetails(staff: Record<string, unknown>, includePin: boolean) {
+  const details: Record<string, unknown> = {
+    ...publicStaff(staff),
+    phone: staff.phone ?? "",
+    commissionRates: {
+      new: Number(staff.commission_rate_new ?? 0),
+      old: Number(staff.commission_rate_old ?? 0),
+      course: Number(staff.commission_rate_course ?? 0),
+    },
+  };
+  if (includePin) details.pin = staff.pin ?? "";
+  return details;
+}
+
 async function createSession(staffId: string) {
   const rawToken = Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("");
   const tokenHash = await sha256(rawToken);
@@ -91,6 +108,22 @@ Deno.serve(async (req) => {
       const { data, error } = await supabase.from("staff").select("id,name,nickname,branch_id,role,active").eq("active", true).order("created_at");
       if (error) throw error;
       return response({ staff: (data ?? []).map(publicStaff) }, 200, origin);
+    }
+
+    if (body?.action === "staff-details") {
+      const current = await findSession(body.token);
+      if (!current) return response({ error: "invalid_session" }, 401, origin);
+      if (!authenticatedRoles.has(String(current.user.role ?? ""))) {
+        return response({ error: "forbidden" }, 403, origin);
+      }
+
+      const includePin = staffManagementRoles.has(String(current.user.role));
+      const columns = includePin
+        ? "id,name,nickname,phone,branch_id,role,active,pin,commission_rate_new,commission_rate_old,commission_rate_course"
+        : "id,name,nickname,phone,branch_id,role,active,commission_rate_new,commission_rate_old,commission_rate_course";
+      const { data, error } = await supabase.from("staff").select(columns).order("created_at");
+      if (error) throw error;
+      return response({ staff: (data ?? []).map((staff) => staffDetails(staff, includePin)) }, 200, origin);
     }
 
     if (body?.action === "session") {
