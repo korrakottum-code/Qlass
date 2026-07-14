@@ -74,6 +74,24 @@ hundreds of people, so every change must preserve existing data and behaviour.
 - Rollback is credentials-only: re-enable legacy keys and restore the previous
   Vercel deployment. It does not modify application data.
 
+## Maintenance completed after Goal 7
+
+These releases were necessary production fixes or operational follow-ups. They
+do not change the canonical Goal order or mark a later Goal complete:
+
+- PR #96 corrected staff branch-scope selection. This was a production bug fix
+  outside the numbered security sequence.
+- PR #97 restored authenticated staff detail and commission reads through the
+  `staff-session` server boundary. It is evidence and partial preparation for
+  Goal 18, but Goal 18 remains open until all staff record access in its scope
+  passes the stated acceptance gate.
+- PR #98 added one-click HN cookie refresh and secret verification. It keeps the
+  completed HN controls from Goals 4-6 operable, but it is not the recurring
+  recovery and incident drill required by Goal 38.
+
+The next executable Goal remains Goal 8. No later Goal may be marked complete
+from these maintenance releases alone.
+
 ## Remaining Goals
 
 The Goal numbers below are the canonical order from this point onward. A Goal
