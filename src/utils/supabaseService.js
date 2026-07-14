@@ -1,5 +1,6 @@
 import { supabase } from "./supabaseClient";
 import { getServerSessionToken } from "./sessionAuth";
+import { buildQueueStatusUpdate } from "./queueStatusUpdate";
 
 // ═══════════════════════════════════════════════════════════
 // BRANCHES
@@ -670,6 +671,20 @@ export async function updateQueue(id, queue) {
     createdAt: data.created_at,
     statusUpdatedAt: data.status_updated_at,
   };
+}
+
+// Used only by the status modal. Do not replace this with updateQueue(): that
+// function is for complete booking edits and writes every booking column.
+export async function updateQueueStatus(id, statusUpdate) {
+  const { data, error } = await supabase
+    .from("queues")
+    .update(buildQueueStatusUpdate(statusUpdate))
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapQueueRow(data);
 }
 
 export async function deleteQueue(id) {
