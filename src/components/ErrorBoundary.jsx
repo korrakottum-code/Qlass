@@ -1,4 +1,5 @@
 import { Component } from "react";
+import { recordClientDiagnostic } from "../utils/clientDiagnostics";
 
 export default class ErrorBoundary extends Component {
   constructor(props) {
@@ -12,6 +13,7 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, errorInfo) {
     console.error("App crashed:", error, errorInfo);
+    recordClientDiagnostic("render_error", { error });
   }
 
   render() {
