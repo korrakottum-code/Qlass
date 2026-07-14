@@ -96,6 +96,11 @@ left join public.procedures p on p.id = q.procedure_id
 left join public.staff s on s.id = q.recorded_by;
 
 -- 4. Schema/access inventory. These are catalogue reads only.
+select table_name, column_name, data_type, is_nullable, column_default
+from information_schema.columns
+where table_schema = 'public'
+order by table_name, ordinal_position;
+
 select c.relname as table_name,
        c.reltuples::bigint as estimated_rows,
        pg_total_relation_size(c.oid) as total_bytes,
@@ -119,10 +124,29 @@ join information_schema.constraint_column_usage ccu
 where tc.constraint_type = 'FOREIGN KEY' and tc.table_schema = 'public'
 order by tc.table_name, tc.constraint_name, kcu.ordinal_position;
 
+select schemaname, tablename as table_name, indexname as index_name, indexdef
+from pg_indexes
+where schemaname = 'public'
+order by tablename, indexname;
+
+select event_object_table as table_name, trigger_name, event_manipulation as event,
+       action_timing, action_statement
+from information_schema.triggers
+where event_object_schema = 'public'
+order by event_object_table, trigger_name;
+
 select tablename as table_name, policyname, permissive, roles, cmd
 from pg_policies
 where schemaname = 'public'
 order by tablename, policyname;
+
+select grantee, table_name,
+       string_agg(privilege_type, ', ' order by privilege_type) as privileges
+from information_schema.role_table_grants
+where table_schema = 'public'
+  and grantee in ('anon', 'authenticated', 'service_role')
+group by grantee, table_name
+order by table_name, grantee;
 
 select p.pubname as publication, c.relname as table_name
 from pg_publication p

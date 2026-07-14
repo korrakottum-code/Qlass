@@ -66,6 +66,11 @@ are planned as additive work in Goals 12-17.
 
 - Public tables: 18. The largest are `hn_customers` (about 65.7 MB), `queues`
   (about 36.3 MB), and `room_schedules` (about 2.7 MB).
+- The public schema has 41 indexes. `queues` has indexes for its primary key,
+  branch, date, recorder, and `(room_id, date)`; it has no uniqueness constraint
+  that would prevent two active bookings occupying the same time slot.
+- The inventory query records every column, type, nullability, and default. It
+  found no public-table triggers.
 - Edge Functions active: `staff-session`, `search-hn`, and
   `search-hn-recovery`.
 - Realtime publication currently contains `queues`, `line_bookings`, and the
@@ -87,6 +92,10 @@ without remediation in this Goal:
 
 - `public.branches` and `public.parse_hints` have RLS disabled. `branches` also
   retains policies, which are ineffective while RLS is off.
+- `anon` and `authenticated` retain database grants for the full standard table
+  operation set on almost every public table. RLS and policy work—not grants
+  alone—therefore determines live browser access. This is recorded as an access
+  boundary finding, not a reason to revoke grants in place.
 - Operational tables including `queues`, `rooms`, `room_schedules`, `staff`,
   `tickets`, `procedures`, `promos`, `procedure_categories`, and
   `activity_logs` retain permissive public write/delete policies.
@@ -113,8 +122,11 @@ server-boundary Goals 18-26.
   Goal.
 - The last-24-hour API sample showed successful Realtime connections and large
   paginated reads spanning the full queue history. It contains no baseline error
-  rate or latency metric, so Goal 11 must add measurable, non-PII observability
-  and Goal 30 must replace full-history loading with bounded APIs.
+  rate or latency metric. The current Supabase log interface returns individual
+  events but no reproducible aggregate latency/error measurement without
+  retaining request-level data. This absence is itself the health-metric
+  baseline: Goal 11 must add measurable, non-PII observability, while Goal 30
+  must replace full-history loading with bounded APIs.
 
 ## Goal 8 closure gate
 
