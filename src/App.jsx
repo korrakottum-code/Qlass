@@ -19,6 +19,7 @@ import { supabase } from "./utils/supabaseClient";
 import { learnFromCorrection } from "./utils/smartParser";
 import { checkFreshRoomBookingConflict } from "./utils/bookingConflict";
 import { fetchAuthenticatedStaff, fetchLoginDirectory, loginWithPin, restoreServerSession, revokeServerSession, useServerSession } from "./utils/sessionAuth";
+import { recordClientDiagnostic } from "./utils/clientDiagnostics";
 
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
@@ -99,6 +100,7 @@ export default function App() {
   useEffect(() => {
     async function loadFromSupabase() {
       // Phase 1: Load staff only (fast, small table) — unblocks login screen
+      const staffLoadStartedAt = performance.now();
       try {
         setIsLoading(true);
         let staffData;
@@ -122,14 +124,17 @@ export default function App() {
           staffData = await getAllStaff();
         }
         setStaff(staffData || []);
+        recordClientDiagnostic("initial_load", { stage: "staff", outcome: "succeeded", durationMs: performance.now() - staffLoadStartedAt });
       } catch (error) {
         console.error('Error loading staff from Supabase:', error);
         setSupabaseError(error.message);
+        recordClientDiagnostic("initial_load", { stage: "staff", outcome: "failed", durationMs: performance.now() - staffLoadStartedAt, error });
       } finally {
         setIsLoading(false);
       }
 
       // Phase 2a: Load core data + RECENT queues (~30 days) — light & fast, makes app usable quickly
+      const coreLoadStartedAt = performance.now();
       try {
         const since = new Date();
         since.setDate(since.getDate() - 30);
@@ -158,12 +163,15 @@ export default function App() {
           setTickets(ticketData);
         }
         setIsDataReady(true);
+        recordClientDiagnostic("initial_load", { stage: "core", outcome: "succeeded", durationMs: performance.now() - coreLoadStartedAt });
       } catch (error) {
         console.error('Error loading core data from Supabase:', error);
         setIsDataReady(true);
+        recordClientDiagnostic("initial_load", { stage: "core", outcome: "failed", durationMs: performance.now() - coreLoadStartedAt, error });
       }
 
       // Phase 2b: Load FULL queue history in background, merge in (Export/Commission need old data)
+      const historyLoadStartedAt = performance.now();
       try {
         const allQueues = await getAllQueues();
         setQueues((prev) => {
@@ -172,8 +180,10 @@ export default function App() {
           for (const q of prev) byId.set(q.id, q);
           return Array.from(byId.values());
         });
+        recordClientDiagnostic("initial_load", { stage: "history", outcome: "succeeded", durationMs: performance.now() - historyLoadStartedAt });
       } catch (error) {
         console.error('Error loading full queue history from Supabase:', error);
+        recordClientDiagnostic("initial_load", { stage: "history", outcome: "failed", durationMs: performance.now() - historyLoadStartedAt, error });
       }
     }
     loadFromSupabase();
@@ -209,6 +219,7 @@ export default function App() {
       })
       .subscribe((status) => {
         console.log("[Realtime] status:", status);
+        recordClientDiagnostic("realtime_status", { status });
         if (status === "CHANNEL_ERROR") {
           console.warn("Realtime channel error — falling back to manual fetch");
         }
