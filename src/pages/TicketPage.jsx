@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { formatThaiDate } from "../utils/helpers";
+import { useSubmissionLock } from "../hooks/useSubmissionLock";
 
 export default function TicketPage({ tickets, branches, staff, currentUser, onCreateTicket, onUpdateTicket, onDeleteTicket }) {
   const [showForm, setShowForm] = useState(false);
@@ -12,6 +13,7 @@ export default function TicketPage({ tickets, branches, staff, currentUser, onCr
     priority: "medium",
     images: [],
   });
+  const { isSaving, run } = useSubmissionLock();
 
   const isAdmin = ["superadmin", "head_admin"].includes(currentUser?.role);
 
@@ -37,15 +39,25 @@ export default function TicketPage({ tickets, branches, staff, currentUser, onCr
       imageUrls: [], // Images will be handled separately
     };
 
-    await onCreateTicket(ticketData, form.images);
-    setForm({ title: "", description: "", category: "bug", priority: "medium", images: [] });
-    setShowForm(false);
+    const submission = await run(() => onCreateTicket(ticketData, form.images));
+    if (submission.started && submission.result) {
+      setForm({ title: "", description: "", category: "bug", priority: "medium", images: [] });
+      setShowForm(false);
+    }
   };
 
   const handleImageChange = (e) => {
     const files = Array.from(e.target.files);
     setForm({ ...form, images: files });
   };
+
+  async function handleTicketUpdate(id, updates) {
+    await run(() => onUpdateTicket(id, updates));
+  }
+
+  async function handleTicketDelete(id) {
+    await run(() => onDeleteTicket(id));
+  }
 
   const categoryLabels = {
     bug: "🐛 Bug/ข้อผิดพลาด",
@@ -90,6 +102,7 @@ export default function TicketPage({ tickets, branches, staff, currentUser, onCr
         </h1>
         <button
           onClick={() => setShowForm(!showForm)}
+          disabled={isSaving}
           style={{
             padding: "10px 20px",
             borderRadius: 8,
@@ -237,6 +250,7 @@ export default function TicketPage({ tickets, branches, staff, currentUser, onCr
                 <button
                   type="button"
                   onClick={() => setShowForm(false)}
+                  disabled={isSaving}
                   style={{
                     padding: "10px 20px",
                     borderRadius: 8,
@@ -252,6 +266,7 @@ export default function TicketPage({ tickets, branches, staff, currentUser, onCr
                 </button>
                 <button
                   type="submit"
+                  disabled={isSaving}
                   style={{
                     padding: "10px 20px",
                     borderRadius: 8,
@@ -263,7 +278,7 @@ export default function TicketPage({ tickets, branches, staff, currentUser, onCr
                     cursor: "pointer",
                   }}
                 >
-                  ส่งคำร้อง
+                  {isSaving ? "กำลังส่ง..." : "ส่งคำร้อง"}
                 </button>
               </div>
             </div>
@@ -419,7 +434,7 @@ export default function TicketPage({ tickets, branches, staff, currentUser, onCr
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              onUpdateTicket(ticket.id, { status: "resolved" });
+                              handleTicketUpdate(ticket.id, { status: "resolved" });
                             }}
                             style={{
                               padding: "8px 16px",
@@ -431,6 +446,7 @@ export default function TicketPage({ tickets, branches, staff, currentUser, onCr
                               fontWeight: 600,
                               cursor: "pointer",
                             }}
+                            disabled={isSaving}
                           >
                             ✓ แก้ไขแล้ว
                           </button>
@@ -439,7 +455,7 @@ export default function TicketPage({ tickets, branches, staff, currentUser, onCr
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              onUpdateTicket(ticket.id, { status: "in_progress" });
+                              handleTicketUpdate(ticket.id, { status: "in_progress" });
                             }}
                             style={{
                               padding: "8px 16px",
@@ -451,6 +467,7 @@ export default function TicketPage({ tickets, branches, staff, currentUser, onCr
                               fontWeight: 600,
                               cursor: "pointer",
                             }}
+                            disabled={isSaving}
                           >
                             กำลังดำเนินการ
                           </button>
@@ -459,7 +476,7 @@ export default function TicketPage({ tickets, branches, staff, currentUser, onCr
                           onClick={(e) => {
                             e.stopPropagation();
                             if (confirm("ต้องการลบคำร้องนี้?")) {
-                              onDeleteTicket(ticket.id);
+                              handleTicketDelete(ticket.id);
                             }
                           }}
                           style={{
@@ -473,6 +490,7 @@ export default function TicketPage({ tickets, branches, staff, currentUser, onCr
                             cursor: "pointer",
                             marginLeft: "auto",
                           }}
+                          disabled={isSaving}
                         >
                           ลบ
                         </button>

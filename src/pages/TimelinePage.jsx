@@ -1,13 +1,14 @@
 import { useState, useMemo } from "react";
 import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm } from "../utils/helpers";
 import HnLookup from "../components/HnLookup";
+import { useSubmissionLock } from "../hooks/useSubmissionLock";
 
 export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], currentUser, onSubmitBooking, onEditQueue }) {
   const [date, setDate] = useState(getTodayStr());
   const [filterBranch, setFilterBranch] = useState("all");
   const [popup, setPopup] = useState(null); // { q, room, block, x, y }
   const [bookingForm, setBookingForm] = useState(null); // mini booking popup form
-  const [saving, setSaving] = useState(false);
+  const { isSaving: saving, run: runBookingSubmit } = useSubmissionLock();
 
   function navigate(dir) {
     const d = new Date(date);
@@ -450,10 +451,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                   disabled={saving || !bookingForm.name.trim() || !bookingForm.phone.trim()}
                   onClick={async () => {
                     if (!onSubmitBooking) return;
-                    setSaving(true);
-                    const ok = await onSubmitBooking(bookingForm);
-                    setSaving(false);
-                    if (ok) setBookingForm(null);
+                    const submission = await runBookingSubmit(() => onSubmitBooking(bookingForm));
+                    if (submission.started && submission.result) setBookingForm(null);
                   }}
                 >
                   {saving ? "กำลังบันทึก..." : "✅ บันทึกคิว"}
