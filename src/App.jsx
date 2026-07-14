@@ -17,7 +17,7 @@ import {
 } from "./utils/supabaseService";
 import { supabase } from "./utils/supabaseClient";
 import { learnFromCorrection } from "./utils/smartParser";
-import { fetchLoginDirectory, loginWithPin, restoreServerSession, revokeServerSession, useServerSession } from "./utils/sessionAuth";
+import { fetchAuthenticatedStaff, fetchLoginDirectory, loginWithPin, restoreServerSession, revokeServerSession, useServerSession } from "./utils/sessionAuth";
 
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
@@ -100,7 +100,26 @@ export default function App() {
       // Phase 1: Load staff only (fast, small table) — unblocks login screen
       try {
         setIsLoading(true);
-        const staffData = useServerSession ? await fetchLoginDirectory() : await getAllStaff();
+        let staffData;
+        if (useServerSession) {
+          const token = localStorage.getItem("qlass_session");
+          if (token) {
+            try {
+              const { user } = await restoreServerSession(token);
+              staffData = await fetchAuthenticatedStaff(token);
+              setCurrentUser(user);
+            } catch {
+              localStorage.removeItem("qlass_session");
+              localStorage.removeItem("qlass_user");
+              setCurrentUser(null);
+              staffData = await fetchLoginDirectory();
+            }
+          } else {
+            staffData = await fetchLoginDirectory();
+          }
+        } else {
+          staffData = await getAllStaff();
+        }
         setStaff(staffData || []);
       } catch (error) {
         console.error('Error loading staff from Supabase:', error);
@@ -157,15 +176,6 @@ export default function App() {
       }
     }
     loadFromSupabase();
-  }, []);
-
-  useEffect(() => {
-    if (!useServerSession) return;
-    const token = localStorage.getItem("qlass_session");
-    if (!token) return;
-    restoreServerSession(token)
-      .then(({ user }) => setCurrentUser(user))
-      .catch(() => localStorage.removeItem("qlass_session"));
   }, []);
 
   // ─── Realtime subscription for queues ───
@@ -297,7 +307,17 @@ export default function App() {
       active: verifiedUser.active,
       commissionRates: verifiedUser.commissionRates,
     };
-    if (useServerSession) localStorage.setItem("qlass_session", authenticated.session.token);
+    if (useServerSession) {
+      const token = authenticated.session.token;
+      try {
+        const authenticatedStaff = await fetchAuthenticatedStaff(token);
+        setStaff(authenticatedStaff);
+        localStorage.setItem("qlass_session", token);
+      } catch (error) {
+        revokeServerSession(token);
+        throw error;
+      }
+    }
     setCurrentUser(safeUser);
     localStorage.setItem('qlass_user', JSON.stringify(safeUser));
     const pages = ROLES.find((r) => r.value === verifiedUser.role)?.pages || [];
@@ -311,6 +331,14 @@ export default function App() {
     localStorage.removeItem('qlass_user');
     localStorage.removeItem("qlass_session");
     setModal(null);
+    if (useServerSession) {
+      setStaff((currentStaff) => currentStaff
+        .filter((member) => member.active)
+        .map(({ id, name, nickname, branchId, role, active }) => ({ id, name, nickname, branchId, role, active })));
+      fetchLoginDirectory().then(setStaff).catch((error) => {
+        console.error("Error restoring login directory:", error);
+      });
+    }
   }
 
   // ═══════ BOOKING ACTIONS ═══════
