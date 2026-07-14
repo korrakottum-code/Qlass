@@ -1,4 +1,5 @@
 import { DAY_START_BLOCK, DAY_END_BLOCK, ROLES } from "./constants";
+import { canViewAllBranchesForRoles, filterItemsByBranch } from "./accessControl";
 
 export function genId(prefix) {
   return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
@@ -104,13 +105,9 @@ export function calcCommission(doneQueues, staff) {
 
 // Branch filtering based on user role
 export function canViewAllBranches(user) {
-  if (!user) return false;
-  return ROLES.find((role) => role.value === user.role)?.branchScope === "all";
+  return canViewAllBranchesForRoles(user, ROLES);
 }
 
 export function filterByUserBranch(items, user, branchIdField = "branchId") {
-  if (!user) return [];
-  if (canViewAllBranches(user)) return items;
-  // Manager and Cashier can only see their own branch
-  return items.filter(item => item[branchIdField] === user.branchId);
+  return filterItemsByBranch(items, user, branchIdField, ROLES);
 }
