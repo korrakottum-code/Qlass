@@ -50,6 +50,9 @@ export default function StaffPage({ staff, branches, onAdd, onEdit, onToggleActi
           <tbody>
             {staff.map((s) => {
               const branch = branches.find((b) => b.id === s.branchId);
+              const role = ROLES.find((r) => r.value === s.role);
+              const branchLabel = branch?.name
+                || (role?.branchScope === "all" ? "ทุกสาขา" : "ยังไม่ได้กำหนดสาขา");
               return (
                 <tr
                   key={s.id}
@@ -62,7 +65,9 @@ export default function StaffPage({ staff, branches, onAdd, onEdit, onToggleActi
                   <td style={{ padding: "10px 12px", fontWeight: 700 }}>{s.name}</td>
                   <td style={{ padding: "10px 12px", color: "var(--text2)" }}>{s.nickname || "—"}</td>
                   <td style={{ padding: "10px 12px", color: "var(--text2)" }}>
-                    {branch ? branch.name : <span style={{ color: "var(--text3)", fontSize: 11 }}>ทุกสาขา</span>}
+                    <span style={{ color: branch ? "var(--text2)" : "var(--text3)", fontSize: branch ? 13 : 11 }}>
+                      {branchLabel}
+                    </span>
                   </td>
                   <td style={{ padding: "10px 12px" }}><RoleBadge role={s.role} /></td>
                   <td style={{ padding: "10px 12px" }}><CommRate rates={s.commissionRates} /></td>
