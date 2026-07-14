@@ -9,7 +9,7 @@ import {
   createRoom, updateRoom, deleteRoom as deleteRoomDB,
   createRoomSchedule, updateRoomSchedule, deleteRoomSchedule as deleteRoomScheduleDB,
   createStaff, updateStaff, deleteStaff as deleteStaffDB,
-  createQueue, updateQueue, deleteQueue as deleteQueueDB,
+  createQueue, updateQueue, updateQueueStatus as updateQueueStatusDB, deleteQueue as deleteQueueDB,
   getAllCategories, createCategory as createCategoryDB, deleteCategory as deleteCategoryDB,
   fetchTickets, createTicketDB, updateTicketDB, deleteTicketDB,
   createActivityLog, fetchActivityLogs,
@@ -477,10 +477,9 @@ export default function App() {
   const updateQueueStatus = useCallback(async (id, payload) => {
     if (payload.status === "rescheduled") {
       // คิวเดิม: เปลี่ยนแค่ status + statusNote ไม่แตะ date/timeBlock
-      await updateQueue(id, {
+      await updateQueueStatusDB(id, {
         status: "rescheduled",
         statusNote: payload.statusNote || "",
-        statusUpdatedAt: getTodayStr(),
       });
 
       // สร้างคิวใหม่ที่วันใหม่ สถานะ rescheduled_in
@@ -498,7 +497,7 @@ export default function App() {
         });
       }
     } else {
-      await updateQueue(id, { ...payload, statusUpdatedAt: getTodayStr() });
+      await updateQueueStatusDB(id, payload);
     }
 
     setModal(null);
