@@ -6,6 +6,7 @@ import { reconcileRealtimeQueue } from "../src/utils/realtimeQueueState.js";
 import { buildRescheduledQueue } from "../src/utils/rescheduleQueue.js";
 import { createSessionApi } from "../src/utils/sessionApi.js";
 import { filterQueuesForExport } from "../src/utils/exportFilters.js";
+import { buildQueueStatusUpdate } from "../src/utils/queueStatusUpdate.js";
 
 test("server-session login forwards only the login action and fails closed on server errors", async () => {
   const calls = [];
@@ -35,6 +36,23 @@ test("reschedule payload preserves the original queue data and never mutates it"
   assert.deepEqual(next, { recordedBy: "staff-1", name: "Customer", date: "2026-07-16", timeBlock: 156, branchId: "b1", status: "rescheduled_in", statusNote: "moved", createdAt: "2026-07-15" });
   assert.equal(original.status, "confirmed");
   assert.equal(buildRescheduledQueue(original, {}, "2026-07-15"), null);
+});
+
+test("a failed reschedule continuation cannot overwrite source booking fields", async () => {
+  const original = { id: "q1", name: "Customer", phone: "0812345678", date: "2026-07-15", timeBlock: 144, price: 1990, recordedBy: "staff-1" };
+  const sourceUpdate = buildQueueStatusUpdate({ status: "rescheduled", statusNote: "move" }, "2026-07-15T10:00:00.000Z");
+  assert.deepEqual(sourceUpdate, {
+    status: "rescheduled",
+    status_note: "move",
+    status_updated_at: "2026-07-15T10:00:00.000Z",
+  });
+
+  await assert.rejects(async () => {
+    const continuation = buildRescheduledQueue(original, { date: "2026-07-16" }, "2026-07-15");
+    assert.ok(continuation);
+    throw new Error("continuation write failed");
+  }, /continuation write failed/);
+  assert.deepEqual(original, { id: "q1", name: "Customer", phone: "0812345678", date: "2026-07-15", timeBlock: 144, price: 1990, recordedBy: "staff-1" });
 });
 
 test("realtime reconciliation deduplicates inserts, updates missed rows, and removes deletes", () => {
