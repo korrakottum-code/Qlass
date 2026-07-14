@@ -8,7 +8,7 @@ export default function PromoModal({ data, procedures, onSave, onClose }) {
   const [active, setActive] = useState(data?.active !== undefined ? data.active : true);
 
   function handleSave() {
-    if (name.trim()) onSave({ id: data?.id, name: name.trim(), procedureId, price, active });
+    if (name.trim()) return onSave({ id: data?.id, name: name.trim(), procedureId, price, active });
   }
 
   return (

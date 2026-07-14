@@ -84,10 +84,10 @@ export default function RoomModal({ data, branches, rooms, defaultBranchId, onSa
         openBlock,
         closeBlock,
       }));
-      onSave({ bulk: true, items: bulkData });
+      return onSave({ bulk: true, items: bulkData });
     } else {
       if (branchId && type) {
-        onSave({
+        return onSave({
           id: data?.id,
           name: autoName,
           branchId,

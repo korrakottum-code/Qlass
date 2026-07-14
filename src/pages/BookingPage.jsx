@@ -4,6 +4,7 @@ import { CUSTOMER_TYPES, ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK } from "..
 import { WORK_BLOCKS, blockToTime, getEmptyBookingForm, getTodayStr } from "../utils/helpers";
 import SmartParseBox from "../components/SmartParseBox";
 import HnLookup from "../components/HnLookup";
+import { useSubmissionLock } from "../hooks/useSubmissionLock";
 
 export default function BookingPage({
   form, setForm, editingQueueId, setEditingQueueId,
@@ -17,6 +18,8 @@ export default function BookingPage({
   const [qpPrice, setQpPrice] = useState("");
   const [qpProcedureId, setQpProcedureId] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const { isSaving: isBookingSaving, run: runBookingSubmit } = useSubmissionLock();
+  const { isSaving: isQuickPromoSaving, run: runQuickPromoSave } = useSubmissionLock();
   // Rooms for selected branch
   const branchRooms = useMemo(() => {
     if (!form.branchId) return [];
@@ -156,7 +159,7 @@ export default function BookingPage({
     return false;
   }, [form.timeBlock, activeDur, occupiedBlocks]);
 
-  function handleQuickPromoSave() {
+  async function handleQuickPromoSave() {
     const trimmed = qpName.trim();
     if (!trimmed) return;
     const duplicate = promos.find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
@@ -167,12 +170,21 @@ export default function BookingPage({
       setQpName(""); setQpPrice("");
       return;
     }
-    const newPromo = onQuickAddPromo({
-      name: trimmed,
-      procedureId: qpProcedureId || "",
-      price: parseInt(qpPrice) || 0,
-      active: true,
-    });
+    let newPromo;
+    try {
+      const submission = await runQuickPromoSave(() => onQuickAddPromo({
+        name: trimmed,
+        procedureId: qpProcedureId || "",
+        price: parseInt(qpPrice) || 0,
+        active: true,
+      }));
+      if (!submission.started) return;
+      newPromo = submission.result;
+    } catch (error) {
+      console.error("Quick promo save failed:", error);
+      showToast?.("error", "เพิ่มโปรไม่สำเร็จ ข้อมูลยังอยู่ครบ กรุณาลองอีกครั้ง");
+      return;
+    }
     if (newPromo) {
       // ถ้า procedureId ใน form ยังว่าง ให้เลือกด้วย
       setForm((f) => ({
@@ -396,9 +408,9 @@ export default function BookingPage({
                     <button
                       className="btn btn-primary btn-sm"
                       onClick={handleQuickPromoSave}
-                      disabled={!qpName.trim()}
+                      disabled={!qpName.trim() || isQuickPromoSaving}
                     >
-                      บันทึก
+                      {isQuickPromoSaving ? "กำลังบันทึก..." : "บันทึก"}
                     </button>
                   </div>
                   {/* ตรวจโปรซ้ำ live */}
@@ -540,8 +552,8 @@ export default function BookingPage({
                 </span>
               </span>
             )}
-            <button className="btn btn-secondary" onClick={handleClear}>ล้างฟอร์ม</button>
-            <button className="btn btn-primary" onClick={() => setConfirmOpen(true)}>
+            <button className="btn btn-secondary" onClick={handleClear} disabled={isBookingSaving}>ล้างฟอร์ม</button>
+            <button className="btn btn-primary" onClick={() => setConfirmOpen(true)} disabled={isBookingSaving}>
               {editingQueueId ? "💾 บันทึกการแก้ไข" : "✅ บันทึกคิว"}
             </button>
           </div>
@@ -586,9 +598,16 @@ export default function BookingPage({
                 ))}
               </div>
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                <button className="btn btn-secondary" onClick={() => setConfirmOpen(false)}>แก้ไข</button>
-                <button className="btn btn-primary" onClick={() => { setConfirmOpen(false); onSubmit(); }}>
-                  {editingQueueId ? "💾 ยืนยันแก้ไข" : "✅ ยืนยันบันทึก"}
+                <button className="btn btn-secondary" onClick={() => setConfirmOpen(false)} disabled={isBookingSaving}>แก้ไข</button>
+                <button
+                  className="btn btn-primary"
+                  disabled={isBookingSaving}
+                  onClick={async () => {
+                    const submission = await runBookingSubmit(() => onSubmit());
+                    if (submission.started && submission.result) setConfirmOpen(false);
+                  }}
+                >
+                  {isBookingSaving ? "กำลังบันทึก..." : editingQueueId ? "💾 ยืนยันแก้ไข" : "✅ ยืนยันบันทึก"}
                 </button>
               </div>
             </div>

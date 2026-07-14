@@ -237,7 +237,7 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
     if (selectedRoomIds.length === 0) return;
     if (generatedDates.length === 0 && !isEdit) return;
     const isClosedAllDay = !noteOnly && !available;
-    onSave({
+    return onSave({
       id: data?.id,
       roomIds: selectedRoomIds,
       dates: isEdit ? [date] : generatedDates,
@@ -522,17 +522,12 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
           </div>
         </div>
       </ModalBody>
-      <div className="modal-footer">
-        <button className="btn btn-secondary" onClick={onClose}>ยกเลิก</button>
-        <button
-          className="btn btn-primary"
-          onClick={handleSave}
-          disabled={selectedRoomIds.length === 0 || (!isEdit && generatedDates.length === 0)}
-          style={{ opacity: (selectedRoomIds.length === 0 || (!isEdit && generatedDates.length === 0)) ? 0.5 : 1 }}
-        >
-          💾 บันทึก {!isEdit && generatedDates.length > 1 ? `(${generatedDates.length} วัน × ${selectedRoomIds.length} ห้อง = ${generatedDates.length * selectedRoomIds.length} รายการ)` : selectedRoomIds.length > 1 ? `(${selectedRoomIds.length} ห้อง)` : ""}
-        </button>
-      </div>
+      <ModalFooter
+        onClose={onClose}
+        onSave={handleSave}
+        disabled={selectedRoomIds.length === 0 || (!isEdit && generatedDates.length === 0)}
+        saveLabel={`💾 บันทึก ${!isEdit && generatedDates.length > 1 ? `(${generatedDates.length} วัน × ${selectedRoomIds.length} ห้อง = ${generatedDates.length * selectedRoomIds.length} รายการ)` : selectedRoomIds.length > 1 ? `(${selectedRoomIds.length} ห้อง)` : ""}`}
+      />
     </>
   );
 }

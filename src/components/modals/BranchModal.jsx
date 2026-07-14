@@ -5,7 +5,7 @@ export default function BranchModal({ data, onSave, onClose }) {
   const [name, setName] = useState(data?.name || "");
 
   function handleSave() {
-    if (name.trim()) onSave({ id: data?.id, name: name.trim() });
+    if (name.trim()) return onSave({ id: data?.id, name: name.trim() });
   }
 
   return (

@@ -35,7 +35,7 @@ export default function StaffModal({ data, branches, onSave, onClose }) {
       alert("กรุณาเลือกสาขาประจำ");
       return;
     }
-    onSave({
+    return onSave({
       id: data?.id,
       name: name.trim(),
       nickname: nickname.trim(),

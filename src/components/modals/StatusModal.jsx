@@ -60,7 +60,7 @@ export default function StatusModal({ queue, procedures, queues = [], onSave, on
       }
       setConflictError("");
     }
-    onSave(queue.id, payload);
+    return onSave(queue.id, payload);
   }
 
   const current = QUEUE_STATUSES.find((s) => s.value === currentStatus);

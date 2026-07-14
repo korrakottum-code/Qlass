@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { useSubmissionLock } from "../hooks/useSubmissionLock";
+
 export default function Modal({ children, onClose }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -22,10 +25,28 @@ export function ModalBody({ children }) {
 }
 
 export function ModalFooter({ onClose, onSave, saveLabel = "💾 บันทึก", disabled = false }) {
+  const { isSaving, run } = useSubmissionLock();
+  const [saveError, setSaveError] = useState("");
+
+  async function handleSave() {
+    setSaveError("");
+    await run(async () => {
+      try {
+        await onSave();
+      } catch (error) {
+        console.error("Modal save failed:", error);
+        setSaveError("บันทึกไม่สำเร็จ ข้อมูลยังอยู่ครบ กรุณาลองอีกครั้ง");
+      }
+    });
+  }
+
   return (
     <div className="modal-footer">
       <button className="btn btn-secondary" onClick={onClose}>ยกเลิก</button>
-      <button className="btn btn-primary" onClick={onSave} disabled={disabled}>{saveLabel}</button>
+      {saveError && <span style={{ color: "var(--red)", fontSize: 12, marginRight: "auto" }}>{saveError}</span>}
+      <button className="btn btn-primary" onClick={handleSave} disabled={disabled || isSaving}>
+        {isSaving ? "กำลังบันทึก..." : saveLabel}
+      </button>
     </div>
   );
 }

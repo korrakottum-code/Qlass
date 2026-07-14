@@ -394,9 +394,10 @@ export default function App() {
       let freshRoomQueues = [];
       try {
         freshRoomQueues = await fetchQueuesForRoomDate(form.roomId, form.date);
-      } catch {
-        // fallback ใช้ state ถ้า DB ล้มเหลว
-        freshRoomQueues = queues.filter(q => q.roomId === form.roomId && q.date === form.date);
+      } catch (error) {
+        console.error("Fresh room conflict check failed:", error);
+        showToast("error", "ตรวจสอบเวลาห้องไม่สำเร็จ ข้อมูลยังไม่ถูกบันทึก กรุณาลองอีกครั้ง");
+        return false;
       }
 
       const conflict = freshRoomQueues.find((q) => {
@@ -417,33 +418,40 @@ export default function App() {
       }
     }
 
-    if (editingQueueId) {
-      await updateQueue(editingQueueId, form);
-      showToast("success", "แก้ไขคิวเรียบร้อย");
-      setEditingQueueId(null);
-    } else {
-      const newQueue = await createQueue({
-        ...form,
-        createdAt: getTodayStr(),
-        recordedBy: currentUser?.id || null,
-      });
-      // อัปเดต state ทันที ไม่รอ Realtime (ป้องกันคิวไม่ขึ้นถ้า Realtime ช้า)
-      if (newQueue) {
-        setQueues((prev) => prev.some((q) => q.id === newQueue.id) ? prev : [...prev, newQueue]);
+    try {
+      if (editingQueueId) {
+        await updateQueue(editingQueueId, form);
+        showToast("success", "แก้ไขคิวเรียบร้อย");
+        setEditingQueueId(null);
+      } else {
+        const newQueue = await createQueue({
+          ...form,
+          createdAt: getTodayStr(),
+          recordedBy: currentUser?.id || null,
+        });
+        // อัปเดต state ทันที ไม่รอ Realtime (ป้องกันคิวไม่ขึ้นถ้า Realtime ช้า)
+        if (newQueue) {
+          setQueues((prev) => prev.some((q) => q.id === newQueue.id) ? prev : [...prev, newQueue]);
+        }
+        showToast("success", "บันทึกคิวเรียบร้อย ✓");
       }
-      showToast("success", "บันทึกคิวเรียบร้อย ✓");
-    }
 
-    if (lastParseSnapshot) {
-      const updated = learnFromCorrection(
-        parseHints, lastParseSnapshot.rawText,
-        lastParseSnapshot.fields, form,
-        { branches, procedures, promos, rooms }
-      );
-      setParseHints(updated);
-      setLastParseSnapshot(null);
+      if (lastParseSnapshot) {
+        const updated = learnFromCorrection(
+          parseHints, lastParseSnapshot.rawText,
+          lastParseSnapshot.fields, form,
+          { branches, procedures, promos, rooms }
+        );
+        setParseHints(updated);
+        setLastParseSnapshot(null);
+      }
+      setForm(getEmptyBookingForm());
+      return true;
+    } catch (error) {
+      console.error("Booking save failed:", error);
+      showToast("error", "บันทึกคิวไม่สำเร็จ ข้อมูลในฟอร์มยังอยู่ครบ กรุณาลองอีกครั้ง");
+      return false;
     }
-    setForm(getEmptyBookingForm());
   }, [form, editingQueueId, showToast, queues, procedures, parseHints, lastParseSnapshot, branches, promos, rooms, currentUser]);
 
   const editQueue = useCallback((q) => {
@@ -749,14 +757,16 @@ export default function App() {
   }, [staff]);
 
   // ═══════ TICKET ACTIONS ═══════
-  const createTicket = useCallback(async (ticketData, images) => {
+  const createTicket = useCallback(async (ticketData, _images) => {
     try {
       const newTicket = await createTicketDB(ticketData);
       setTickets(prev => [newTicket, ...prev]);
       showToast("success", "ส่งคำร้องเรียบร้อย");
+      return true;
     } catch (err) {
       console.error("Create ticket error:", err);
-      showToast("error", "ไม่สามารถสร้างคำร้องได้");
+      showToast("error", "ไม่สามารถสร้างคำร้องได้ ข้อมูลในฟอร์มยังอยู่ครบ กรุณาลองอีกครั้ง");
+      return false;
     }
   }, [showToast]);
 
@@ -765,9 +775,11 @@ export default function App() {
       const updated = await updateTicketDB(id, updates);
       setTickets(prev => prev.map(t => t.id === id ? updated : t));
       showToast("success", "อัปเดตสถานะแล้ว");
+      return true;
     } catch (err) {
       console.error("Update ticket error:", err);
       showToast("error", "ไม่สามารถอัปเดตได้");
+      return false;
     }
   }, [showToast]);
 
@@ -776,9 +788,11 @@ export default function App() {
       await deleteTicketDB(id);
       setTickets(prev => prev.filter(t => t.id !== id));
       showToast("success", "ลบคำร้องแล้ว");
+      return true;
     } catch (err) {
       console.error("Delete ticket error:", err);
       showToast("error", "ไม่สามารถลบได้");
+      return false;
     }
   }, [showToast]);
 
@@ -992,8 +1006,10 @@ export default function App() {
                     let freshRoomQueues = [];
                     try {
                       freshRoomQueues = await fetchQueuesForRoomDate(bookingForm.roomId, bookingForm.date);
-                    } catch {
-                      freshRoomQueues = queues.filter(q => q.roomId === bookingForm.roomId && q.date === bookingForm.date);
+                    } catch (error) {
+                      console.error("Timeline fresh room conflict check failed:", error);
+                      showToast("error", "ตรวจสอบเวลาห้องไม่สำเร็จ ข้อมูลยังไม่ถูกบันทึก กรุณาลองอีกครั้ง");
+                      return false;
                     }
 
                     const conflict = freshRoomQueues.find((q) => {
@@ -1009,13 +1025,19 @@ export default function App() {
                       return false;
                     }
                   }
-                  // บันทึกลง Supabase และอัปเดต state ทันที ไม่รอ Realtime
-                  const newQueue = await createQueue({ ...bookingForm, recordedBy: currentUser?.id || null });
-                  if (newQueue) {
-                    setQueues((prev) => prev.some((q) => q.id === newQueue.id) ? prev : [...prev, newQueue]);
+                  try {
+                    // บันทึกลง Supabase และอัปเดต state ทันที ไม่รอ Realtime
+                    const newQueue = await createQueue({ ...bookingForm, recordedBy: currentUser?.id || null });
+                    if (newQueue) {
+                      setQueues((prev) => prev.some((q) => q.id === newQueue.id) ? prev : [...prev, newQueue]);
+                    }
+                    showToast("success", "บันทึกคิวเรียบร้อย ✓");
+                    return true;
+                  } catch (error) {
+                    console.error("Timeline booking save failed:", error);
+                    showToast("error", "บันทึกคิวไม่สำเร็จ ข้อมูลในฟอร์มยังอยู่ครบ กรุณาลองอีกครั้ง");
+                    return false;
                   }
-                  showToast("success", "บันทึกคิวเรียบร้อย ✓");
-                  return true;
                 }}
                 onEditQueue={(q) => { editQueue(q); }}
               />

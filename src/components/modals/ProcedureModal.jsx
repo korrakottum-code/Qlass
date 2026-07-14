@@ -10,7 +10,7 @@ export default function ProcedureModal({ data, categories = [], onSave, onClose 
 
   function handleSave() {
     if (name.trim() && category) {
-      onSave({ id: data?.id, name: name.trim(), blocks, category, roomType });
+      return onSave({ id: data?.id, name: name.trim(), blocks, category, roomType });
     }
   }
 
