@@ -20,6 +20,8 @@ import { learnFromCorrection } from "./utils/smartParser";
 import { checkFreshRoomBookingConflict } from "./utils/bookingConflict";
 import { fetchAuthenticatedStaff, fetchLoginDirectory, loginWithPin, restoreServerSession, revokeServerSession, useServerSession } from "./utils/sessionAuth";
 import { recordClientDiagnostic } from "./utils/clientDiagnostics";
+import { reconcileRealtimeQueue } from "./utils/realtimeQueueState";
+import { buildRescheduledQueue } from "./utils/rescheduleQueue";
 
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
@@ -196,25 +198,18 @@ export default function App() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "queues" }, (payload) => {
         try {
           const newQueue = mapQueueRow(payload.new);
-          setQueues((prev) => {
-            if (prev.some((q) => q.id === newQueue.id)) return prev;
-            return [...prev, newQueue];
-          });
+          setQueues((prev) => reconcileRealtimeQueue(prev, "INSERT", newQueue));
         } catch (e) { console.error("realtime INSERT error", e); }
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "queues" }, (payload) => {
         try {
           const updated = mapQueueRow(payload.new);
-          setQueues((prev) => {
-            const exists = prev.some((q) => q.id === updated.id);
-            if (!exists) return [...prev, updated];
-            return prev.map((q) => q.id === updated.id ? updated : q);
-          });
+          setQueues((prev) => reconcileRealtimeQueue(prev, "UPDATE", updated));
         } catch (e) { console.error("realtime UPDATE error", e); }
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "queues" }, (payload) => {
         try {
-          setQueues((prev) => prev.filter((q) => q.id !== payload.old.id));
+          setQueues((prev) => reconcileRealtimeQueue(prev, "DELETE", payload.old));
         } catch (e) { console.error("realtime DELETE error", e); }
       })
       .subscribe((status) => {
@@ -499,18 +494,8 @@ export default function App() {
 
       // สร้างคิวใหม่ที่วันใหม่ สถานะ rescheduled_in
       const orig = queues.find((q) => q.id === id);
-      if (orig && (payload.date || payload.timeBlock !== undefined)) {
-        const { id: _id, createdAt: _ca, status: _st, statusNote: _sn, statusUpdatedAt: _su, ...rest } = orig;
-        await createQueue({
-          ...rest,
-          date: payload.date || orig.date,
-          timeBlock: payload.timeBlock !== undefined ? payload.timeBlock : orig.timeBlock,
-          status: "rescheduled_in",
-          statusNote: payload.statusNote || "",
-          createdAt: getTodayStr(),
-          // คงชื่อคนบันทึกเดิมไว้ (จาก ...rest) เพื่อให้คอมมิชชั่นไปถึงแอดมินคนแรก
-        });
-      }
+      const rescheduledQueue = buildRescheduledQueue(orig, payload, getTodayStr());
+      if (rescheduledQueue) await createQueue(rescheduledQueue);
     } else {
       await updateQueueStatusDB(id, payload);
     }

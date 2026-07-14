@@ -1,6 +1,7 @@
 import { supabase } from "./supabaseClient";
 import { getServerSessionToken } from "./sessionAuth";
 import { buildQueueStatusUpdate } from "./queueStatusUpdate";
+import { lookupHnCustomers } from "./hnLookup";
 
 // ═══════════════════════════════════════════════════════════
 // BRANCHES
@@ -945,35 +946,11 @@ export async function fetchAllHnCustomers() {
 }
 
 export async function searchHnCustomers(query) {
-  if (!query || query.trim().length < 2) return [];
-  const q = query.trim();
-  const requestedFunction = import.meta.env.VITE_HN_LOOKUP_FUNCTION || "search-hn";
-  const lookupFunction = ["search-hn", "search-hn-recovery"].includes(requestedFunction)
-    ? requestedFunction
-    : "search-hn";
-
-  // HN data must only travel through an authenticated server function. The
-  // recovery function is a separately deployed, known-good server route that
-  // can be selected by a Vercel environment change and redeploy if needed.
-  try {
-    const { data, error } = await supabase.functions.invoke(lookupFunction, {
-      body: { q },
-      headers: { "X-Qlass-Session": getServerSessionToken() },
-    });
-    if (!error && data?.data) {
-      return data.data.map((c) => ({
-        hnId: c.hnId,
-        firstname: c.firstname || "",
-        lastname: c.lastname || "",
-        nickname: c.nickname || "",
-        telephone: c.telephone || "",
-        birthdate: c.birthdate || "",
-        source: data.source || "proclinic",
-        cookiesExpired: data.cookiesExpired || false,
-      }));
-    }
-  } catch {
-    // Keep HN data server-only even when a lookup function is unavailable.
-  }
-  return [];
+  // HN data must only travel through an authenticated server function.
+  return lookupHnCustomers({
+    query,
+    requestedFunction: import.meta.env.VITE_HN_LOOKUP_FUNCTION || "search-hn",
+    token: getServerSessionToken(),
+    invoke: (name, options) => supabase.functions.invoke(name, options),
+  });
 }

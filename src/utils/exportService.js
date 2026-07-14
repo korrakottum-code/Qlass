@@ -1,4 +1,5 @@
 import { formatThaiDate, blockToTime } from "./helpers";
+import { filterQueuesForExport } from "./exportFilters";
 import * as XLSX from "xlsx";
 
 // ═══════════════════════════════════════════════════════════
@@ -71,13 +72,7 @@ function downloadXLSX(filename, rows, { numericCols = [], currencyCols = [] } = 
 // ═══════════════════════════════════════════════════════════
 
 export function exportCommissionData(queues, staff, branches, procedures, promos, startDate, endDate, branchId = "all") {
-  const filteredQueues = queues.filter(q => {
-    if (!q.date) return false;
-    if (startDate && q.date < startDate) return false;
-    if (endDate && q.date > endDate) return false;
-    if (branchId !== "all" && q.branchId !== branchId) return false;
-    return q.status === "done";
-  });
+  const filteredQueues = filterQueuesForExport(queues, { startDate, endDate, branchId, onlyDone: true });
 
   const rows = [
     ["วันที่", "ชื่อลูกค้า", "เบอร์โทร", "สาขา", "หัตถการ", "โปร/แพ็กเกจ", "ประเภทลูกค้า", "ราคา (฿)", "พนักงานบันทึก", "ค่าคอม (฿)"]
@@ -119,13 +114,7 @@ export function exportCommissionData(queues, staff, branches, procedures, promos
 // ═══════════════════════════════════════════════════════════
 
 export function exportCommissionSummary(queues, staff, branches, startDate, endDate, branchId = "all") {
-  const filteredQueues = queues.filter(q => {
-    if (!q.date) return false;
-    if (startDate && q.date < startDate) return false;
-    if (endDate && q.date > endDate) return false;
-    if (branchId !== "all" && q.branchId !== branchId) return false;
-    return q.status === "done";
-  });
+  const filteredQueues = filterQueuesForExport(queues, { startDate, endDate, branchId, onlyDone: true });
 
   const rows = [
     ["พนักงาน", "สาขา", "ลูกค้าใหม่ (คิว)", "ลูกค้าเก่า (คิว)", "ใช้คอร์ส (คิว)", "รวมคิว", "ค่าคอมลูกค้าใหม่ (฿)", "ค่าคอมลูกค้าเก่า (฿)", "ค่าคอมคอร์ส (฿)", "รวมค่าคอม (฿)"]
@@ -171,14 +160,7 @@ export function exportCommissionSummary(queues, staff, branches, startDate, endD
 // ═══════════════════════════════════════════════════════════
 
 export function exportQueueData(queues, branches, rooms, procedures, promos, staff, startDate, endDate, branchId = "all") {
-  const filteredQueues = queues.filter(q => {
-    if (!q.date) return false;
-    if (startDate && q.date < startDate) return false;
-    if (endDate && q.date > endDate) return false;
-    if (branchId !== "all" && q.branchId !== branchId) return false;
-    if (q.customerType === "course") return false; // ไม่รวมใช้คอร์ส
-    return true;
-  });
+  const filteredQueues = filterQueuesForExport(queues, { startDate, endDate, branchId, includeCourse: false });
 
   const rows = [
     ["วันที่", "เวลา", "ชื่อลูกค้า", "เบอร์โทร", "สาขา", "ห้อง", "หัตถการ", "โปร/แพ็กเกจ", "ประเภทลูกค้า", "ราคา (฿)", "สถานะ", "หมายเหตุ", "พนักงานบันทึก"]
