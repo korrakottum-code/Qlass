@@ -222,9 +222,11 @@ rm -f "$SECRET_ENV_FILE"
 
 echo "7/7 ตรวจยืนยันชื่อ Secret ทั้งสองระบบ..."
 if [ "$DRY_RUN" != "1" ]; then
-  supabase secrets list --project-ref "$PROJECT_REF" --output-format json | grep -q "$SECRET_NAME" \
+  # Do not use grep -q with pipefail here. grep -q exits as soon as it finds a
+  # match, which can give the CLI process SIGPIPE and falsely fail the pipeline.
+  supabase secrets list --project-ref "$PROJECT_REF" --output-format json | grep "$SECRET_NAME" >/dev/null \
     || fail "ไม่พบ Secret หลังอัปเดต Supabase"
-  gh secret list --repo "$REPO" --app actions | grep -q "^${SECRET_NAME}" \
+  gh secret list --repo "$REPO" --app actions | grep "^${SECRET_NAME}" >/dev/null \
     || fail "ไม่พบ Secret หลังอัปเดต GitHub"
 fi
 
