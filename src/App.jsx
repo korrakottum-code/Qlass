@@ -17,6 +17,7 @@ import {
 } from "./utils/supabaseService";
 import { supabase } from "./utils/supabaseClient";
 import { learnFromCorrection } from "./utils/smartParser";
+import { checkFreshRoomBookingConflict } from "./utils/bookingConflict";
 import { fetchAuthenticatedStaff, fetchLoginDirectory, loginWithPin, restoreServerSession, revokeServerSession, useServerSession } from "./utils/sessionAuth";
 
 import Sidebar from "./components/Sidebar";
@@ -387,28 +388,23 @@ export default function App() {
     if (form.timeBlock !== null && form.roomId && form.procedureId) {
       const proc = procedures.find((p) => p.id === form.procedureId);
       const dur = form.durationBlocks ?? proc?.blocks ?? 0;
-      const startA = form.timeBlock;
-      const endA = startA + dur;
-
       // ดึงคิวห้องนี้ วันนี้ จาก DB สด ไม่ใช้ state (กัน 2 คนจองห้องเดียวกันพร้อมกัน)
-      let freshRoomQueues = [];
-      try {
-        freshRoomQueues = await fetchQueuesForRoomDate(form.roomId, form.date);
-      } catch (error) {
-        console.error("Fresh room conflict check failed:", error);
+      const roomCheck = await checkFreshRoomBookingConflict({
+        fetchQueues: fetchQueuesForRoomDate,
+        roomId: form.roomId,
+        date: form.date,
+        procedures,
+        startBlock: form.timeBlock,
+        durationBlocks: dur,
+        excludeQueueId: editingQueueId,
+      });
+      if (!roomCheck.ok) {
+        console.error("Fresh room conflict check failed:", roomCheck.error);
         showToast("error", "ตรวจสอบเวลาห้องไม่สำเร็จ ข้อมูลยังไม่ถูกบันทึก กรุณาลองอีกครั้ง");
         return false;
       }
 
-      const conflict = freshRoomQueues.find((q) => {
-        if (q.id === editingQueueId) return false;
-        if (q.timeBlock === null) return false;
-        const qProc = procedures.find((p) => p.id === q.procedureId);
-        const qDur = q.durationBlocks ?? qProc?.blocks ?? 1;
-        const startB = q.timeBlock;
-        const endB = startB + qDur;
-        return startA < endB && startB < endA;
-      });
+      const conflict = roomCheck.conflict;
 
       if (conflict) {
         const cProc = procedures.find(p => p.id === conflict.procedureId);
@@ -1003,21 +999,21 @@ export default function App() {
                     const dur = bookingForm.durationBlocks ?? proc?.blocks ?? 0;
 
                     // ดึงคิวห้องนี้ วันนี้ จาก DB สด
-                    let freshRoomQueues = [];
-                    try {
-                      freshRoomQueues = await fetchQueuesForRoomDate(bookingForm.roomId, bookingForm.date);
-                    } catch (error) {
-                      console.error("Timeline fresh room conflict check failed:", error);
+                    const roomCheck = await checkFreshRoomBookingConflict({
+                      fetchQueues: fetchQueuesForRoomDate,
+                      roomId: bookingForm.roomId,
+                      date: bookingForm.date,
+                      procedures,
+                      startBlock: bookingForm.timeBlock,
+                      durationBlocks: dur,
+                    });
+                    if (!roomCheck.ok) {
+                      console.error("Timeline fresh room conflict check failed:", roomCheck.error);
                       showToast("error", "ตรวจสอบเวลาห้องไม่สำเร็จ ข้อมูลยังไม่ถูกบันทึก กรุณาลองอีกครั้ง");
                       return false;
                     }
 
-                    const conflict = freshRoomQueues.find((q) => {
-                      if (q.timeBlock === null) return false;
-                      const qProc = procedures.find((p) => p.id === q.procedureId);
-                      const qDur = q.durationBlocks ?? qProc?.blocks ?? 1;
-                      return bookingForm.timeBlock < q.timeBlock + qDur && q.timeBlock < bookingForm.timeBlock + dur;
-                    });
+                    const conflict = roomCheck.conflict;
                     if (conflict) {
                       const cProc = procedures.find((p) => p.id === conflict.procedureId);
                       const cDur = conflict.durationBlocks ?? cProc?.blocks ?? 0;
