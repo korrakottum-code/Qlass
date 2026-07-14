@@ -2,6 +2,18 @@
 
 ดึงข้อมูลลูกค้า (HN) จากระบบ Pro Clinic แล้ว sync เข้า Supabase table `hn_customers` อัตโนมัติ
 
+## รีเฟรช Cookie แบบดับเบิลคลิก (แนะนำ)
+
+ใช้ `refresh_hn_cookies.command` บน Mac ที่เชื่อถือได้ ไฟล์จะทำงานครบในครั้งเดียว:
+
+1. ดึงและทดสอบ Pro Clinic Cookie จาก Chrome
+2. อัปเดต `PROCLINIC_COOKIES_B64` ใน Supabase โปรเจกต์ production สำหรับ HN realtime
+3. อัปเดต Secret ชื่อเดียวกันใน GitHub Actions สำหรับ HN Daily/Full Sync
+4. ตรวจยืนยันว่า Secret มีอยู่ในทั้งสองระบบ
+
+ครั้งแรกอาจมีหน้าต่างให้ Login GitHub และ Supabase หลังจากนั้นดับเบิลคลิกครั้งเดียวได้เลย
+ห้ามส่ง `cookies.json` หรือค่า Base64 ให้บุคคลอื่น
+
 ## Setup
 
 ### 1. สร้าง table ใน Supabase
