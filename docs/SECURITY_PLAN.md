@@ -74,10 +74,41 @@ hundreds of people, so every change must preserve existing data and behaviour.
 - Rollback is credentials-only: re-enable legacy keys and restore the previous
   Vercel deployment. It does not modify application data.
 
+### Goal 8 - production integrity baseline
+
+- Completed the read-only production baseline in PR #100.
+- Recorded schema/data integrity candidates and control totals without changing
+  production rows. The baseline remains the evidence source for later schema,
+  RLS, and data-reconciliation Goals.
+
+### Goal 9 - status-only queue updates
+
+- Completed in PR #101.
+- Status changes now send only status fields and preserve price, duration, and
+  other booking fields. Production verification included a real status-only
+  update and before/after queue checks.
+
+### Goal 10 - duplicate-submission and failed-draft protection
+
+- Completed in PR #102.
+- Added per-action submission guards, preserved failed form drafts, and made
+  stale conflict data fail closed rather than creating an unsafe booking.
+
+### Goal 11A-11C - critical-flow protection and safe diagnostics foundation
+
+- Completed across PRs #103, #104, and #105.
+- Added critical-flow regression coverage and CI for login, queue preservation,
+  retries, conflicts, Realtime reconciliation, authorization, HN denial, and
+  export filtering using fixtures only.
+- Added bounded client-only diagnostics with a release identifier. They retain
+  no business data and do not send telemetry remotely.
+- The remaining server telemetry and controlled-refresh portion is retained as
+  Goal 11D below; it is deliberately not treated as complete.
+
 ## Maintenance completed after Goal 7
 
 These releases were necessary production fixes or operational follow-ups. They
-do not change the canonical Goal order or mark a later Goal complete:
+do not change the canonical order of the remaining Goals:
 
 - PR #96 corrected staff branch-scope selection. This was a production bug fix
   outside the numbered security sequence.
@@ -89,8 +120,9 @@ do not change the canonical Goal order or mark a later Goal complete:
   completed HN controls from Goals 4-6 operable, but it is not the recurring
   recovery and incident drill required by Goal 38.
 
-The next executable Goal remains Goal 8. No later Goal may be marked complete
-from these maintenance releases alone.
+The next executable work is the non-production rehearsal gate for Goal 12. No
+production schema change may begin until that rehearsal has passed and its
+results are attached to the Goal 12 pull request.
 
 ## Remaining Goals
 
@@ -99,6 +131,9 @@ may be split further before implementation if its review shows more than one
 independent production risk.
 
 ### Goal 8 - freeze a complete production integrity baseline (read-only)
+
+Status: **completed in PR #100**. Retained below as the baseline contract for
+later Goals.
 
 Scope:
 
@@ -124,6 +159,9 @@ queries if latency or database load rises.
 
 ### Goal 9 - make queue status updates status-only
 
+Status: **completed in PR #101**. Retained below as the regression contract for
+later queue APIs.
+
 Scope:
 
 - Add a dedicated service method that sends only `status`, `status_note`, and
@@ -147,6 +185,9 @@ is restored.
 
 ### Goal 10 - prevent duplicate submissions and preserve failed drafts
 
+Status: **completed in PR #102**. Retained below as the regression contract for
+all later write paths.
+
 Scope:
 
 - Add per-action saving state to booking, status, master-data, schedule, and
@@ -169,27 +210,51 @@ Rollback: previous frontend deployment. No database rollback.
 
 ### Goal 11 - add release observability and critical-flow CI
 
+Status: **partially completed**. Goals 11A-11C were completed in PRs #103,
+#104, and #105. Only Goal 11D remains: a separately reviewed server telemetry
+sink and controlled-refresh mechanism that cannot expose PII, session tokens,
+or secrets.
+
 Scope:
 
-- Add a release/client version to diagnostic events and a controlled-refresh
-  banner for incompatible old tabs.
-- Capture sanitized frontend errors, unhandled rejections, write outcomes,
-  Realtime disconnect/reconnect, load completeness, and latency.
+- Retain the release/client version and bounded client-only diagnostics already
+  shipped in Goal 11B. Do not transmit those events until Goal 11D supplies an
+  approved server-side sink with explicit redaction and retention rules.
+- In Goal 11D, add a controlled-refresh banner for incompatible old tabs and
+  capture only sanitized frontend errors, write outcomes, Realtime
+  reconnects, load completeness, and latency.
 - Add automated tests for login, status preservation, booking conflict, retry,
   reschedule failure, Realtime reconciliation, role denial, HN denial, and
   export completeness. Tests must use fixtures/clone data, never production
   writes.
 - Establish alert/rollback thresholds before later database cutovers.
 
-Production impact: small telemetry overhead; no business-data change.
+Production impact: Goals 11A-11C have no business-data change. Goal 11D may add
+small telemetry overhead, but must remain off by default until a clone/preview
+review confirms redaction and retention behaviour.
 
-Acceptance gate: events contain no PIN/PII/secrets; CI blocks known regressions;
-version and error dashboards can distinguish old and new clients.
+Acceptance gate: CI blocks known regressions (completed); Goal 11D events must
+contain no PIN/PII/secrets, and the version/error dashboard must distinguish
+old and new clients without logging business payloads.
 
 Rollback: disable telemetry/refresh flag or restore previous frontend. Keep CI
 tests even if runtime telemetry is disabled.
 
 ### Goal 12 - add queue concurrency and audit foundations
+
+Status: **next**. Phase A is a restore-clone-only rehearsal; no production
+schema migration, trigger, index, or audit write is authorized until Phase A
+passes.
+
+Phase A rehearsal gate:
+
+- Apply the proposed additive migration only on the restore project.
+- Measure migration duration, lock behaviour, query plans, write overhead, and
+  before/after control totals.
+- Prove the current production artifact operates against the expanded clone
+  schema without lost queue fields or changed booking behaviour.
+- Prepare an explicit stop/rollback runbook that disables new logic but never
+  drops additive columns or audit evidence.
 
 Scope:
 
