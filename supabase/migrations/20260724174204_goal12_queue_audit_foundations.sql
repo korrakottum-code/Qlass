@@ -4,6 +4,13 @@
 -- data, rewrite existing rows, change existing queue permissions, or route any
 -- application traffic to a new API. It was first rehearsed on the isolated
 -- restore project before any production decision.
+--
+-- This migration is expected to run as one transaction. These limits make it
+-- fail closed during production rollout rather than wait behind a long-running
+-- queue request. A timeout rolls the entire transaction back; it never leaves
+-- a partially-added set of columns or a partially-installed trigger.
+set local lock_timeout = '5s';
+set local statement_timeout = '60s';
 
 alter table public.queues
   add column if not exists updated_at timestamptz,
