@@ -18,6 +18,9 @@ export function createSessionApi(invoke) {
     loginWithPin(staffId, pin) {
       return callSessionFunction({ action: "login", staffId, pin });
     },
+    createQueueV1(token, requestId, queue) {
+      return callSessionFunction({ action: "create_queue_v1", token, requestId, queue });
+    },
     restoreServerSession(token) {
       return callSessionFunction({ action: "session", token });
     },
