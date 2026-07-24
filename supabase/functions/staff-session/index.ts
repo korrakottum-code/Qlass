@@ -7,6 +7,9 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("QLASS_SUPABASE_SECRET_KEY")
   ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const allowedOrigin = Deno.env.get("QLASS_ALLOWED_ORIGIN") ?? "";
+const observabilityEnabled = Deno.env.get("QLASS_OBSERVABILITY_ENABLED") === "true";
+const controlledRefreshEnabled = Deno.env.get("QLASS_CONTROLLED_REFRESH_ENABLED") === "true";
+const requiredClientRelease = Deno.env.get("QLASS_REQUIRED_CLIENT_RELEASE") ?? "";
 const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
@@ -58,6 +61,34 @@ const queueCreateErrors = new Set([
   "procedure_required", "invalid_promo", "invalid_time", "room_closed", "room_conflict",
   "request_id_forbidden", "invalid_session", "forbidden",
 ]);
+const diagnosticEventNames = new Set([
+  "client_error", "initial_load", "realtime_status", "render_error", "write_outcome",
+]);
+const diagnosticOutcomes = new Set(["started", "succeeded", "failed"]);
+const diagnosticStages = new Set(["staff", "core", "history"]);
+const diagnosticRealtimeStatuses = new Set(["SUBSCRIBED", "TIMED_OUT", "CLOSED", "CHANNEL_ERROR"]);
+
+function validRelease(value: unknown) {
+  return typeof value === "string" && /^[A-Za-z0-9._-]{1,128}$/.test(value);
+}
+
+function sanitizeDiagnostic(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const event = value as Record<string, unknown>;
+  if (!diagnosticEventNames.has(String(event.name)) || !validRelease(event.release)) return null;
+
+  const safe: Record<string, unknown> = {
+    release_id: event.release,
+    event_name: event.name,
+  };
+  if (diagnosticOutcomes.has(String(event.outcome))) safe.outcome = event.outcome;
+  if (diagnosticStages.has(String(event.stage))) safe.stage = event.stage;
+  if (diagnosticRealtimeStatuses.has(String(event.status))) safe.realtime_status = event.status;
+  if (Number.isInteger(event.durationMs) && Number(event.durationMs) >= 0 && Number(event.durationMs) <= 600000) {
+    safe.duration_ms = event.durationMs;
+  }
+  return safe;
+}
 
 function staffDetails(staff: Record<string, unknown>, includePin: boolean) {
   const details: Record<string, unknown> = {
@@ -171,6 +202,30 @@ Deno.serve(async (req) => {
         throw error;
       }
       return response({ queue: data }, 200, origin);
+    }
+
+    if (body?.action === "client_diagnostics") {
+      const current = await findSession(body.token);
+      if (!current) return response({ error: "invalid_session" }, 401, origin);
+      if (!observabilityEnabled) return response({ enabled: false, accepted: 0 }, 200, origin);
+
+      const events = Array.isArray(body.events) ? body.events.slice(0, 20) : [];
+      const safeEvents = events.map(sanitizeDiagnostic).filter((event): event is Record<string, unknown> => Boolean(event));
+      if (safeEvents.length > 0) {
+        const { error } = await supabase.from("client_diagnostics").insert(safeEvents);
+        if (error) throw error;
+      }
+      return response({ enabled: true, accepted: safeEvents.length }, 200, origin);
+    }
+
+    if (body?.action === "release_status") {
+      const current = await findSession(body.token);
+      if (!current) return response({ error: "invalid_session" }, 401, origin);
+      const refreshRequired = controlledRefreshEnabled
+        && validRelease(requiredClientRelease)
+        && validRelease(body.release)
+        && body.release !== requiredClientRelease;
+      return response({ refreshRequired }, 200, origin);
     }
 
     if (body?.action !== "login" || typeof body.staffId !== "string" || !/^\d{4}$/.test(body.pin ?? "")) {

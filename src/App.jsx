@@ -18,8 +18,9 @@ import {
 import { supabase } from "./utils/supabaseClient";
 import { learnFromCorrection } from "./utils/smartParser";
 import { checkFreshRoomBookingConflict } from "./utils/bookingConflict";
-import { fetchAuthenticatedStaff, fetchLoginDirectory, loginWithPin, restoreServerSession, revokeServerSession, useServerSession } from "./utils/sessionAuth";
+import { fetchAuthenticatedStaff, fetchLoginDirectory, getReleaseStatus, getServerSessionToken, loginWithPin, restoreServerSession, revokeServerSession, useServerSession, flushClientDiagnostics } from "./utils/sessionAuth";
 import { recordClientDiagnostic } from "./utils/clientDiagnostics";
+import { controlledRefreshEnabled, getControlledRefreshStatus, serverDiagnosticsEnabled, flushClientDiagnostics as flushDiagnostics } from "./utils/clientObservability";
 import { reconcileRealtimeQueue } from "./utils/realtimeQueueState";
 import { buildRescheduledQueue } from "./utils/rescheduleQueue";
 
@@ -89,6 +90,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isDataReady, setIsDataReady] = useState(false);
   const [supabaseError, setSupabaseError] = useState(null);
+  const [refreshRequired, setRefreshRequired] = useState(false);
 
   // ─── Booking form ───
   const [form, setForm] = useState(getEmptyBookingForm);
@@ -190,6 +192,38 @@ export default function App() {
     }
     loadFromSupabase();
   }, []);
+
+  // Goal 11D stays inert unless both browser build flags are explicitly enabled.
+  // The server independently keeps both capabilities disabled by default.
+  useEffect(() => {
+    if (!useServerSession || !currentUser?.id || (!serverDiagnosticsEnabled && !controlledRefreshEnabled)) return undefined;
+    let disposed = false;
+    const checkOperationalStatus = async () => {
+      const token = getServerSessionToken();
+      if (!token) return;
+      if (serverDiagnosticsEnabled) {
+        try {
+          await flushDiagnostics({ flushClientDiagnostics }, token);
+        } catch {
+          // Local diagnostics stay buffered and retry later. Never interrupt work.
+        }
+      }
+      if (controlledRefreshEnabled) {
+        try {
+          const status = await getControlledRefreshStatus({ getReleaseStatus }, token);
+          if (!disposed) setRefreshRequired(status.refreshRequired === true);
+        } catch {
+          // A failed check must not force users to refresh or log out.
+        }
+      }
+    };
+    checkOperationalStatus();
+    const interval = window.setInterval(checkOperationalStatus, 5 * 60 * 1000);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
+  }, [currentUser?.id]);
 
   // ─── Realtime subscription for queues ───
   useEffect(() => {
@@ -420,6 +454,7 @@ export default function App() {
       }
     }
 
+    recordClientDiagnostic("write_outcome", { outcome: "started" });
     try {
       if (editingQueueId) {
         await updateQueue(editingQueueId, form);
@@ -448,9 +483,11 @@ export default function App() {
         setLastParseSnapshot(null);
       }
       setForm(getEmptyBookingForm());
+      recordClientDiagnostic("write_outcome", { outcome: "succeeded" });
       return true;
     } catch (error) {
       console.error("Booking save failed:", error);
+      recordClientDiagnostic("write_outcome", { outcome: "failed", error });
       showToast("error", "บันทึกคิวไม่สำเร็จ ข้อมูลในฟอร์มยังอยู่ครบ กรุณาลองอีกครั้ง");
       return false;
     }
@@ -485,25 +522,32 @@ export default function App() {
   }, [showToast, currentUser]);
 
   const updateQueueStatus = useCallback(async (id, payload) => {
-    if (payload.status === "rescheduled") {
-      // คิวเดิม: เปลี่ยนแค่ status + statusNote ไม่แตะ date/timeBlock
-      await updateQueueStatusDB(id, {
-        status: "rescheduled",
-        statusNote: payload.statusNote || "",
-      });
+    recordClientDiagnostic("write_outcome", { outcome: "started" });
+    try {
+      if (payload.status === "rescheduled") {
+        // คิวเดิม: เปลี่ยนแค่ status + statusNote ไม่แตะ date/timeBlock
+        await updateQueueStatusDB(id, {
+          status: "rescheduled",
+          statusNote: payload.statusNote || "",
+        });
 
-      // สร้างคิวใหม่ที่วันใหม่ สถานะ rescheduled_in
-      const orig = queues.find((q) => q.id === id);
-      const rescheduledQueue = buildRescheduledQueue(orig, payload, getTodayStr());
-      if (rescheduledQueue) await createQueue(rescheduledQueue);
-    } else {
-      await updateQueueStatusDB(id, payload);
+        // สร้างคิวใหม่ที่วันใหม่ สถานะ rescheduled_in
+        const orig = queues.find((q) => q.id === id);
+        const rescheduledQueue = buildRescheduledQueue(orig, payload, getTodayStr());
+        if (rescheduledQueue) await createQueue(rescheduledQueue);
+      } else {
+        await updateQueueStatusDB(id, payload);
+      }
+
+      setModal(null);
+      const st = payload.status;
+      const labels = { confirmed: "ยืนยันแล้ว ✅", rescheduled: "เลื่อนออก 📤", rescheduled_in: "เลื่อนมา (ใหม่) �", no_show: "บันทึก: ไม่มาตามนัด 🚫", cancelled: "ยกเลิกแล้ว ❌", done: "เสร็จสิ้น 🎉", follow1: "บันทึก: โทรตาม ×1", follow2: "บันทึก: โทรตาม ×2", follow3: "บันทึก: โทรตาม ×3 📞" };
+      showToast("success", labels[st] || "อัปเดตสถานะแล้ว");
+      recordClientDiagnostic("write_outcome", { outcome: "succeeded" });
+    } catch (error) {
+      recordClientDiagnostic("write_outcome", { outcome: "failed", error });
+      throw error;
     }
-
-    setModal(null);
-    const st = payload.status;
-    const labels = { confirmed: "ยืนยันแล้ว ✅", rescheduled: "เลื่อนออก 📤", rescheduled_in: "เลื่อนมา (ใหม่) �", no_show: "บันทึก: ไม่มาตามนัด 🚫", cancelled: "ยกเลิกแล้ว ❌", done: "เสร็จสิ้น 🎉", follow1: "บันทึก: โทรตาม ×1", follow2: "บันทึก: โทรตาม ×2", follow3: "บันทึก: โทรตาม ×3 📞" };
-    showToast("success", labels[st] || "อัปเดตสถานะแล้ว");
   }, [showToast, queues, currentUser]);
 
   // ═══════ CRUD HELPERS ═══════
@@ -837,6 +881,19 @@ export default function App() {
 
       <div className="main">
         <div className="main-shell">
+          {refreshRequired && (
+            <div role="status" style={{
+              margin: "10px 14px 0", padding: "10px 14px", borderRadius: 8,
+              background: "#fff4d6", border: "1px solid #f1c75b", color: "#6b4e00",
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+            }}>
+              <span>มีเวอร์ชันใหม่เพื่อความเข้ากันได้ของระบบ กรุณารีเฟรชเมื่อสะดวก</span>
+              <button type="button" onClick={() => window.location.reload()} style={{
+                border: 0, borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontWeight: 600,
+                background: "#c95e38", color: "#fff",
+              }}>รีเฟรชตอนนี้</button>
+            </div>
+          )}
           <TopBar page={page} isEditing={!!editingQueueId} supabaseError={supabaseError} />
 
           <div className="content">

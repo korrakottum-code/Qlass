@@ -123,7 +123,9 @@ do not change the canonical order of the remaining Goals:
 Goal 12A's non-production rehearsal passed and its evidence is recorded in
 `docs/GOAL_12A_QUEUE_FOUNDATIONS_REHEARSAL.md` (PR #108).  Production schema
 cutover remains a separate, explicitly authorized low-lock operation.  The
-next executable work is Goal 13's clone-only server-create rehearsal.
+Goal 13's clone-only server-create rehearsal passed in PR #109; its production
+cutover remains a separate, explicitly authorized canary. Goal 11D is the
+current off-by-default observability rehearsal.
 
 ## Remaining Goals
 
@@ -211,10 +213,10 @@ Rollback: previous frontend deployment. No database rollback.
 
 ### Goal 11 - add release observability and critical-flow CI
 
-Status: **partially completed**. Goals 11A-11C were completed in PRs #103,
-#104, and #105. Only Goal 11D remains: a separately reviewed server telemetry
-sink and controlled-refresh mechanism that cannot expose PII, session tokens,
-or secrets.
+Status: **rehearsal complete; production controls remain off**. Goals 11A-11C
+were completed in PRs #103, #104, and #105. Goal 11D's clone evidence and
+rollback are recorded in `docs/GOAL_11D_SAFE_OBSERVABILITY_REHEARSAL.md`.
+No production telemetry or forced-refresh control is enabled by this work.
 
 Scope:
 
@@ -282,8 +284,8 @@ additive columns and audit rows; do not drop them during incident rollback.
 
 ### Goal 13 - introduce idempotent transactional queue creation
 
-Status: **in progress (clone only)**. No client cutover or production deployment
-is authorized until its clone evidence and PR review pass.
+Status: **clone rehearsal complete in PR #109**. No client cutover or production
+deployment is authorized until a separate canary Goal is reviewed and approved.
 
 Scope:
 

@@ -43,22 +43,11 @@ export default class ErrorBoundary extends Component {
           >
             <h2 style={{ margin: 0, marginBottom: 10 }}>เกิดข้อผิดพลาดในการโหลดระบบ</h2>
             <p style={{ marginTop: 0, color: "#666" }}>
-              กรุณารีเฟรชหน้าเว็บอีกครั้ง หากยังพบปัญหาให้ส่งข้อความด้านล่างให้ผู้ดูแลระบบ
+              กรุณารีเฟรชหน้าเว็บอีกครั้ง หากยังพบปัญหาให้แจ้งผู้ดูแลระบบ
             </p>
-            <pre
-              style={{
-                margin: 0,
-                background: "#fafafa",
-                border: "1px solid #eee",
-                borderRadius: 8,
-                padding: 12,
-                overflow: "auto",
-                color: "#b42318",
-                fontSize: 12,
-              }}
-            >
-              {String(this.state.error?.message || this.state.error || "Unknown error")}
-            </pre>
+            <p style={{ marginBottom: 0, color: "#b42318", fontSize: 12 }}>
+              รหัสอาการ: render_error
+            </p>
           </div>
         </div>
       );

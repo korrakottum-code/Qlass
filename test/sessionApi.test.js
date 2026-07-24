@@ -27,3 +27,21 @@ test("queue-create API surfaces server errors without retrying under a new reque
     /room_conflict/,
   );
 });
+
+test("operational API forwards diagnostics and release checks through the server session boundary", async () => {
+  const calls = [];
+  const api = createSessionApi(async (name, options) => {
+    calls.push({ name, options });
+    return { data: { accepted: 1, refreshRequired: false }, error: null };
+  });
+
+  const token = "b".repeat(64);
+  const events = [{ name: "initial_load", release: "release-1", stage: "core", outcome: "succeeded", durationMs: 12 }];
+  await api.flushClientDiagnostics(token, events);
+  await api.getReleaseStatus(token, "release-1");
+
+  assert.deepEqual(calls, [
+    { name: "staff-session", options: { body: { action: "client_diagnostics", token, events } } },
+    { name: "staff-session", options: { body: { action: "release_status", token, release: "release-1" } } },
+  ]);
+});
