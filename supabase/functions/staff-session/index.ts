@@ -52,6 +52,12 @@ function publicStaff(staff: Record<string, unknown>) {
 
 const authenticatedRoles = new Set(["ceo", "superadmin", "head_admin", "admin", "branch_manager", "cashier"]);
 const staffManagementRoles = new Set(["superadmin", "head_admin"]);
+const queueCreateErrors = new Set([
+  "invalid_queue_payload", "past_date_not_allowed", "invalid_branch", "branch_forbidden",
+  "invalid_room", "room_required", "invalid_procedure", "invalid_duration",
+  "procedure_required", "invalid_promo", "invalid_time", "room_closed", "room_conflict",
+  "request_id_forbidden", "invalid_session", "forbidden",
+]);
 
 function staffDetails(staff: Record<string, unknown>, includePin: boolean) {
   const details: Record<string, unknown> = {
@@ -138,6 +144,33 @@ Deno.serve(async (req) => {
         await supabase.from("app_sessions").update({ revoked_at: new Date().toISOString() }).eq("token_hash", tokenHash);
       }
       return response({ ok: true }, 200, origin);
+    }
+
+    if (body?.action === "create_queue_v1") {
+      const current = await findSession(body.token);
+      if (!current) return response({ error: "invalid_session" }, 401, origin);
+      if (!authenticatedRoles.has(String(current.user.role ?? ""))) {
+        return response({ error: "forbidden" }, 403, origin);
+      }
+      if (typeof body.requestId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.requestId) || !body.queue || typeof body.queue !== "object" || Array.isArray(body.queue)) {
+        return response({ error: "invalid_queue_payload" }, 400, origin);
+      }
+
+      const { data, error } = await supabase.rpc("create_queue_v1", {
+        p_actor_staff_id: current.user.id,
+        p_actor_session_id: current.session.id,
+        p_request_id: body.requestId,
+        p_payload: body.queue,
+      });
+      if (error) {
+        const errorCode = String(error.message ?? "");
+        if (queueCreateErrors.has(errorCode)) {
+          const status = errorCode === "room_conflict" ? 409 : errorCode.endsWith("forbidden") || errorCode === "forbidden" ? 403 : 400;
+          return response({ error: errorCode }, status, origin);
+        }
+        throw error;
+      }
+      return response({ queue: data }, 200, origin);
     }
 
     if (body?.action !== "login" || typeof body.staffId !== "string" || !/^\d{4}$/.test(body.pin ?? "")) {

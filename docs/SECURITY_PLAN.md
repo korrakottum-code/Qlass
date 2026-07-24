@@ -120,9 +120,10 @@ do not change the canonical order of the remaining Goals:
   completed HN controls from Goals 4-6 operable, but it is not the recurring
   recovery and incident drill required by Goal 38.
 
-The next executable work is the non-production rehearsal gate for Goal 12. No
-production schema change may begin until that rehearsal has passed and its
-results are attached to the Goal 12 pull request.
+Goal 12A's non-production rehearsal passed and its evidence is recorded in
+`docs/GOAL_12A_QUEUE_FOUNDATIONS_REHEARSAL.md` (PR #108).  Production schema
+cutover remains a separate, explicitly authorized low-lock operation.  The
+next executable work is Goal 13's clone-only server-create rehearsal.
 
 ## Remaining Goals
 
@@ -242,9 +243,9 @@ tests even if runtime telemetry is disabled.
 
 ### Goal 12 - add queue concurrency and audit foundations
 
-Status: **next**. Phase A is a restore-clone-only rehearsal; no production
-schema migration, trigger, index, or audit write is authorized until Phase A
-passes.
+Status: **Phase A complete**. The restore-clone rehearsal passed and PR #108
+merged. No production schema migration, trigger, index, or audit write is
+authorized by that rehearsal alone.
 
 Phase A rehearsal gate:
 
@@ -280,6 +281,9 @@ Rollback: stop using new fields/triggers and disable added trigger logic. Keep
 additive columns and audit rows; do not drop them during incident rollback.
 
 ### Goal 13 - introduce idempotent transactional queue creation
+
+Status: **in progress (clone only)**. No client cutover or production deployment
+is authorized until its clone evidence and PR review pass.
 
 Scope:
 
