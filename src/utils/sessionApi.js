@@ -21,6 +21,12 @@ export function createSessionApi(invoke) {
     createQueueV1(token, requestId, queue) {
       return callSessionFunction({ action: "create_queue_v1", token, requestId, queue });
     },
+    flushClientDiagnostics(token, events) {
+      return callSessionFunction({ action: "client_diagnostics", token, events });
+    },
+    getReleaseStatus(token, release) {
+      return callSessionFunction({ action: "release_status", token, release });
+    },
     restoreServerSession(token) {
       return callSessionFunction({ action: "session", token });
     },

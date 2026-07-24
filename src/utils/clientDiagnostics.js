@@ -54,6 +54,13 @@ export function getClientDiagnostics() {
   return events.map((event) => ({ ...event }));
 }
 
+// Remove only events that were accepted by the server. A failed network call
+// leaves the local bounded buffer intact for a later retry.
+export function discardClientDiagnostics(count) {
+  if (!Number.isInteger(count) || count <= 0) return;
+  events = events.slice(Math.min(count, events.length));
+}
+
 export function resetClientDiagnosticsForTest() {
   events = [];
 }
