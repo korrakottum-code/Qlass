@@ -245,9 +245,11 @@ tests even if runtime telemetry is disabled.
 
 ### Goal 12 - add queue concurrency and audit foundations
 
-Status: **Phase A complete**. The restore-clone rehearsal passed and PR #108
-merged. No production schema migration, trigger, index, or audit write is
-authorized by that rehearsal alone.
+Status: **Phase A complete; Phase B production runbook ready for review**.
+The restore-clone rehearsal passed in PR #108. The follow-up runbook records
+the low-lock production procedure and its no-data-loss stop/rollback gates. No
+production schema migration, trigger, index, or audit write is authorized until that PR is
+merged and an explicit production go/no-go is given.
 
 Phase A rehearsal gate:
 
