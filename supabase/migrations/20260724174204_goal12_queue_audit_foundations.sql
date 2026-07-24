@@ -85,8 +85,10 @@ set search_path = public
 as $$
 begin
   if tg_op = 'INSERT' then
-    new.version := coalesce(new.version, 1);
-    new.updated_at := coalesce(new.updated_at, now());
+    -- These values are server-owned. Existing browser clients must not be
+    -- able to seed arbitrary future versions or timestamps on new queues.
+    new.version := 1;
+    new.updated_at := now();
     return new;
   end if;
 
