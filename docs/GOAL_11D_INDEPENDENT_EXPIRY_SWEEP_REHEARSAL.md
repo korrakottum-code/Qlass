@@ -74,10 +74,9 @@ small lock only on that new diagnostic table, never on a booking table.
 Goal 11D migration. Therefore **do not run `supabase db push`** to apply this
 Goal: it could also apply the unapproved Goal 13 queue-create migration.
 
-Before any production action, prepare a separate operator runbook that applies
-only the reviewed Goal 11D SQL, records its history safely, verifies the cron
-job, and keeps all telemetry/refresh flags disabled. That runbook needs its own
-explicit production Go.
+The production-order gate and later operator checklist are recorded in
+`docs/GOAL_11D_PRODUCTION_CUTOVER_RUNBOOK.md`. Goal 13 must be applied and
+verified first; Goal 11D then needs its own explicit production Go.
 
 ## Stop and rollback
 

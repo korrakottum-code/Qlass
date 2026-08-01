@@ -246,8 +246,9 @@ old and new clients without logging business payloads.
 
 Rollback: disable telemetry/refresh flag or restore previous frontend. Keep CI
 tests even if runtime telemetry is disabled. Do not use `supabase db push` to
-deploy Goal 11D while Goal 13 remains pending; a separate operator runbook must
-apply only the reviewed Goal 11D database work after explicit production Go.
+deploy Goal 11D while Goal 13 remains pending. The enforced migration order and
+later explicit-Go checklist are in
+`docs/GOAL_11D_PRODUCTION_CUTOVER_RUNBOOK.md`.
 
 ### Goal 12 - add queue concurrency and audit foundations
 
