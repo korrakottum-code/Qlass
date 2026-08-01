@@ -1,15 +1,20 @@
-# Goal 12B — Production queue-foundation runbook
+# Goal 12B — Production queue-foundation runbook (completed; do not rerun)
+
+> **Completed production operation.** The steps below are retained as an audit
+> record, not an instruction to run again. The Goal 12 foundations, corrective
+> trigger, and two indexes are already live. Re-running any part of this
+> runbook is outside scope and risks unnecessary lock pressure on active users.
 
 ## Purpose and boundary
 
-This is the only approved procedure for adding the Goal 12 queue foundations
-to production. It does not route traffic to a new API, backfill old queues,
-delete data, or change browser/RLS grants. Existing users remain on the current
+This was the approved procedure for adding the Goal 12 queue foundations to
+production. It did not route traffic to a new API, backfill old queues, delete
+data, or change browser/RLS grants. Existing users remained on the current
 client contract.
 
-Run it only in a low-traffic window, after this PR is merged and after an
-explicit production go/no-go. A failed step is a stop condition, never a reason
-to retry repeatedly while users are active.
+It was run once in a low-traffic window after explicit production Go. A failed
+step would have been a stop condition; it must not be retried now merely to
+reproduce the operation.
 
 ## What changes
 
@@ -31,7 +36,8 @@ update was rolled back; its full statement took about 2.1 ms and the trigger
 about 1.1 ms. The trigger function has no browser-role execute grant.
 
 Production was inspected read-only while preparing this runbook: 114,404
-queues, and no Goal 12 audit table, version column, or trigger exists.
+queues, and no Goal 12 audit table, version column, or trigger existed. The
+completed-state recheck is in `GOAL_12B_HANDOFF.md`.
 
 ## Required preflight
 
@@ -48,7 +54,7 @@ If any item fails, make no schema change. Users continue normally.
 
 ## Step 1 — transactional foundations
 
-Apply `supabase/migrations/20260724174204_goal12_queue_audit_foundations.sql`
+Apply `supabase/migrations/20260724192100_goal12_queue_audit_foundations.sql`
 once through the approved production migration path. It begins with:
 
 ```sql

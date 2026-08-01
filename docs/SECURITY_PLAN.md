@@ -120,12 +120,14 @@ do not change the canonical order of the remaining Goals:
   completed HN controls from Goals 4-6 operable, but it is not the recurring
   recovery and incident drill required by Goal 38.
 
-Goal 12A's non-production rehearsal passed and its evidence is recorded in
-`docs/GOAL_12A_QUEUE_FOUNDATIONS_REHEARSAL.md` (PR #108).  Production schema
-cutover remains a separate, explicitly authorized low-lock operation.  The
-Goal 13's clone-only server-create rehearsal passed in PR #109; its production
-cutover remains a separate, explicitly authorized canary. Goal 11D is the
-current off-by-default observability rehearsal.
+Goal 12A's non-production rehearsal passed in PR #108. Its production
+foundation, corrective trigger, concurrent indexes, and source-history
+alignment were completed in PRs #111, #112, and #113. They must never be
+applied a second time. The current production recheck is recorded in
+`docs/GOAL_12B_HANDOFF.md`. Goal 13's clone-only server-create rehearsal
+passed in PR #109; its production cutover remains a separate, explicitly
+authorized canary. Goal 11D is complete as an off-by-default observability
+preparation; its production deployment remains separately gated.
 
 ## Remaining Goals
 
@@ -249,11 +251,12 @@ apply only the reviewed Goal 11D database work after explicit production Go.
 
 ### Goal 12 - add queue concurrency and audit foundations
 
-Status: **Phase A complete; Phase B production runbook ready for review**.
-The restore-clone rehearsal passed in PR #108. The follow-up runbook records
-the low-lock production procedure and its no-data-loss stop/rollback gates. No
-production schema migration, trigger, index, or audit write is authorized until that PR is
-merged and an explicit production go/no-go is given.
+Status: **completed**. The restore-clone rehearsal passed in PR #108. The
+low-lock production foundation was applied once, verified, and recorded in PRs
+#111, #112, and #113. A read-only production recheck on 2026-08-02 confirmed
+124,537 queues, zero audit rows, all additive metadata columns, the private
+metadata trigger, and both required valid/ready indexes. Do **not** rerun the
+migration, trigger replacement, or index helper.
 
 Phase A rehearsal gate:
 
