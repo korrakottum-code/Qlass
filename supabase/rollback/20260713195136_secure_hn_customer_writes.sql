@@ -1,4 +1,4 @@
--- Emergency rollback for 20260713194620_secure_hn_customer_writes.sql.
+-- Emergency rollback for 20260713195136_secure_hn_customer_writes.sql.
 -- Run only if the verified service-role HN sync fails after production rollout.
 -- This restores the pre-Goal-6 write surface; it does not restore public reads.
 -- It does not modify any hn_customers rows.
