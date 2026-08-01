@@ -72,17 +72,8 @@ Git push and account authentication continued to work.  No PR was created.
 
 ## Important follow-up: migration history alignment
 
-Before **any future** `supabase db push`, create a separate reviewed Goal to
-align the local migration history with the production history.  The SQL is
-already applied, but the timestamps recorded in production differ from the
-filenames in Git:
-
-| Local Git filename version | Production history version |
-| --- | --- |
-| `20260724174204_goal12_queue_audit_foundations` | `20260724192100_goal12_queue_audit_foundations` |
-| `20260724192319_goal12_force_queue_metadata` | `20260724192606_goal12_force_queue_metadata` |
-
-This does not affect current users or this source-only merge.  It does mean a
-future migration tool could try to replay an already-applied migration.  Do
-not repair that history manually and do not run `supabase db push` until the
-dedicated alignment Goal has an approved rollback plan.
+Goal 12C reconciles this history **from source control**, rather than editing
+the production migration-history table. See
+[`GOAL_12C_MIGRATION_HISTORY_REHEARSAL.md`](GOAL_12C_MIGRATION_HISTORY_REHEARSAL.md).
+Until that source-only PR is merged and its verification has passed, do not run
+`supabase db push` against production.
