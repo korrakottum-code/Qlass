@@ -1,12 +1,13 @@
-# Goal 12B — Handoff state (2026-07-25)
+# Goal 12B — Production closure record
 
 ## Current status
 
-The production rollout is technically complete and verified.  The formal Goal
-is **not closed yet** because GitHub was experiencing an incident that prevented
-creation of the required pull request.
+**Completed and reconciled.** The production rollout was completed and
+verified; its source changes merged in PR #111 (runbook), PR #112 (corrective
+metadata trigger and index helper), and PR #113 (migration-history alignment).
 
-Do not repeat the production migration or index operation.
+Do not repeat the production migration, trigger replacement, or index
+operation.
 
 ## Production evidence
 
@@ -23,6 +24,22 @@ Project: `QLASS` (`hjuvtsjjtucdirlkdgwa`)
   - `queues_request_id_unique_idx`
   - `queues_room_date_time_idx`
 
+## Read-only production recheck (2026-08-02)
+
+This recheck made no database changes and read no customer values.
+
+- Queue count: **124,537** (normal operational growth since rollout).
+- `queue_audit`: exists, RLS enabled, **0 rows**.
+- All ten Goal 12 additive metadata columns exist.
+- `queues_set_concurrency_metadata` exists; `PUBLIC`, `anon`, and
+  `authenticated` cannot execute its function directly.
+- `queues_request_id_unique_idx` and `queues_room_date_time_idx` are both
+  valid and ready.
+
+This proves the foundation remains present and private. It does not claim that
+the current count should equal the historical rollout count; active users have
+continued creating normal bookings since then.
+
 ## Production changes already applied
 
 1. Additive Goal 12 queue foundation (nullable metadata fields, private audit
@@ -32,43 +49,13 @@ Project: `QLASS` (`hjuvtsjjtucdirlkdgwa`)
 3. The two indexes above, created with `CREATE INDEX CONCURRENTLY` via the
    Session pooler.  This avoids blocking normal queue writes.
 
-## Source branch awaiting PR
+## Source-control reconciliation
 
-- Branch: `codex/goal-12b-force-queue-metadata`
-- Latest commit: `fb7d5f8 Add Goal 12 production index helper`
-- Previous commit: `13ca114 Force server-owned queue metadata`
-- Comparison URL:
-  <https://github.com/korrakottum-code/Qlass/compare/main...codex/goal-12b-force-queue-metadata>
+The source branch mentioned in the original handoff was merged in PR #112.
+PR #113 then aligned the source migration history with the already-applied
+production history. No migration-history record was edited on production.
 
-The branch contains only four files:
-
-1. The Goal 12B runbook wording update.
-2. The original foundation migration updated for fresh environments.
-3. The corrective migration used by the existing production project.
-4. The local operator helper used to create the two indexes.  It prompts for
-   the password locally and contains no credential.
-
-## Why the PR is missing
-
-On 2026-07-24 at about 19:40 UTC, GitHub declared an incident affecting Pull
-Request creation.  Creating this PR failed through the GitHub connector, the
-`gh` CLI (GraphQL internal error), and the GitHub web page (Server Error).
-Git push and account authentication continued to work.  No PR was created.
-
-## Required next steps
-
-1. Check <https://www.githubstatus.com/> and wait until the Pull Requests
-   incident is resolved.
-2. Open the comparison URL above and create the PR.  Do **not** push directly
-   to `main`.
-3. Before merge, verify:
-   - the PR still changes only the four files listed above;
-   - CI is green;
-   - `npm test` (29 tests) and `npm run build` pass;
-   - the production proof in this file remains true.
-4. Merge the PR.  No additional production deploy is needed; its database
-   changes are already live and verified.
-5. Mark Goal 12B complete only after the PR has merged.
+No additional Goal 12 pull request or production deployment is required.
 
 ## Important follow-up: migration history alignment
 
