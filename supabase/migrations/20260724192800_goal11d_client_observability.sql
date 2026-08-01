@@ -1,6 +1,11 @@
 -- Goal 11D: privacy-safe, server-only client diagnostics.
 -- This is additive. No browser role can read or write this table.
 
+-- A separate hourly cleanup job is required even when no client sends a new
+-- diagnostic event. It runs entirely inside Postgres and never receives or
+-- transmits business data.
+create extension if not exists pg_cron;
+
 create table if not exists public.client_diagnostics (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
@@ -27,24 +32,11 @@ revoke all on table public.client_diagnostics from public, anon, authenticated;
 create index if not exists client_diagnostics_expires_at_idx
   on public.client_diagnostics (expires_at);
 
--- Expired rows are removed on each accepted diagnostic write. Before any
--- production enablement, operations must also schedule an independent sweep
--- so an inactive project does not retain expired operational rows.
-create or replace function public.purge_expired_client_diagnostics()
-returns trigger
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-begin
-  delete from public.client_diagnostics where expires_at <= now();
-  return new;
-end;
-$$;
-
-revoke all on function public.purge_expired_client_diagnostics() from public, anon, authenticated;
-
-drop trigger if exists client_diagnostics_retention on public.client_diagnostics;
-create trigger client_diagnostics_retention
-after insert on public.client_diagnostics
-for each statement execute function public.purge_expired_client_diagnostics();
+-- The job runs inside Postgres. It can delete only diagnostic rows that have
+-- already expired; it cannot read or change queues, customers, staff, or any
+-- other application table. It does not grant any browser access.
+select cron.schedule(
+  'goal11d_purge_expired_client_diagnostics',
+  '17 * * * *',
+  'delete from public.client_diagnostics where expires_at <= now();'
+);

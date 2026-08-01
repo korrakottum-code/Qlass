@@ -216,7 +216,9 @@ Rollback: previous frontend deployment. No database rollback.
 Status: **rehearsal complete; production controls remain off**. Goals 11A-11C
 were completed in PRs #103, #104, and #105. Goal 11D's clone evidence and
 rollback are recorded in `docs/GOAL_11D_SAFE_OBSERVABILITY_REHEARSAL.md`.
-No production telemetry or forced-refresh control is enabled by this work.
+The independent expiry-sweep rehearsal is recorded in
+`docs/GOAL_11D_INDEPENDENT_EXPIRY_SWEEP_REHEARSAL.md`. No production telemetry
+or forced-refresh control is enabled by this work.
 
 Scope:
 
@@ -241,7 +243,9 @@ contain no PIN/PII/secrets, and the version/error dashboard must distinguish
 old and new clients without logging business payloads.
 
 Rollback: disable telemetry/refresh flag or restore previous frontend. Keep CI
-tests even if runtime telemetry is disabled.
+tests even if runtime telemetry is disabled. Do not use `supabase db push` to
+deploy Goal 11D while Goal 13 remains pending; a separate operator runbook must
+apply only the reviewed Goal 11D database work after explicit production Go.
 
 ### Goal 12 - add queue concurrency and audit foundations
 
