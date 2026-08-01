@@ -71,6 +71,27 @@ Keeping reschedule and bulk creation on their existing paths is intentional:
 - a client cutover needs a stable request ID held with the draft so a retry
   cannot accidentally create a new logical request.
 
+## Follow-up re-rehearsal (2026-08-02)
+
+The source function was tightened before any production decision:
+
+- its `SECURITY DEFINER` search path is now empty; every application relation
+  is explicitly `public.*` and browser execution remains revoked;
+- a cancelled or no-show queue no longer blocks the same room/time, matching
+  the current browser conflict rule; and
+- a missing or zero procedure duration is rejected as `invalid_duration`.
+
+On the restore project, a transaction inserted a cancelled synthetic control
+queue, successfully created one pending queue at the same slot through
+`create_queue_v1`, then checked that duration `0` was rejected. The whole
+transaction rolled back. The post-check was **99,247 queues**, **0 audit
+rows**, and **0 synthetic rows**. No production query, write, migration, or
+Edge Function deployment occurred.
+
+The clone security advisor still reports pre-existing programme-wide RLS
+backlog. It did not report a mutable search path for `create_queue_v1`; direct
+execution remains denied to `PUBLIC`, `anon`, and `authenticated`.
+
 ## Rollback and production gate
 
 If a later rollout causes any regression, leave the existing browser path in

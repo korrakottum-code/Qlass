@@ -14,7 +14,7 @@ create or replace function public.create_queue_v1(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = ''
 as $$
 declare
   v_actor public.staff%rowtype;
@@ -127,7 +127,7 @@ begin
       raise exception using errcode = 'P0001', message = 'invalid_procedure';
     end if;
     v_duration := coalesce(nullif(p_payload->>'duration_blocks', '')::integer, v_procedure.blocks);
-    if v_duration < 1 then
+    if coalesce(v_duration, 0) < 1 then
       raise exception using errcode = 'P0001', message = 'invalid_duration';
     end if;
   elsif v_promo_id is not null or v_time_block is not null or nullif(p_payload->>'duration_blocks', '') is not null then
@@ -203,6 +203,7 @@ begin
       where q.room_id = v_room_id
         and q.date = v_date
         and q.time_block is not null
+        and q.status not in ('cancelled', 'no_show')
         and v_time_block < q.time_block + coalesce(q.duration_blocks, q_procedure.blocks, 1)
         and q.time_block < v_time_block + v_duration
     ) then

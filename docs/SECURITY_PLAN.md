@@ -293,7 +293,10 @@ additive columns and audit rows; do not drop them during incident rollback.
 
 ### Goal 13 - introduce idempotent transactional queue creation
 
-Status: **clone rehearsal complete in PR #109**. No client cutover or production
+Status: **clone rehearsal complete in PR #109; canary preparation in review**.
+The 2026-08-02 follow-up re-rehearsal fixed a cancelled/no-show conflict-rule
+mismatch and a missing-duration guard before any production decision. See
+`docs/GOAL_13_PRODUCTION_CANARY_RUNBOOK.md`. No client cutover or production
 deployment is authorized until a separate canary Goal is reviewed and approved.
 
 Scope:
