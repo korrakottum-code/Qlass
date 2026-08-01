@@ -15,8 +15,8 @@ to retry repeatedly while users are active.
 
 - Nullable metadata columns on `public.queues`.
 - Private `public.queue_audit`, with RLS enabled and no browser-role grants.
-- A server-owned trigger that assigns `version` and `updated_at` only for
-  future inserts/material updates.
+- A server-owned trigger that always assigns `version = 1` and the current
+  timestamp for inserts, and advances the version only for material updates.
 - Two later, separate concurrent indexes. No queue row values change.
 
 Historical queues remain untouched: `version`, `request_id`, and effective
