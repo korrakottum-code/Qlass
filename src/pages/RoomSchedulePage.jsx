@@ -1,10 +1,13 @@
 import { useState, useMemo } from "react";
 import { formatThaiDate, blockToTime, getTodayStr } from "../utils/helpers";
 
+const PAGE_SIZE = 50;
+
 export default function RoomSchedulePage({ roomSchedules, rooms, branches, onAdd, onEdit, onDelete }) {
   const todayYM = getTodayStr().slice(0, 7);
   const [filterMonth, setFilterMonth] = useState(todayYM);
   const [filterBranch, setFilterBranch] = useState("all");
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const filtered = useMemo(() => {
     return roomSchedules.filter((s) => {
@@ -17,23 +20,30 @@ export default function RoomSchedulePage({ roomSchedules, rooms, branches, onAdd
     }).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   }, [roomSchedules, filterMonth, filterBranch, rooms]);
 
+  // เปลี่ยนตัวกรอง → รีเซ็ตจำนวนที่แสดงกลับไปหน้าแรก (กันโหลดค้างจากตัวกรองเก่า)
+  function updateFilterMonth(v) { setFilterMonth(v); setVisibleCount(PAGE_SIZE); }
+  function updateFilterBranch(v) { setFilterBranch(v); setVisibleCount(PAGE_SIZE); }
+
+  const visible = filtered.slice(0, visibleCount);
+  const hasMore = filtered.length > visibleCount;
+
   return (
     <>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 14, flexWrap: "wrap" }}>
         <button className="btn btn-primary" onClick={onAdd}>➕ เพิ่มตารางพิเศษ</button>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label className="form-label" style={{ fontSize: 11 }}>เดือน</label>
-          <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} style={{ width: 150 }} />
+          <input type="month" value={filterMonth} onChange={(e) => updateFilterMonth(e.target.value)} style={{ width: 150 }} />
         </div>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label className="form-label" style={{ fontSize: 11 }}>สาขา</label>
-          <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)} style={{ width: 160 }}>
+          <select value={filterBranch} onChange={(e) => updateFilterBranch(e.target.value)} style={{ width: 160 }}>
             <option value="all">ทุกสาขา</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </div>
         {(filterMonth !== todayYM || filterBranch !== "all") && (
-          <button className="btn btn-secondary" style={{ fontSize: 12 }} onClick={() => { setFilterMonth(todayYM); setFilterBranch("all"); }}>
+          <button className="btn btn-secondary" style={{ fontSize: 12 }} onClick={() => { updateFilterMonth(todayYM); updateFilterBranch("all"); }}>
             รีเซ็ต
           </button>
         )}
@@ -63,7 +73,7 @@ export default function RoomSchedulePage({ roomSchedules, rooms, branches, onAdd
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((s) => {
+                {visible.map((s) => {
                   const room = rooms.find((r) => r.id === s.roomId);
                   const branch = branches.find((b) => b.id === room?.branchId);
                   return (
@@ -101,6 +111,13 @@ export default function RoomSchedulePage({ roomSchedules, rooms, branches, onAdd
                 })}
               </tbody>
             </table>
+          )}
+          {hasMore && (
+            <div style={{ textAlign: "center", marginTop: 14 }}>
+              <button className="btn btn-secondary" onClick={() => setVisibleCount((v) => v + PAGE_SIZE)}>
+                โหลดเพิ่ม — เหลืออีก {filtered.length - visibleCount} รายการ
+              </button>
+            </div>
           )}
         </div>
       </div>

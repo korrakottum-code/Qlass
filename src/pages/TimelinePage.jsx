@@ -5,7 +5,12 @@ import { useSubmissionLock } from "../hooks/useSubmissionLock";
 
 export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], currentUser, onSubmitBooking, onEditQueue }) {
   const [date, setDate] = useState(getTodayStr());
-  const [filterBranch, setFilterBranch] = useState("all");
+  // เลือกได้ทีละสาขา (ไม่มี "ทุกสาขา" — เรนเดอร์ทุกห้องทุกสาขาพร้อมกันทำให้หน้าช้ามาก)
+  // ถ้ายังไม่เคยเลือก หรือสาขาที่เลือกไว้หายไป (branches โหลดเสร็จ/เปลี่ยน) ใช้สาขาแรกแทน
+  const [filterBranchOverride, setFilterBranchOverride] = useState(null);
+  const filterBranch = (filterBranchOverride && branches.some((b) => b.id === filterBranchOverride))
+    ? filterBranchOverride
+    : (branches[0]?.id || "");
   const [popup, setPopup] = useState(null); // { q, room, block, x, y }
   const [bookingForm, setBookingForm] = useState(null); // mini booking popup form
   const { isSaving: saving, run: runBookingSubmit } = useSubmissionLock();
@@ -17,7 +22,6 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   }
 
   const filteredRooms = useMemo(() => {
-    if (filterBranch === "all") return rooms;
     return rooms.filter((r) => r.branchId === filterBranch);
   }, [rooms, filterBranch]);
 
@@ -76,7 +80,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   }, [filteredRooms, dayQueues, procedures]);
 
   const totalQueues = dayQueues.length;
-  const ROW_H = 40;  // ความสูงแต่ละ block 5 นาที
+  const ROW_H = 30;  // ความสูงแต่ละ block 5 นาที (ลดจาก 40 ให้เห็นช่วงเวลาได้มากขึ้นโดยไม่ต้องเลื่อน)
   const TIME_COL = 72; // คอลัมน์เวลาซ้าย
 
   return (
@@ -94,8 +98,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
         </div>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label className="form-label">สาขา</label>
-          <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)}>
-            <option value="all">ทุกสาขา</option>
+          <select value={filterBranch} onChange={(e) => setFilterBranchOverride(e.target.value)}>
+            {branches.length === 0 && <option value="">-- ไม่มีสาขา --</option>}
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </div>
@@ -109,7 +113,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
         <div className="card"><div className="empty"><div className="e-icon">🚪</div><p>ไม่พบห้อง</p></div></div>
       ) : (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "70vh" }}>
+          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 230px)" }}>
             <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
               {/* Header: ชื่อห้องเป็น column */}
               <thead>
