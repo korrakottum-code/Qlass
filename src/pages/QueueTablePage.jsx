@@ -1,6 +1,15 @@
 import { useState, useMemo } from "react";
-import { CUSTOMER_TYPES, QUEUE_STATUSES } from "../utils/constants";
+import { CUSTOMER_TYPES, QUEUE_STATUSES, DAY_START_BLOCK, DAY_END_BLOCK } from "../utils/constants";
 import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass } from "../utils/helpers";
+
+const ALL_ROOMS_TAB = "__all__";
+
+// ตัวเลือกเวลาสำหรับกรอง "ใครมีคิวตอน ... บ้าง" — ทุกครึ่งชั่วโมงตลอดวัน
+const TIME_FILTER_OPTIONS = (() => {
+  const opts = [];
+  for (let b = DAY_START_BLOCK; b < DAY_END_BLOCK; b += 6) opts.push(b);
+  return opts;
+})();
 
 function StatusBadge({ status }) {
   const s = QUEUE_STATUSES.find((x) => x.value === (status || "pending"));
@@ -23,15 +32,15 @@ export default function QueueTablePage({
   const [qfBranch, setQfBranch] = useState("all");
   const [qfDate, setQfDate] = useState(getTodayStr());
   const [qfSearch, setQfSearch] = useState("");
+  const [qfTimeBlock, setQfTimeBlock] = useState(""); // "" = ไม่กรองเวลา
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { queue }
   const [deleteInput, setDeleteInput] = useState("");
   const [qfStatus, setQfStatus] = useState("all");
   const [qfRecordedBy, setQfRecordedBy] = useState("all");
-  const [collapsedRooms, setCollapsedRooms] = useState({});
-
-  function toggleRoom(key) {
-    setCollapsedRooms((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
+  // แท็บห้องที่เลือกไว้ ต่อสาขา — ไม่มี key = "ทั้งหมด" (ทุกห้องรวมกัน)
+  const [activeRoomTabByBranch, setActiveRoomTabByBranch] = useState({});
+  // หุบ/ขยายแต่ละสาขา — ไม่ได้ตั้งไว้เอง = ใช้ค่า default (หุบถ้าโชว์หลายสาขาพร้อมกัน, ขยายถ้าเลือกสาขาเดียว)
+  const [branchCollapseOverride, setBranchCollapseOverride] = useState({});
 
   const filteredQueues = useMemo(() => {
     return queues
@@ -40,6 +49,13 @@ export default function QueueTablePage({
         if (qfDate && q.date !== qfDate) return false;
         if (qfStatus !== "all" && (q.status || "pending") !== qfStatus) return false;
         if (qfRecordedBy !== "all" && q.recordedBy !== qfRecordedBy) return false;
+        if (qfTimeBlock !== "") {
+          if (q.timeBlock === null) return false;
+          const proc = procedures.find((p) => p.id === q.procedureId);
+          const dur = q.durationBlocks ?? proc?.blocks ?? 1;
+          const tb = Number(qfTimeBlock);
+          if (!(tb >= q.timeBlock && tb < q.timeBlock + dur)) return false;
+        }
         if (qfSearch) {
           const s = qfSearch.toLowerCase();
           const recorder = staff?.find((x) => x.id === q.recordedBy);
@@ -53,7 +69,7 @@ export default function QueueTablePage({
         return true;
       })
       .sort((a, b) => (a.timeBlock || 0) - (b.timeBlock || 0));
-  }, [queues, qfBranch, qfDate, qfSearch, qfStatus, qfRecordedBy, staff]);
+  }, [queues, qfBranch, qfDate, qfSearch, qfStatus, qfRecordedBy, qfTimeBlock, procedures, staff]);
 
   // สถิติสถานะ (สำหรับวันที่เลือก ทุกสาขา)
   const statusStats = useMemo(() => {
@@ -109,6 +125,15 @@ export default function QueueTablePage({
         <div className="form-group">
           <label className="form-label">วันที่</label>
           <input type="date" value={qfDate} onChange={(e) => setQfDate(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">เวลา</label>
+          <select value={qfTimeBlock} onChange={(e) => setQfTimeBlock(e.target.value)}>
+            <option value="">ทุกเวลา</option>
+            {TIME_FILTER_OPTIONS.map((b) => (
+              <option key={b} value={b}>{blockToTime(b)}</option>
+            ))}
+          </select>
         </div>
         <div className="form-group">
           <label className="form-label">สถานะ</label>
@@ -173,56 +198,101 @@ export default function QueueTablePage({
           </div>
         </div>
       ) : (
-        groupedData.map(({ branchId, branchName, rooms: branchRooms }) => (
+        groupedData.map(({ branchId, branchName, rooms: branchRooms }) => {
+          const totalCount = branchRooms.reduce((sum, r) => sum + r.items.filter(q => q.status !== "rescheduled_in").length, 0);
+          const activeTab = activeRoomTabByBranch[branchId] ?? ALL_ROOMS_TAB;
+          const activeRoom = activeTab === ALL_ROOMS_TAB ? null : branchRooms.find((r) => r.roomId === activeTab);
+          const showRoomCol = activeTab === ALL_ROOMS_TAB;
+          const activeItems = showRoomCol
+            ? branchRooms
+                .flatMap((r) => r.items.map((q) => ({ ...q, __roomName: r.roomName })))
+                .sort((a, b) => (a.timeBlock || 0) - (b.timeBlock || 0))
+            : (activeRoom ? activeRoom.items : []);
+          const roomScheduleNotes = activeRoom ? (roomScheduleNotesByRoomId[activeRoom.roomId] || []) : [];
+          // ค่า default: หุบไว้ถ้าโชว์หลายสาขาพร้อมกัน (เช่นเลือก "ทุกสาขา"), ขยายไว้ถ้าเลือกสาขาเดียว — กดหัวข้อ toggle ได้เสมอ
+          const isCollapsed = branchId in branchCollapseOverride
+            ? branchCollapseOverride[branchId]
+            : groupedData.length > 1;
+
+          return (
           <div key={branchId} style={{ marginBottom: 20 }}>
-            <div style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "8px 0 6px 2px", marginBottom: 8,
-              borderBottom: "2px solid var(--accent)",
-            }}>
+            <div
+              onClick={() => setBranchCollapseOverride((prev) => ({ ...prev, [branchId]: !isCollapsed }))}
+              style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "8px 0 6px 2px", marginBottom: 8,
+                borderBottom: "2px solid var(--accent)",
+                cursor: "pointer", userSelect: "none",
+              }}
+            >
+              <span style={{ fontSize: 13, color: "var(--text3)" }}>{isCollapsed ? "▸" : "▾"}</span>
               <span style={{ fontSize: 16, fontWeight: 700, color: "var(--accent)" }}>🏢 {branchName}</span>
               <span style={{ fontSize: 11, fontFamily: "var(--mono)", fontWeight: 600, background: "var(--surface3)", borderRadius: 10, padding: "1px 8px", color: "var(--text3)" }}>
-                {branchRooms.reduce((sum, r) => sum + r.items.filter(q => q.status !== "rescheduled_in").length, 0)} คิว
+                {totalCount} คิว
               </span>
             </div>
 
-            {branchRooms.map(({ roomId, roomName, roomType, items }) => {
-              const colKey = `${branchId}_${roomId}`;
-              const isCollapsed = !!collapsedRooms[colKey];
-              const roomScheduleNotes = roomScheduleNotesByRoomId[roomId] || [];
-              return (
-              <div className="card" key={roomId} style={{ marginBottom: 10 }}>
-                <div
-                  className="card-header"
-                  onClick={() => toggleRoom(colKey)}
-                  style={{ cursor: "pointer", userSelect: "none" }}
+            {!isCollapsed && (
+            <>
+            {/* แท็บห้อง — "ทั้งหมด" รวมทุกห้อง (ใช้คู่กับตัวกรองเวลาด้านบนเพื่อดูใครมีคิวตอนไหนบ้างโดยไม่ต้องไล่เปิดทีละห้อง) */}
+            <div style={{
+              display: "flex", gap: 2, overflowX: "auto",
+              background: "var(--surface2)", borderRadius: "var(--radius-sm) var(--radius-sm) 0 0",
+              border: "1px solid var(--border)", borderBottom: "none",
+            }}>
+              <button
+                type="button"
+                onClick={() => setActiveRoomTabByBranch((prev) => ({ ...prev, [branchId]: ALL_ROOMS_TAB }))}
+                style={{
+                  flex: "none", border: "none", background: "transparent", cursor: "pointer",
+                  fontFamily: "var(--font)", fontSize: 13, fontWeight: 700, padding: "9px 12px", whiteSpace: "nowrap",
+                  color: activeTab === ALL_ROOMS_TAB ? "var(--accent)" : "var(--text3)",
+                  borderBottom: `2.5px solid ${activeTab === ALL_ROOMS_TAB ? "var(--accent)" : "transparent"}`,
+                }}
+              >
+                🗂️ ทั้งหมด
+                <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--text3)", marginLeft: 5 }}>{totalCount}</span>
+              </button>
+              {branchRooms.map((r) => (
+                <button
+                  key={r.roomId}
+                  type="button"
+                  onClick={() => setActiveRoomTabByBranch((prev) => ({ ...prev, [branchId]: r.roomId }))}
+                  style={{
+                    flex: "none", border: "none", background: "transparent", cursor: "pointer",
+                    fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600, padding: "9px 12px", whiteSpace: "nowrap",
+                    color: activeTab === r.roomId ? (r.roomType === "M" ? "var(--blue)" : "var(--green)") : "var(--text3)",
+                    borderBottom: `2.5px solid ${activeTab === r.roomId ? (r.roomType === "M" ? "var(--blue)" : "var(--green)") : "transparent"}`,
+                  }}
                 >
-                  <h3 style={{ color: roomType === "M" ? "var(--blue)" : roomType === "T" ? "var(--green)" : undefined, fontFamily: "var(--mono)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    🚪 {roomName}
-                    {roomType && (
-                      <span style={{ fontSize: 11, fontWeight: 600, background: roomType === "M" ? "var(--blue-soft)" : "var(--green-soft)", color: roomType === "M" ? "var(--blue)" : "var(--green)", padding: "2px 8px", borderRadius: 10, fontFamily: "var(--body)" }}>
-                        {roomType === "M" ? "ห้องหมอ" : "ห้องเครื่อง"}
-                      </span>
-                    )}
-                    {roomScheduleNotes.length > 0 && (
-                      <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                        {roomScheduleNotes.map((note, idx) => (
-                          <span key={`${note}_${idx}`} style={{ fontSize: 11, fontWeight: 700, color: "#b45309", lineHeight: 1.5, background: "#fef3c7", borderRadius: 6, padding: "2px 8px", fontFamily: "var(--font)" }}>
-                            📅 {note}
-                          </span>
-                        ))}
-                      </span>
-                    )}
-                  </h3>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 12, color: "var(--text3)" }}>{items.filter(q => q.status !== "rescheduled_in").length} คิว{items.some(q => q.status === "rescheduled_in") ? ` (+${items.filter(q => q.status === "rescheduled_in").length} เลื่อนมา)` : ""}</span>
-                    <span style={{ fontSize: 16, color: "var(--text3)", transition: "transform 0.2s", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", display: "inline-block" }}>▾</span>
-                  </div>
+                  🚪 {r.roomName}
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--text3)", marginLeft: 5 }}>
+                    {r.items.filter(q => q.status !== "rescheduled_in").length}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="card" style={{ borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
+              {roomScheduleNotes.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "8px 14px", borderBottom: "1px solid var(--border)" }}>
+                  {roomScheduleNotes.map((note, idx) => (
+                    <span key={`${note}_${idx}`} style={{ fontSize: 11, fontWeight: 700, color: "#b45309", lineHeight: 1.5, background: "#fef3c7", borderRadius: 6, padding: "2px 8px" }}>
+                      📅 {note}
+                    </span>
+                  ))}
                 </div>
-                {!isCollapsed && <div style={{ overflowX: "auto" }}>
+              )}
+              {activeItems.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "24px 0", color: "var(--text3)", fontSize: 13 }}>
+                  ไม่มีคิวตรงเงื่อนไขในตอนนี้
+                </div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
                   <table className="data-table" style={{ tableLayout: "fixed", width: "100%" }}>
                     <colgroup>
                       <col style={{ width: 70 }} />
+                      {showRoomCol && <col style={{ width: 110 }} />}
                       <col style={{ width: 160 }} />
                       <col style={{ width: 140 }} />
                       <col style={{ width: 80 }} />
@@ -234,6 +304,7 @@ export default function QueueTablePage({
                     <thead>
                       <tr>
                         <th style={{ whiteSpace: "nowrap" }}>เวลา</th>
+                        {showRoomCol && <th style={{ whiteSpace: "nowrap" }}>ห้อง</th>}
                         <th>ชื่อลูกค้า</th>
                         <th>หัตถการ</th>
                         <th style={{ whiteSpace: "nowrap" }}>ราคา</th>
@@ -244,7 +315,7 @@ export default function QueueTablePage({
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map((q) => {
+                      {activeItems.map((q) => {
                         const proc = procedures.find((p) => p.id === q.procedureId);
                         const promo = promos.find((p) => p.id === q.promoId);
                         const ct = CUSTOMER_TYPES.find((c) => c.value === q.customerType);
@@ -261,6 +332,9 @@ export default function QueueTablePage({
                                 </>
                               ) : "—"}
                             </td>
+                            {showRoomCol && (
+                              <td style={{ fontSize: 12, fontWeight: 600, color: "var(--text2)" }}>{q.__roomName}</td>
+                            )}
                             <td>
                               <div style={{ fontWeight: 600 }}>{q.name}</div>
                               <div style={{ fontSize: 11, color: "var(--text3)" }}>{q.phone}</div>
@@ -308,12 +382,14 @@ export default function QueueTablePage({
                       })}
                     </tbody>
                   </table>
-                </div>}
-              </div>
-              );
-            })}
+                </div>
+              )}
+            </div>
+            </>
+            )}
           </div>
-        ))
+          );
+        })
       )}
 
       <div style={{ fontSize: 12, color: "var(--text3)", textAlign: "right", marginTop: 8 }}>

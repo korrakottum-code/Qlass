@@ -1,6 +1,11 @@
+import { useState } from "react";
 import { blockToTime } from "../utils/helpers";
 
 export default function RoomsPage({ branches, rooms, onAdd, onBulkAdd, onEdit, onDelete, onReorder }) {
+  // หุบทุกสาขาไว้ก่อน (default) — กดหัวข้อสาขาเพื่อขยายดูรายละเอียด
+  const [expanded, setExpanded] = useState({});
+  const toggleExpanded = (branchId) => setExpanded((prev) => ({ ...prev, [branchId]: !prev[branchId] }));
+
   return (
     <>
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
@@ -12,10 +17,15 @@ export default function RoomsPage({ branches, rooms, onAdd, onBulkAdd, onEdit, o
         const bRooms = rooms.filter((r) => r.branchId === branch.id);
         const mCount = bRooms.filter((r) => r.type === "M").length;
         const tCount = bRooms.filter((r) => r.type === "T").length;
+        const isOpen = !!expanded[branch.id];
         return (
           <div className="card" key={branch.id} style={{ marginBottom: 14 }}>
-            <div className="card-header">
-              <h3>🏢 {branch.name}</h3>
+            <div
+              className="card-header"
+              onClick={() => toggleExpanded(branch.id)}
+              style={{ cursor: "pointer", userSelect: "none" }}
+            >
+              <h3>{isOpen ? "▾" : "▸"} 🏢 {branch.name}</h3>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: 12, color: "var(--text3)" }}>
                   {bRooms.length} ห้อง
@@ -24,13 +34,13 @@ export default function RoomsPage({ branches, rooms, onAdd, onBulkAdd, onEdit, o
                 </span>
                 <button
                   className="btn btn-sm btn-primary"
-                  onClick={() => onAdd(branch.id)}
+                  onClick={(e) => { e.stopPropagation(); onAdd(branch.id); }}
                 >
                   ➕ เพิ่มห้อง
                 </button>
               </div>
             </div>
-            {bRooms.length === 0 ? (
+            {!isOpen ? null : bRooms.length === 0 ? (
               <div className="card-body">
                 <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text3)", fontSize: 13 }}>
                   ยังไม่มีห้องในสาขานี้
