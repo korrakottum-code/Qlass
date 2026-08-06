@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
 import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime } from "./utils/helpers";
 import {
@@ -18,6 +18,8 @@ import {
 import { supabase } from "./utils/supabaseClient";
 import { learnFromCorrection } from "./utils/smartParser";
 import { checkFreshRoomBookingConflict } from "./utils/bookingConflict";
+import { shouldUseServerQueueCreate, createQueueOnServer } from "./utils/serverQueueCreate";
+import { extractQueueCreateErrorCode, queueCreateErrorMessage } from "./utils/queueCreateGate";
 import { fetchAuthenticatedStaff, fetchLoginDirectory, getReleaseStatus, getServerSessionToken, loginWithPin, restoreServerSession, revokeServerSession, useServerSession, flushClientDiagnostics } from "./utils/sessionAuth";
 import { recordClientDiagnostic } from "./utils/clientDiagnostics";
 import { controlledRefreshEnabled, getControlledRefreshStatus, serverDiagnosticsEnabled, flushClientDiagnostics as flushDiagnostics } from "./utils/clientObservability";
@@ -383,6 +385,11 @@ export default function App() {
   }
 
   // ═══════ BOOKING ACTIONS ═══════
+  // Goal 13: one request ID per logical booking attempt. Kept across transport
+  // retries so create_queue_v1 stays idempotent; cleared on success or after a
+  // server business rejection (nothing was written — the next attempt is new).
+  const serverQueueRequestIdRef = useRef(null);
+
   const handleBookingSubmit = useCallback(async () => {
     if (!form.name.trim() || !form.phone.trim()) {
       showToast("error", "กรุณากรอกชื่อและเบอร์โทร");
@@ -455,17 +462,25 @@ export default function App() {
     }
 
     recordClientDiagnostic("write_outcome", { outcome: "started" });
+    const useServerCreate = !editingQueueId && shouldUseServerQueueCreate(currentUser, form);
     try {
       if (editingQueueId) {
         await updateQueue(editingQueueId, form);
         showToast("success", "แก้ไขคิวเรียบร้อย");
         setEditingQueueId(null);
       } else {
-        const newQueue = await createQueue({
-          ...form,
-          createdAt: getTodayStr(),
-          recordedBy: currentUser?.id || null,
-        });
+        let newQueue;
+        if (useServerCreate) {
+          if (!serverQueueRequestIdRef.current) serverQueueRequestIdRef.current = crypto.randomUUID();
+          newQueue = await createQueueOnServer({ requestId: serverQueueRequestIdRef.current, form });
+          serverQueueRequestIdRef.current = null;
+        } else {
+          newQueue = await createQueue({
+            ...form,
+            createdAt: getTodayStr(),
+            recordedBy: currentUser?.id || null,
+          });
+        }
         // อัปเดต state ทันที ไม่รอ Realtime (ป้องกันคิวไม่ขึ้นถ้า Realtime ช้า)
         if (newQueue) {
           setQueues((prev) => prev.some((q) => q.id === newQueue.id) ? prev : [...prev, newQueue]);
@@ -488,7 +503,17 @@ export default function App() {
     } catch (error) {
       console.error("Booking save failed:", error);
       recordClientDiagnostic("write_outcome", { outcome: "failed", error });
-      showToast("error", "บันทึกคิวไม่สำเร็จ ข้อมูลในฟอร์มยังอยู่ครบ กรุณาลองอีกครั้ง");
+      // Goal 13: after a server business rejection there is NO fallback to the
+      // direct insert path. The server wrote nothing; show the reason and keep
+      // the draft. A transport failure keeps the request ID so retrying the
+      // same attempt cannot create a duplicate queue.
+      const serverCode = useServerCreate ? await extractQueueCreateErrorCode(error) : null;
+      if (serverCode) {
+        serverQueueRequestIdRef.current = null;
+        showToast("error", queueCreateErrorMessage(serverCode));
+      } else {
+        showToast("error", "บันทึกคิวไม่สำเร็จ ข้อมูลในฟอร์มยังอยู่ครบ กรุณาลองอีกครั้ง");
+      }
       return false;
     }
   }, [form, editingQueueId, showToast, queues, procedures, parseHints, lastParseSnapshot, branches, promos, rooms, currentUser]);
