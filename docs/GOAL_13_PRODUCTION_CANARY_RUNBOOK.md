@@ -68,9 +68,20 @@ and leave the current booking path unchanged.
    `PUBLIC`, `anon`, or `authenticated` execute grant.
 6. Deploy `staff-session` only after confirming the current allowed origin and
    secret names are present. Keep all Goal 11D controls disabled.
-7. Ship a separate client change with a disabled-by-default, narrowly scoped
-   queue-create flag. This repository does not yet route the Booking page to
-   `create_queue_v1`; that is deliberate and must be reviewed separately.
+7. The client flag now exists in this repository and is disabled by default.
+   Routing the Booking page create to `create_queue_v1` requires BOTH build-time
+   variables:
+
+   - `VITE_USE_SERVER_QUEUE_CREATE="true"`
+   - `VITE_SERVER_QUEUE_CREATE_STAFF_IDS="<staff uuid>"` (comma-separated
+     allowlist; an empty list enables nobody)
+
+   Only a new pending booking made from the Booking page by an allowlisted
+   operator uses the server path. Edits, reschedules, bulk booking, and
+   Timeline booking stay on the established writer. After a server business
+   rejection the client shows the reason and never falls back to direct
+   insert; a transport failure retries with the same request ID so a retry
+   cannot create a duplicate queue.
 8. Enable the flag for one pre-agreed authorized operator and one normal real
    booking. Do not make a fake customer booking in production. Verify the same
    request ID returns the same queue ID, a cross-branch attempt is denied, and
