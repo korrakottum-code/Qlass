@@ -1,5 +1,5 @@
 import { useMemo, useRef, useEffect } from "react";
-import { blockToTime } from "../utils/helpers";
+import { blockToTime, isActiveQueueStatus } from "../utils/helpers";
 
 const HOUR_COLOR = [
   "#e0f2fe", "#bfdbfe", "#ddd6fe", "#fde68a",
@@ -41,7 +41,7 @@ export default function RoomTimeGrid({
     const map = {};
     branchRooms.forEach((r) => { map[r.id] = {}; });
     queues
-      .filter((q) => q.date === date && q.timeBlock !== null)
+      .filter((q) => q.date === date && q.timeBlock !== null && isActiveQueueStatus(q.status))
       .forEach((q) => {
         if (!map[q.roomId]) return;
         const proc = procedures.find((p) => p.id === q.procedureId);

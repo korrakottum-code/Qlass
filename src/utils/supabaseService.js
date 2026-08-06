@@ -862,7 +862,7 @@ export async function fetchQueuesForRoomDate(roomId, date) {
     .select("*")
     .eq("room_id", roomId)
     .eq("date", date)
-    .not("status", "in", "(cancelled,no_show)");
+    .not("status", "in", "(cancelled,no_show,rescheduled)");
   if (error) throw error;
   return (data || []).map(mapQueueRow);
 }

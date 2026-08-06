@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm } from "../utils/helpers";
+import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus } from "../utils/helpers";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
 
@@ -68,7 +68,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   const roomOccupied = useMemo(() => {
     const map = {};
     filteredRooms.forEach((r) => { map[r.id] = {}; });
-    dayQueues.forEach((q) => {
+    // คิวที่ยกเลิก/ไม่มา/เลื่อนออกไปที่อื่นแล้ว ไม่ควรครองช่องเวลาเดิมอีกต่อไป — ต้องเปิดให้จองใหม่ได้
+    dayQueues.filter((q) => isActiveQueueStatus(q.status)).forEach((q) => {
       if (!map[q.roomId] || q.timeBlock === null) return;
       const proc = procedures.find((p) => p.id === q.procedureId);
       const dur = q.durationBlocks ?? proc?.blocks ?? 1;

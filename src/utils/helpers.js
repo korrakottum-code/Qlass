@@ -1,6 +1,14 @@
 import { DAY_START_BLOCK, DAY_END_BLOCK, ROLES } from "./constants";
 import { canViewAllBranchesForRoles, filterItemsByBranch } from "./accessControl";
 
+// สถานะที่ไม่ควรนับว่า "ครองเวลา" อีกต่อไป — ยกเลิก/ไม่มาตามนัด/เลื่อนออกไปที่อื่นแล้ว
+// (คิวที่เลื่อนออก ยัง "ค้าง" อยู่ในระบบที่ช่องเวลาเดิมด้วยสถานะ "rescheduled"
+// เพื่อเก็บประวัติ แต่ช่องเวลานั้นต้องว่างให้จองใหม่ได้)
+export const INACTIVE_QUEUE_STATUSES = ["cancelled", "no_show", "rescheduled"];
+export function isActiveQueueStatus(status) {
+  return !INACTIVE_QUEUE_STATUSES.includes(status);
+}
+
 export function genId(prefix) {
   return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 }
