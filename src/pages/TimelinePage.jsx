@@ -344,7 +344,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
       {bookingForm && (() => {
         const room = rooms.find((r) => r.id === bookingForm.roomId);
         const branch = branches.find((b) => b.id === bookingForm.branchId);
-        const roomProcs = procedures.filter((p) => !p.type || p.type === room?.type);
+        const roomProcs = procedures.filter((p) => !p.roomType || p.roomType === room?.type);
         const selectedProc = procedures.find((p) => p.id === bookingForm.procedureId);
         const availablePromos = promos.filter((p) => !p.procedureId || p.procedureId === bookingForm.procedureId);
         return (
