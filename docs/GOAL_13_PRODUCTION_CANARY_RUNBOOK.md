@@ -47,22 +47,35 @@ and leave the current booking path unchanged.
    be green.
 2. Take the usual production backup/checkpoint and record a fresh queue/audit
    control total. Verify a normal live booking and edit work before starting.
-3. Apply **only** the reviewed Goal 13 SQL through a dedicated, approved
-   operator procedure. Do **not** run `supabase db push`: it could apply Goal
-   11D as well. Record only the Goal 13 history entry after the exact SQL has
-   succeeded.
-4. Verify the database function exists, has empty search path, and has no
+3. Apply **only** the reviewed Goal 13 SQL through
+   `python3 scripts/goal13_apply_production_function.py --production` and type
+   `APPLY_GOAL13` at its local confirmation. The command stops if Goal 13 is
+   already recorded, Goal 11D is recorded first, the function already exists,
+   the reviewed migration checksum or Goal 12 prerequisites are not exact. It creates/replaces only
+   `create_queue_v1`; it has no business-row write. Do **not** run
+   `supabase db push`: it could apply Goal 11D as well.
+4. Only after that command succeeds, record exactly one migration using:
+
+   ```sh
+   supabase migration repair --linked --status applied 20260724192700
+   supabase migration list --linked
+   ```
+
+   Stop unless the list proves Goal 13 is remote-applied and Goal 11D is still
+   pending. Do not use a dashboard query, an ad-hoc history insert, or repair
+   any other version.
+5. Verify the database function exists, has empty search path, and has no
    `PUBLIC`, `anon`, or `authenticated` execute grant.
-5. Deploy `staff-session` only after confirming the current allowed origin and
+6. Deploy `staff-session` only after confirming the current allowed origin and
    secret names are present. Keep all Goal 11D controls disabled.
-6. Ship a separate client change with a disabled-by-default, narrowly scoped
+7. Ship a separate client change with a disabled-by-default, narrowly scoped
    queue-create flag. This repository does not yet route the Booking page to
    `create_queue_v1`; that is deliberate and must be reviewed separately.
-7. Enable the flag for one pre-agreed authorized operator and one normal real
+8. Enable the flag for one pre-agreed authorized operator and one normal real
    booking. Do not make a fake customer booking in production. Verify the same
    request ID returns the same queue ID, a cross-branch attempt is denied, and
    direct browser execution is denied.
-8. Observe only aggregate queue/audit counts and error rate for at least 15
+9. Observe only aggregate queue/audit counts and error rate for at least 15
    minutes before considering any wider rollout. Never put PIN, HN, phone,
    customer name, token, or request body in an operator note.
 
