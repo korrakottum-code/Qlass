@@ -239,46 +239,6 @@ export default function BookingPage({
         onBulkApply={onBulkBooking}
       />
 
-      {currentUser && myRecentQueues.length > 0 && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="card-header">
-            <h3>🕘 รายการที่บันทึกล่าสุดของฉัน</h3>
-          </div>
-          <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {myRecentQueues.map((q) => {
-              const room = rooms.find((r) => r.id === q.roomId);
-              const proc = procedures.find((p) => p.id === q.procedureId);
-              return (
-                <div
-                  key={q.id}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
-                    padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)",
-                    background: "var(--surface2)", fontSize: 12,
-                  }}
-                >
-                  <span style={{ fontWeight: 700, color: "var(--text1)" }}>{q.name || "—"}</span>
-                  <span style={{ color: "var(--text3)" }}>{proc?.name || "—"}</span>
-                  <span style={{ color: "var(--text3)" }}>
-                    {room ? `[${room.type}] ${room.name}` : "—"}
-                  </span>
-                  <span style={{ color: "var(--text3)" }}>
-                    {q.date ? formatThaiDate(q.date) : "—"}
-                    {q.timeBlock !== null && q.timeBlock !== undefined ? ` ${blockToTime(q.timeBlock)}` : ""}
-                  </span>
-                  {q.price ? (
-                    <span style={{ color: "var(--text3)" }}>฿{Number(q.price).toLocaleString()}</span>
-                  ) : null}
-                  <span style={{ marginLeft: "auto" }}>
-                    <StatusBadge status={q.status} />
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-header">
           <h3>📝 ข้อมูลลูกค้า</h3>
@@ -680,6 +640,46 @@ export default function BookingPage({
           document.body
         );
       })()}
+
+      {currentUser && myRecentQueues.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header">
+            <h3>🕘 รายการที่บันทึกล่าสุดของฉัน</h3>
+          </div>
+          <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {myRecentQueues.map((q) => {
+              const room = rooms.find((r) => r.id === q.roomId);
+              const proc = procedures.find((p) => p.id === q.procedureId);
+              return (
+                <div
+                  key={q.id}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                    padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)",
+                    background: "var(--surface2)", fontSize: 12,
+                  }}
+                >
+                  <span style={{ fontWeight: 700, color: "var(--text1)" }}>{q.name || "—"}</span>
+                  <span style={{ color: "var(--text3)" }}>{proc?.name || "—"}</span>
+                  <span style={{ color: "var(--text3)" }}>
+                    {room ? `[${room.type}] ${room.name}` : "—"}
+                  </span>
+                  <span style={{ color: "var(--text3)" }}>
+                    {q.date ? formatThaiDate(q.date) : "—"}
+                    {q.timeBlock !== null && q.timeBlock !== undefined ? ` ${blockToTime(q.timeBlock)}` : ""}
+                  </span>
+                  {q.price ? (
+                    <span style={{ color: "var(--text3)" }}>฿{Number(q.price).toLocaleString()}</span>
+                  ) : null}
+                  <span style={{ marginLeft: "auto" }}>
+                    <StatusBadge status={q.status} />
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Quick stats */}
       <div className="stats-row">
