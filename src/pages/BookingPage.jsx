@@ -1,10 +1,24 @@
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { CUSTOMER_TYPES, ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
-import { WORK_BLOCKS, blockToTime, getEmptyBookingForm, getTodayStr, isActiveQueueStatus } from "../utils/helpers";
+import { CUSTOMER_TYPES, ROOM_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
+import { WORK_BLOCKS, blockToTime, formatThaiDate, getEmptyBookingForm, getTodayStr, isActiveQueueStatus } from "../utils/helpers";
 import SmartParseBox from "../components/SmartParseBox";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
+
+function StatusBadge({ status }) {
+  const s = QUEUE_STATUSES.find((x) => x.value === (status || "pending"));
+  if (!s) return null;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+      background: s.bg, color: s.color, whiteSpace: "nowrap",
+    }}>
+      {s.emoji} {s.label}
+    </span>
+  );
+}
 
 export default function BookingPage({
   form, setForm, editingQueueId, setEditingQueueId,
@@ -203,6 +217,16 @@ export default function BookingPage({
     setEditingQueueId(null);
   }
 
+  // 5 รายการล่าสุดที่ account นี้เป็นคนบันทึก — ไว้เช็คว่าข้อมูลลงถูกมั้ยหลังกดบันทึก
+  const myRecentQueues = useMemo(() => {
+    if (!currentUser) return [];
+    return queues
+      .filter((q) => q.recordedBy === currentUser.id)
+      .slice()
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 5);
+  }, [queues, currentUser]);
+
   return (
     <div>
       <SmartParseBox
@@ -214,6 +238,7 @@ export default function BookingPage({
         onApply={onSmartApply}
         onBulkApply={onBulkBooking}
       />
+
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-header">
           <h3>📝 ข้อมูลลูกค้า</h3>
@@ -615,6 +640,46 @@ export default function BookingPage({
           document.body
         );
       })()}
+
+      {currentUser && myRecentQueues.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header">
+            <h3>🕘 รายการที่บันทึกล่าสุดของฉัน</h3>
+          </div>
+          <div className="card-body" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {myRecentQueues.map((q) => {
+              const room = rooms.find((r) => r.id === q.roomId);
+              const proc = procedures.find((p) => p.id === q.procedureId);
+              return (
+                <div
+                  key={q.id}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                    padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)",
+                    background: "var(--surface2)", fontSize: 12,
+                  }}
+                >
+                  <span style={{ fontWeight: 700, color: "var(--text1)" }}>{q.name || "—"}</span>
+                  <span style={{ color: "var(--text3)" }}>{proc?.name || "—"}</span>
+                  <span style={{ color: "var(--text3)" }}>
+                    {room ? `[${room.type}] ${room.name}` : "—"}
+                  </span>
+                  <span style={{ color: "var(--text3)" }}>
+                    {q.date ? formatThaiDate(q.date) : "—"}
+                    {q.timeBlock !== null && q.timeBlock !== undefined ? ` ${blockToTime(q.timeBlock)}` : ""}
+                  </span>
+                  {q.price ? (
+                    <span style={{ color: "var(--text3)" }}>฿{Number(q.price).toLocaleString()}</span>
+                  ) : null}
+                  <span style={{ marginLeft: "auto" }}>
+                    <StatusBadge status={q.status} />
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Quick stats */}
       <div className="stats-row">
