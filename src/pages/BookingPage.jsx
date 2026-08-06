@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { CUSTOMER_TYPES, ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
-import { WORK_BLOCKS, blockToTime, getEmptyBookingForm, getTodayStr } from "../utils/helpers";
+import { WORK_BLOCKS, blockToTime, getEmptyBookingForm, getTodayStr, isActiveQueueStatus } from "../utils/helpers";
 import SmartParseBox from "../components/SmartParseBox";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
@@ -81,7 +81,7 @@ export default function BookingPage({
     const occupied = new Set();
     if (!form.roomId || !form.date) return occupied;
     queues
-      .filter((q) => q.roomId === form.roomId && q.date === form.date && q.id !== editingQueueId)
+      .filter((q) => q.roomId === form.roomId && q.date === form.date && q.id !== editingQueueId && isActiveQueueStatus(q.status))
       .forEach((q) => {
         if (q.timeBlock !== null) {
           const proc = procedures.find((p) => p.id === q.procedureId);
