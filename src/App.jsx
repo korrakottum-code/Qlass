@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
-import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime } from "./utils/helpers";
+import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed } from "./utils/helpers";
 import {
   getAllStaff, getAllBranches, getAllProcedures, getAllPromos, getAllRooms, getAllRoomSchedules, getAllQueues,
   createBranch, updateBranch, deleteBranch as deleteBranchDB,
@@ -408,12 +408,16 @@ export default function App() {
 
     // ─── ตรวจสอบห้องปิดรับคิว ───
     if (form.roomId && form.date) {
-      const roomScheds = roomSchedules.filter(
-        (s) => s.roomId === form.roomId && (s.date === form.date || s.date === "")
-      );
-      const isRoomClosed = roomScheds.some((s) => !s.available && !s.noteOnly && s.startBlock === null);
-      if (isRoomClosed) {
-        showToast("error", "❌ ห้องนี้ปิดรับคิวในวันที่เลือก ไม่สามารถลงคิวได้");
+      const roomObj = rooms.find((r) => r.id === form.roomId);
+      const proc = procedures.find((p) => p.id === form.procedureId);
+      const dur = form.durationBlocks ?? proc?.blocks ?? 1;
+
+      const isClosed = form.timeBlock !== null
+        ? isRoomRangeClosed(roomSchedules, form.roomId, form.date, form.timeBlock, dur, roomObj)
+        : roomSchedules.some((s) => s.roomId === form.roomId && (s.date === form.date || s.date === "") && !s.available && !s.noteOnly && s.startBlock === null);
+
+      if (isClosed) {
+        showToast("error", "❌ ห้องนี้ปิดรับคิวหรือปิดให้บริการในเวลาที่เลือก ไม่สามารถลงคิวได้");
         return;
       }
     }
@@ -1060,7 +1064,24 @@ export default function App() {
                 promos={promos}
                 roomSchedules={filteredRoomSchedules}
                 currentUser={currentUser}
+                showToast={showToast}
                 onSubmitBooking={async (bookingForm) => {
+                  // room schedule closure check
+                  if (bookingForm.roomId && bookingForm.date) {
+                    const roomObj = rooms.find((r) => r.id === bookingForm.roomId);
+                    const proc = procedures.find((p) => p.id === bookingForm.procedureId);
+                    const dur = bookingForm.durationBlocks ?? proc?.blocks ?? 1;
+
+                    const isClosed = bookingForm.timeBlock !== null
+                      ? isRoomRangeClosed(roomSchedules, bookingForm.roomId, bookingForm.date, bookingForm.timeBlock, dur, roomObj)
+                      : roomSchedules.some((s) => s.roomId === bookingForm.roomId && (s.date === bookingForm.date || s.date === "") && !s.available && !s.noteOnly && s.startBlock === null);
+
+                    if (isClosed) {
+                      showToast("error", "❌ ห้องนี้ปิดรับคิวหรือปิดให้บริการในเวลาที่เลือก ไม่สามารถลงคิวได้");
+                      return false;
+                    }
+                  }
+
                   // duplicate check
                   const dup = queues.find((q) =>
                     q.phone.trim() === bookingForm.phone.trim() &&

@@ -119,3 +119,74 @@ export function canViewAllBranches(user) {
 export function filterByUserBranch(items, user, branchIdField = "branchId") {
   return filterItemsByBranch(items, user, branchIdField, ROLES);
 }
+
+/**
+ * ตรวจสอบว่าบล็อคเวลา (5 นาที) ในห้องและวันที่ระบุ ปิดบริการ / ไม่พร้อม หรือไม่
+ */
+export function isRoomBlockClosed(roomSchedules = [], roomId, date, block, room = null) {
+  if (!roomId || !date || block === null || block === undefined) return false;
+
+  const schedules = (roomSchedules || []).filter(
+    (s) => s.roomId === roomId && (s.date === date || s.date === "")
+  );
+
+  // 1. ปิดทั้งวัน (available = false, noteOnly = false, startBlock = null)
+  const isClosedAllDay = schedules.some(
+    (s) => !s.available && !s.noteOnly && (s.startBlock === null || s.startBlock === undefined)
+  );
+  if (isClosedAllDay) return true;
+
+  // 2. ปิดเฉพาะช่วงเวลา (available = false, noteOnly = false, startBlock <= block < endBlock)
+  const isBlockedBySchedule = schedules.some(
+    (s) =>
+      !s.available &&
+      !s.noteOnly &&
+      s.startBlock !== null &&
+      s.startBlock !== undefined &&
+      s.endBlock !== null &&
+      s.endBlock !== undefined &&
+      block >= s.startBlock &&
+      block < s.endBlock
+  );
+  if (isBlockedBySchedule) return true;
+
+  // 3. ตรวจสอบเวลาเปิดปกติของห้อง (ถ้ามีข้อมูล room)
+  if (room) {
+    const openB = room.openBlock ?? 132;
+    const closeB = room.closeBlock ?? 240;
+
+    // ตรวจสอบว่ามี Schedule ขยายเวลาเปิดพิเศษหรือไม่ (available = true, noteOnly = false)
+    const isSpecialOpen = schedules.some(
+      (s) =>
+        s.available &&
+        !s.noteOnly &&
+        s.startBlock !== null &&
+        s.startBlock !== undefined &&
+        s.endBlock !== null &&
+        s.endBlock !== undefined &&
+        block >= s.startBlock &&
+        block < s.endBlock
+    );
+
+    if (!isSpecialOpen && (block < openB || block >= closeB)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * ตรวจสอบว่าช่วงเวลาต่อเนื่อง (startBlock ถึง startBlock + durationBlocks) มีบล็อคใดปิดบริการหรือไม่
+ */
+export function isRoomRangeClosed(roomSchedules = [], roomId, date, startBlock, durationBlocks = 1, room = null) {
+  if (startBlock === null || startBlock === undefined) return false;
+  const dur = Math.max(1, durationBlocks || 1);
+  for (let i = 0; i < dur; i++) {
+    if (isRoomBlockClosed(roomSchedules, roomId, date, startBlock + i, room)) {
+      return true;
+    }
+  }
+  return false;
+}
+

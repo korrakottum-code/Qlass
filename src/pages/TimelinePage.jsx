@@ -1,9 +1,9 @@
 import { useState, useMemo } from "react";
-import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus } from "../utils/helpers";
+import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isRoomBlockClosed } from "../utils/helpers";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
 
-export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], currentUser, onSubmitBooking, onEditQueue }) {
+export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], currentUser, onSubmitBooking, onEditQueue, showToast }) {
   const [date, setDate] = useState(getTodayStr());
   // เลือกได้ทีละสาขา (ไม่มี "ทุกสาขา" — เรนเดอร์ทุกห้องทุกสาขาพร้อมกันทำให้หน้าช้ามาก)
   // ถ้ายังไม่เคยเลือก หรือสาขาที่เลือกไว้หายไป (branches โหลดเสร็จ/เปลี่ยน) ใช้สาขาแรกแทน
@@ -187,18 +187,23 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                         {filteredRooms.map((room) => {
                           const q = roomOccupied[room.id]?.[b];
                           const isBooked = !!q;
+                          const isClosed = !isBooked && isRoomBlockClosed(roomSchedules, room.id, date, b, room);
                           const isCourse = q?.customerType === "course";
                           const isM = room.type === "M";
                           const bookedBg = isCourse ? "#fef9c3" : isM ? "#fde8e8" : "#dcfce7";
+                          const closedBg = "var(--surface3)";
                           const emptyBg = isHourStart ? "rgba(0,0,0,0.02)" : "transparent";
 
                           return (
                             <td
                               key={room.id}
+                              title={isBooked ? `คิวของคุณ ${q.name}` : isClosed ? "ห้องปิด/ไม่พร้อม" : "กดเพื่อจองคิว"}
                               onClick={(e) => {
                                 if (q) {
                                   const rect = e.currentTarget.getBoundingClientRect();
                                   setPopup({ q, room, block: b, x: rect.left, y: rect.bottom });
+                                } else if (isClosed) {
+                                  showToast?.("error", "⚠️ ห้องนี้ปิด/ไม่พร้อมในเวลานี้ ไม่สามารถลงคิวได้");
                                 } else {
                                   setBookingForm({
                                     ...getEmptyBookingForm(),
@@ -211,14 +216,20 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                               }}
                               style={{
                                 height: ROW_H,
-                                background: isBooked ? bookedBg : emptyBg,
+                                background: isBooked ? bookedBg : isClosed ? closedBg : emptyBg,
                                 borderRight: "1px solid var(--border)",
                                 borderTop: isHourStart ? "2px solid var(--border2)" : undefined,
                                 position: "relative", overflow: "hidden",
                                 transition: "background 0.1s",
-                                cursor: "pointer",
+                                cursor: isClosed ? "not-allowed" : "pointer",
                               }}
                             >
+                              {/* สัญลักษณ์ปิด / ไม่พร้อม */}
+                              {isClosed && isHourStart && (
+                                <div style={{ fontSize: 9, color: "var(--text3)", opacity: 0.6, textAlign: "center", userSelect: "none" }}>
+                                  ปิด
+                                </div>
+                              )}
                               {/* ชื่อ + หัตถการ — เฟ้นที่ขึ้นใน block เริ่มต้น */}
                               {q?.isStart && (
                                 <div style={{
@@ -249,7 +260,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
 
           {/* Legend */}
           <div style={{ display: "flex", gap: 12, padding: "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap" }}>
-            {[["#fde8e8","มีคิว (M)"],["#dcfce7","มีคิว (T)"],["#fef9c3","ใช้คอร์ส"],["transparent","ว่าง"]].map(([c, l]) => (
+            {[["#fde8e8","มีคิว (M)"],["#dcfce7","มีคิว (T)"],["#fef9c3","ใช้คอร์ส"],["var(--surface3)","ปิด / ไม่พร้อม"],["transparent","ว่าง"]].map(([c, l]) => (
               <span key={l} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text2)" }}>
                 <span style={{ width: 12, height: 12, borderRadius: 3, background: c, border: "1px solid var(--border)", display: "inline-block" }} />{l}
               </span>
