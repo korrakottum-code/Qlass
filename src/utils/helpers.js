@@ -9,6 +9,17 @@ export function isActiveQueueStatus(status) {
   return !INACTIVE_QUEUE_STATUSES.includes(status);
 }
 
+// ─── คิวลงล่วงหน้าที่ยังไม่ยืนยันเมื่อถึงวันนัด — เตือน (ไม่ auto ย้าย) ───
+// logic ล้วนอยู่ใน waitingQueueRules.js (โมดูลเดี่ยว unit test ได้ตรง ๆ) — re-export ให้หน้าต่าง ๆ ใช้
+export { isOverdueUnconfirmed, isOverdueMoveNote, OVERDUE_MOVE_NOTE_PREFIX, UNCONFIRMED_WARNING_BLOCK } from "./waitingQueueRules";
+import { OVERDUE_MOVE_NOTE_PREFIX } from "./waitingQueueRules";
+
+export function buildOverdueMoveNote(queue, room) {
+  const timeLabel = queue.timeBlock !== null && queue.timeBlock !== undefined ? blockToTime(queue.timeBlock) : "-";
+  const base = `${OVERDUE_MOVE_NOTE_PREFIX} ${room?.name || "-"} ${timeLabel} (${formatThaiDate(queue.date)}) — ย้ายเข้าคิวรอเพราะยังไม่ยืนยัน`;
+  return queue.statusNote ? `${base}\n${queue.statusNote}` : base;
+}
+
 export function genId(prefix) {
   return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 }

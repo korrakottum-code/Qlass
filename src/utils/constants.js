@@ -108,6 +108,7 @@ export const NAV_ITEMS = [
   { section: "งานหลัก" },
   { id: "ceo-dashboard", label: "CEO Dashboard",       icon: "👑" },
   { id: "booking",       label: "บันทึกคิว",          icon: "📝" },
+  { id: "waiting-queue", label: "คิวรอ (Waiting Queue)", icon: "⏳" },
   { id: "queue-table",   label: "ตารางคิว",            icon: "📋" },
   { id: "timeline",      label: "Timeline คิว",        icon: "🗓️" },
   { id: "summary",       label: "สรุปประจำวัน",        icon: "📊" },
@@ -140,7 +141,7 @@ export const ROLES = [
     branchScope: "all",
     color: "#dc2626",
     bg: "rgba(220,38,38,0.1)",
-    pages: ["ceo-dashboard","booking","queue-table","timeline","summary","commission","export","tickets","branches","procedures","promos","rooms","room-schedule","staff","activity-log"],
+    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","commission","export","tickets","branches","procedures","promos","rooms","room-schedule","staff","activity-log"],
   },
   {
     value: "head_admin",
@@ -148,7 +149,7 @@ export const ROLES = [
     branchScope: "all",
     color: "#7c3aed",
     bg: "rgba(124,58,237,0.1)",
-    pages: ["ceo-dashboard","booking","queue-table","timeline","summary","commission","export","tickets","procedures","promos","rooms","room-schedule","staff","activity-log"],
+    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","commission","export","tickets","procedures","promos","rooms","room-schedule","staff","activity-log"],
   },
   {
     value: "admin",
@@ -156,7 +157,7 @@ export const ROLES = [
     branchScope: "all",
     color: "#2563eb",
     bg: "rgba(37,99,235,0.1)",
-    pages: ["booking","queue-table","timeline","summary","commission","export","tickets","room-schedule"],
+    pages: ["booking","queue-table","waiting-queue","timeline","summary","commission","export","tickets","room-schedule"],
   },
   {
     value: "branch_manager",
@@ -164,7 +165,7 @@ export const ROLES = [
     branchScope: "single",
     color: "#059669",
     bg: "rgba(5,150,105,0.1)",
-    pages: ["booking","queue-table","timeline","summary","export","tickets","rooms","room-schedule"],
+    pages: ["booking","queue-table","waiting-queue","timeline","summary","export","tickets","rooms","room-schedule"],
   },
   {
     value: "cashier",
@@ -172,7 +173,7 @@ export const ROLES = [
     branchScope: "single",
     color: "#d97706",
     bg: "rgba(217,119,6,0.1)",
-    pages: ["booking","queue-table","timeline","summary","export","tickets"],
+    pages: ["booking","queue-table","waiting-queue","timeline","summary","export","tickets"],
   },
 ];
 

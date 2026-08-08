@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
-import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed } from "./utils/helpers";
+import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed, buildOverdueMoveNote } from "./utils/helpers";
 import {
   getAllStaff, getAllBranches, getAllProcedures, getAllPromos, getAllRooms, getAllRoomSchedules, getAllQueues,
   createBranch, updateBranch, deleteBranch as deleteBranchDB,
@@ -43,6 +43,7 @@ import StaffModal from "./components/modals/StaffModal";
 
 import BookingPage from "./pages/BookingPage";
 import QueueTablePage from "./pages/QueueTablePage";
+import WaitingQueuePage from "./pages/WaitingQueuePage";
 import BranchesPage from "./pages/BranchesPage";
 import ProceduresPage from "./pages/ProceduresPage";
 import PromosPage from "./pages/PromosPage";
@@ -465,22 +466,48 @@ export default function App() {
       }
     }
 
+    // ─── กำลังเรียกคิวรอเข้ารับบริการ แต่ยังไม่ได้เลือกห้อง/เวลา ───
+    // อย่าปล่อยให้คิวหลุดออกจาก "คิวรอ" ไปเป็นสถานะอื่นที่ไม่มีห้อง/เวลา (จะหาไม่เจอทั้งสองหน้า)
+    let submitForm = form;
+    let revertedToWaitingQueue = false;
+    if (editingQueueId) {
+      const original = queues.find((q) => q.id === editingQueueId);
+      if (original?.status === "waiting_queue" && form.status !== "waiting_queue" && !form.roomId) {
+        submitForm = { ...form, status: "waiting_queue" };
+        revertedToWaitingQueue = true;
+      } else if (original?.status === "waiting_queue" && form.status === "pending" && form.roomId && form.date === getTodayStr()) {
+        // เรียกเข้าวันนี้และเลือกห้องแล้ว — ลูกค้าอยู่หน้าร้าน ให้ "ยืนยันแล้ว" เลย
+        // (กันไม่ให้คิวที่เพิ่งเรียกเข้าโดนธง "เลยเวลายืนยัน" ซ้ำทันทีหลัง 12:00)
+        submitForm = { ...form, status: "confirmed" };
+      }
+    }
+
+    // ─── คิวที่ลงวันเดียวกัน (walk-in) ให้ขึ้น "ยืนยันแล้ว" ทันที ไม่ต้องรอยืนยัน ───
+    if (!editingQueueId && submitForm.status !== "waiting_queue" && submitForm.date === getTodayStr()) {
+      submitForm = { ...submitForm, status: "confirmed" };
+    }
+
     recordClientDiagnostic("write_outcome", { outcome: "started" });
-    const useServerCreate = !editingQueueId && shouldUseServerQueueCreate(currentUser, form);
+    const useServerCreate = !editingQueueId && shouldUseServerQueueCreate(currentUser, submitForm);
     try {
       if (editingQueueId) {
-        await updateQueue(editingQueueId, form);
-        showToast("success", "แก้ไขคิวเรียบร้อย");
+        await updateQueue(editingQueueId, submitForm);
+        showToast(
+          revertedToWaitingQueue ? "error" : "success",
+          revertedToWaitingQueue
+            ? "ยังไม่ได้เลือกห้อง/เวลา — คิวนี้จะยังอยู่ในคิวรอ (Waiting Queue)"
+            : "แก้ไขคิวเรียบร้อย"
+        );
         setEditingQueueId(null);
       } else {
         let newQueue;
         if (useServerCreate) {
           if (!serverQueueRequestIdRef.current) serverQueueRequestIdRef.current = crypto.randomUUID();
-          newQueue = await createQueueOnServer({ requestId: serverQueueRequestIdRef.current, form });
+          newQueue = await createQueueOnServer({ requestId: serverQueueRequestIdRef.current, form: submitForm });
           serverQueueRequestIdRef.current = null;
         } else {
           newQueue = await createQueue({
-            ...form,
+            ...submitForm,
             createdAt: getTodayStr(),
             recordedBy: currentUser?.id || null,
           });
@@ -527,6 +554,34 @@ export default function App() {
     setEditingQueueId(q.id);
     navigateTo("booking");
   }, [navigateTo]);
+
+  // เรียกคิวรอเข้ารับบริการ: เปิดฟอร์มพร้อมให้เลือกห้อง/เวลาทันที ไม่ต้องกดปุ่ม "ลงคิวรอ" อีกครั้ง
+  const callInWaitingQueue = useCallback((q) => {
+    setForm({ ...q, status: "pending" });
+    setEditingQueueId(q.id);
+    navigateTo("booking");
+  }, [navigateTo]);
+
+  // ย้ายคิวที่เลยเวลายืนยันเข้าคิวรอ (กดเอง ไม่ auto) — เคลียร์ห้อง/เวลาทิ้งเพื่อปล่อย slot ให้คิวอื่น
+  // เก็บห้อง/เวลาเดิมไว้เป็นข้อความใน statusNote แทน ไม่เพิ่มคอลัมน์ใหม่
+  const moveToWaitingQueue = useCallback(async (q) => {
+    const room = rooms.find((r) => r.id === q.roomId);
+    try {
+      const updated = await updateQueue(q.id, {
+        ...q,
+        status: "waiting_queue",
+        roomId: "",
+        timeBlock: null,
+        durationBlocks: null,
+        statusNote: buildOverdueMoveNote(q, room),
+      });
+      setQueues((prev) => prev.map((x) => (x.id === q.id ? updated : x)));
+      showToast("success", "ย้ายเข้าคิวรอเรียบร้อย — ช่วงเวลานี้ว่างให้ลงคิวอื่นได้แล้ว");
+    } catch (error) {
+      console.error("Move to waiting queue failed:", error);
+      showToast("error", "ย้ายเข้าคิวรอไม่สำเร็จ กรุณาลองอีกครั้ง");
+    }
+  }, [rooms, showToast]);
 
   const deleteQueue = useCallback(async (id, queueSnapshot) => {
     await deleteQueueDB(id);
@@ -903,7 +958,8 @@ export default function App() {
         currentPage={page}
         onNavigate={navigateTo}
         branchCount={filteredBranches.length}
-        queueCount={filteredQueues.filter(q => q.date?.startsWith(new Date().toISOString().slice(0, 7)) && ["new", "old"].includes(q.customerType)).length}
+        queueCount={filteredQueues.filter(q => (q.status || "pending") !== "waiting_queue" && q.date?.startsWith(new Date().toISOString().slice(0, 7)) && ["new", "old"].includes(q.customerType)).length}
+        waitingQueueCount={filteredQueues.filter(q => (q.status || "pending") === "waiting_queue").length}
         currentUser={currentUser}
         onLogout={handleLogout}
       />
@@ -1007,6 +1063,19 @@ export default function App() {
                 onEdit={editQueue}
                 onDelete={deleteQueue}
                 onUpdateStatus={(q) => setModal({ type: "status", data: q })}
+                onMoveToWaitingQueue={moveToWaitingQueue}
+              />
+            )}
+
+            {page === "waiting-queue" && (
+              <WaitingQueuePage
+                queues={filteredQueues}
+                branches={filteredBranches}
+                procedures={procedures}
+                staff={staff}
+                onCallIn={callInWaitingQueue}
+                onUpdateStatus={(q) => setModal({ type: "status", data: q })}
+                onDelete={deleteQueue}
               />
             )}
 
@@ -1121,8 +1190,13 @@ export default function App() {
                     }
                   }
                   try {
+                    // คิวที่ลงวันเดียวกัน ให้ "ยืนยันแล้ว" ทันที — กฎเดียวกับหน้าบันทึกคิว
+                    // (กันคิวที่เพิ่งจองผ่าน Timeline วันนี้ โดนธง "เลยเวลายืนยัน" ทันทีหลัง 12:00)
+                    const sameDayConfirmed = (bookingForm.status || "pending") === "pending" && bookingForm.date === getTodayStr()
+                      ? { ...bookingForm, status: "confirmed" }
+                      : bookingForm;
                     // บันทึกลง Supabase และอัปเดต state ทันที ไม่รอ Realtime
-                    const newQueue = await createQueue({ ...bookingForm, recordedBy: currentUser?.id || null });
+                    const newQueue = await createQueue({ ...sameDayConfirmed, recordedBy: currentUser?.id || null });
                     if (newQueue) {
                       setQueues((prev) => prev.some((q) => q.id === newQueue.id) ? prev : [...prev, newQueue]);
                     }
@@ -1135,6 +1209,7 @@ export default function App() {
                   }
                 }}
                 onEditQueue={(q) => { editQueue(q); }}
+                onMoveToWaitingQueue={moveToWaitingQueue}
               />
             )}
 

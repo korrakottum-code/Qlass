@@ -1,9 +1,12 @@
 import { useState, useMemo } from "react";
-import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isRoomBlockClosed } from "../utils/helpers";
+import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed } from "../utils/helpers";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
 
-export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], currentUser, onSubmitBooking, onEditQueue, showToast }) {
+// สถานะที่ยังถือว่า "ยังไม่ยืนยัน" — ปุ่มย้ายเข้าคิวรอใน popover ใช้ได้เฉพาะกลุ่มนี้
+const UNCONFIRMED_STATUSES = ["pending", "follow1", "follow2", "follow3"];
+
+export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], currentUser, onSubmitBooking, onEditQueue, onMoveToWaitingQueue, showToast }) {
   const [date, setDate] = useState(getTodayStr());
   // เลือกได้ทีละสาขา (ไม่มี "ทุกสาขา" — เรนเดอร์ทุกห้องทุกสาขาพร้อมกันทำให้หน้าช้ามาก)
   // ถ้ายังไม่เคยเลือก หรือสาขาที่เลือกไว้หายไป (branches โหลดเสร็จ/เปลี่ยน) ใช้สาขาแรกแทน
@@ -81,6 +84,13 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   }, [filteredRooms, dayQueues, procedures]);
 
   const totalQueues = dayQueues.length;
+
+  // คิวในสาขาที่ดูอยู่ ที่ยังไม่ยืนยันและเลย 12:00 ของวันนัดแล้ว (นับเฉพาะตอนดูวันนี้)
+  // นับเฉพาะคิวที่มีห้อง+เวลา ให้ตัวเลขตรงกับช่องสีเหลืองที่กดได้จริงบน grid
+  const overdueCount = useMemo(() => {
+    if (date !== getTodayStr()) return 0;
+    return dayQueues.filter((q) => q.branchId === filterBranch && q.roomId && q.timeBlock !== null && isOverdueUnconfirmed(q)).length;
+  }, [dayQueues, date, filterBranch]);
   const ROW_H = 30;  // ความสูงแต่ละ block 5 นาที (ลดจาก 40 ให้เห็นช่วงเวลาได้มากขึ้นโดยไม่ต้องเลื่อน)
   const TIME_COL = 72; // คอลัมน์เวลาซ้าย
 
@@ -109,6 +119,17 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
           <span style={{ background: "var(--surface3)", borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 700 }}>{totalQueues} คิว</span>
         </div>
       </div>
+
+      {overdueCount > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
+          padding: "8px 14px", borderRadius: "var(--radius-sm)",
+          border: "1.5px solid #d97706", background: "rgba(217,119,6,0.12)",
+          color: "#b45309", fontSize: 13, fontWeight: 700,
+        }}>
+          ⚠️ {overdueCount} คิวยังไม่ยืนยัน เลยเวลา 12:00 แล้ว — กดที่ช่องคิว (สีเหลือง) เพื่อย้ายเข้าคิวรอ
+        </div>
+      )}
 
       {filteredRooms.length === 0 ? (
         <div className="card"><div className="empty"><div className="e-icon">🚪</div><p>ไม่พบห้อง</p></div></div>
@@ -189,8 +210,9 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                           const isBooked = !!q;
                           const isClosed = !isBooked && isRoomBlockClosed(roomSchedules, room.id, date, b, room);
                           const isCourse = q?.customerType === "course";
+                          const isOverdue = isBooked && isOverdueUnconfirmed(q);
                           const isM = room.type === "M";
-                          const bookedBg = isCourse ? "#fef9c3" : isM ? "#fde8e8" : "#dcfce7";
+                          const bookedBg = isOverdue ? "rgba(217,119,6,0.2)" : isCourse ? "#fef9c3" : isM ? "#fde8e8" : "#dcfce7";
                           const closedBg = "var(--surface3)";
                           const emptyBg = isHourStart ? "rgba(0,0,0,0.02)" : "transparent";
 
@@ -237,8 +259,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                                   display: "flex", flexDirection: "column", justifyContent: "center",
                                   overflow: "hidden",
                                 }}>
-                                  <div style={{ fontSize: 11, fontWeight: 700, color: isCourse ? "#92400e" : isM ? "#991b1b" : "#166534", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                    {q.name}
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: isOverdue ? "#b45309" : isCourse ? "#92400e" : isM ? "#991b1b" : "#166534", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {isOverdue ? "⚠️ " : ""}{q.name}
                                   </div>
                                   {q.procName && (
                                     <div style={{ fontSize: 9, color: isCourse ? "#b45309" : isM ? "#b91c1c" : "#166534", opacity: 0.8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -260,7 +282,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
 
           {/* Legend */}
           <div style={{ display: "flex", gap: 12, padding: "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap" }}>
-            {[["#fde8e8","มีคิว (M)"],["#dcfce7","มีคิว (T)"],["#fef9c3","ใช้คอร์ส"],["var(--surface3)","ปิด / ไม่พร้อม"],["transparent","ว่าง"]].map(([c, l]) => (
+            {[["#fde8e8","มีคิว (M)"],["#dcfce7","มีคิว (T)"],["#fef9c3","ใช้คอร์ส"],["rgba(217,119,6,0.2)","เลยเวลายืนยัน"],["var(--surface3)","ปิด / ไม่พร้อม"],["transparent","ว่าง"]].map(([c, l]) => (
               <span key={l} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text2)" }}>
                 <span style={{ width: 12, height: 12, borderRadius: 3, background: c, border: "1px solid var(--border)", display: "inline-block" }} />{l}
               </span>
@@ -346,6 +368,24 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                 onClick={() => { setPopup(null); onEditQueue(popup.q); }}
               >
                 ✏️ แก้ไขคิวนี้
+              </button>
+            )}
+            {onMoveToWaitingQueue && UNCONFIRMED_STATUSES.includes(popup.q.status || "pending") && popup.q.roomId && (
+              <button
+                title="ปล่อยห้อง/เวลานี้ให้ลงคิวอื่นได้ — ข้อมูลห้อง/เวลาเดิมจะถูกเก็บไว้ในหมายเหตุ"
+                style={{
+                  width: "100%", marginTop: 8, fontSize: 13, fontWeight: 700,
+                  padding: "8px 12px", borderRadius: "var(--radius-sm)", cursor: "pointer",
+                  background: "rgba(217,119,6,0.12)", border: "1.5px solid #d97706", color: "#b45309",
+                }}
+                onClick={() => {
+                  // ตัดฟิลด์ enrich ที่เติมมาจาก roomOccupied ออก ให้เหลือคิวดิบแบบเดียวกับหน้าตารางคิว
+                  const { procName: _procName, isStart: _isStart, dur: _dur, ...rawQueue } = popup.q;
+                  setPopup(null);
+                  onMoveToWaitingQueue(rawQueue);
+                }}
+              >
+                ➡️ ย้ายเข้าคิวรอ
               </button>
             )}
           </div>
