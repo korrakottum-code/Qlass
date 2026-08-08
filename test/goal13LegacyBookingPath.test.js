@@ -16,7 +16,9 @@ test("Goal 13 keeps every non-gated Booking flow on the established writer", () 
   assert.ok((app.match(/await createQueue\(/g) ?? []).length >= 3);
   // The server path exists exactly once and only behind the explicit gate.
   assert.equal((app.match(/createQueueOnServer\(/g) ?? []).length, 1);
-  assert.match(app, /const useServerCreate = !editingQueueId && shouldUseServerQueueCreate\(currentUser, form\)/);
+  // submitForm = form plus deliberate pre-gate overrides (waiting-queue revert,
+  // same-day auto-confirm) — the gate itself is unchanged and still evaluated once.
+  assert.match(app, /const useServerCreate = !editingQueueId && shouldUseServerQueueCreate\(currentUser, submitForm\)/);
 });
 
 test("Goal 13 booking save never falls back to direct insert after a server rejection", () => {
