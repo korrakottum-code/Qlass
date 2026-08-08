@@ -86,9 +86,10 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   const totalQueues = dayQueues.length;
 
   // คิวในสาขาที่ดูอยู่ ที่ยังไม่ยืนยันและเลย 12:00 ของวันนัดแล้ว (นับเฉพาะตอนดูวันนี้)
+  // นับเฉพาะคิวที่มีห้อง+เวลา ให้ตัวเลขตรงกับช่องสีเหลืองที่กดได้จริงบน grid
   const overdueCount = useMemo(() => {
     if (date !== getTodayStr()) return 0;
-    return dayQueues.filter((q) => q.branchId === filterBranch && isOverdueUnconfirmed(q)).length;
+    return dayQueues.filter((q) => q.branchId === filterBranch && q.roomId && q.timeBlock !== null && isOverdueUnconfirmed(q)).length;
   }, [dayQueues, date, filterBranch]);
   const ROW_H = 30;  // ความสูงแต่ละ block 5 นาที (ลดจาก 40 ให้เห็นช่วงเวลาได้มากขึ้นโดยไม่ต้องเลื่อน)
   const TIME_COL = 72; // คอลัมน์เวลาซ้าย

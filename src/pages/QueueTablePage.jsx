@@ -86,9 +86,10 @@ export default function QueueTablePage({
   }, [queues, qfDate, qfBranch]);
 
   // คิวที่ลงล่วงหน้าแล้วยังไม่ยืนยันเมื่อเลย 12:00 ของวันนัด (สำหรับวันที่กำลังดูอยู่)
+  // นับเฉพาะคิวที่มีห้อง ให้ตัวเลขตรงกับจำนวนแถวที่มีปุ่ม "ย้ายเข้าคิวรอ" จริง
   const overdueCount = useMemo(() => {
     if (qfDate !== getTodayStr()) return 0;
-    return queues.filter((q) => (qfBranch === "all" || q.branchId === qfBranch) && isOverdueUnconfirmed(q)).length;
+    return queues.filter((q) => (qfBranch === "all" || q.branchId === qfBranch) && q.roomId && isOverdueUnconfirmed(q)).length;
   }, [queues, qfDate, qfBranch]);
 
   const roomScheduleNotesByRoomId = useMemo(() => {

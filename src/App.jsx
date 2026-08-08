@@ -475,6 +475,10 @@ export default function App() {
       if (original?.status === "waiting_queue" && form.status !== "waiting_queue" && !form.roomId) {
         submitForm = { ...form, status: "waiting_queue" };
         revertedToWaitingQueue = true;
+      } else if (original?.status === "waiting_queue" && form.status === "pending" && form.roomId && form.date === getTodayStr()) {
+        // เรียกเข้าวันนี้และเลือกห้องแล้ว — ลูกค้าอยู่หน้าร้าน ให้ "ยืนยันแล้ว" เลย
+        // (กันไม่ให้คิวที่เพิ่งเรียกเข้าโดนธง "เลยเวลายืนยัน" ซ้ำทันทีหลัง 12:00)
+        submitForm = { ...form, status: "confirmed" };
       }
     }
 
@@ -954,7 +958,7 @@ export default function App() {
         currentPage={page}
         onNavigate={navigateTo}
         branchCount={filteredBranches.length}
-        queueCount={filteredQueues.filter(q => q.date?.startsWith(new Date().toISOString().slice(0, 7)) && ["new", "old"].includes(q.customerType)).length}
+        queueCount={filteredQueues.filter(q => (q.status || "pending") !== "waiting_queue" && q.date?.startsWith(new Date().toISOString().slice(0, 7)) && ["new", "old"].includes(q.customerType)).length}
         waitingQueueCount={filteredQueues.filter(q => (q.status || "pending") === "waiting_queue").length}
         currentUser={currentUser}
         onLogout={handleLogout}
@@ -1186,8 +1190,13 @@ export default function App() {
                     }
                   }
                   try {
+                    // คิวที่ลงวันเดียวกัน ให้ "ยืนยันแล้ว" ทันที — กฎเดียวกับหน้าบันทึกคิว
+                    // (กันคิวที่เพิ่งจองผ่าน Timeline วันนี้ โดนธง "เลยเวลายืนยัน" ทันทีหลัง 12:00)
+                    const sameDayConfirmed = (bookingForm.status || "pending") === "pending" && bookingForm.date === getTodayStr()
+                      ? { ...bookingForm, status: "confirmed" }
+                      : bookingForm;
                     // บันทึกลง Supabase และอัปเดต state ทันที ไม่รอ Realtime
-                    const newQueue = await createQueue({ ...bookingForm, recordedBy: currentUser?.id || null });
+                    const newQueue = await createQueue({ ...sameDayConfirmed, recordedBy: currentUser?.id || null });
                     if (newQueue) {
                       setQueues((prev) => prev.some((q) => q.id === newQueue.id) ? prev : [...prev, newQueue]);
                     }

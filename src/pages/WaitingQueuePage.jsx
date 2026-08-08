@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { CUSTOMER_TYPES, QUEUE_STATUSES } from "../utils/constants";
-import { formatThaiDate, getCustomerBadgeClass, getTodayStr, OVERDUE_MOVE_NOTE_PREFIX } from "../utils/helpers";
+import { formatThaiDate, getCustomerBadgeClass, getTodayStr, isoToLocalDateStr, OVERDUE_MOVE_NOTE_PREFIX } from "../utils/helpers";
 
 function StatusBadge({ status }) {
   const s = QUEUE_STATUSES.find((x) => x.value === (status || "pending"));
@@ -154,7 +154,8 @@ export default function WaitingQueuePage({
                       <td style={{ fontSize: 12 }}>
                         {addedAt ? (
                           <>
-                            <div>{formatThaiDate(q.date)}</div>
+                            {/* วัน+เวลาที่ "ลงคิว" จริง (createdAt) — ไม่ใช่วันนัด ซึ่งอาจคนละวันกัน */}
+                            <div>{formatThaiDate(isoToLocalDateStr(q.createdAt))}</div>
                             <div style={{ fontFamily: "var(--mono)", color: "var(--text3)" }}>
                               {addedAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
                             </div>
