@@ -69,9 +69,11 @@ export default function StatusModal({ queue, procedures, queues = [], onSave, on
   const callActions = [
     nextFollow && QUEUE_STATUSES.find((s) => s.value === nextFollow),
   ].filter(Boolean);
+  // คิวรอ (waiting_queue) ไม่มีห้อง/เวลาเดิมให้ "เลื่อน" — ซ่อนตัวเลือกนี้ไว้ ป้องกันสร้างคิวซ้ำ
+  // ที่ไม่มีห้อง/เวลาทั้งคู่ (ดู PR #126 Codex review)
   const mainActions = QUEUE_STATUSES.filter((s) =>
     ["confirmed", "rescheduled", "no_show", "cancelled", "done"].includes(s.value)
-  );
+  ).filter((s) => !(s.value === "rescheduled" && currentStatus === "waiting_queue"));
   // rescheduled_in is set automatically, not selectable by user
 
   return (
