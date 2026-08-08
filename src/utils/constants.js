@@ -78,12 +78,13 @@ export const initRoomSchedules = [
 ];
 
 export const QUEUE_STATUSES = [
+  { value: "waiting_queue", label: "คิวรอ (Waiting)",   emoji: "⏳", color: "#d97706", bg: "rgba(217,119,6,0.15)" },
   { value: "pending",     label: "รอยืนยัน",          emoji: "⏳", color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
   { value: "follow1",    label: "โทรตาม ×1",          emoji: "📞", color: "#3b82f6", bg: "rgba(59,130,246,0.12)" },
   { value: "follow2",    label: "โทรตาม ×2",          emoji: "📞", color: "#2563eb", bg: "rgba(37,99,235,0.15)" },
   { value: "follow3",    label: "โทรตาม ×3",          emoji: "📞", color: "#dc2626", bg: "rgba(220,38,38,0.12)" },
   { value: "confirmed",  label: "ยืนยันแล้ว",          emoji: "✅", color: "#16a34a", bg: "rgba(22,163,74,0.12)" },
-  { value: "rescheduled",   label: "เลื่อนออก",         emoji: "�", color: "#7c3aed", bg: "rgba(124,58,237,0.12)" },
+  { value: "rescheduled",   label: "เลื่อนออก",         emoji: "📤", color: "#7c3aed", bg: "rgba(124,58,237,0.12)" },
   { value: "rescheduled_in", label: "เลื่อนมา (ใหม่)",    emoji: "📥", color: "#0891b2", bg: "rgba(8,145,178,0.12)" },
   { value: "no_show",    label: "ไม่มาตามนัด",         emoji: "🚫", color: "#dc2626", bg: "rgba(220,38,38,0.1)" },
   { value: "cancelled",  label: "ยกเลิก",              emoji: "❌", color: "#6b7280", bg: "rgba(107,114,128,0.1)" },

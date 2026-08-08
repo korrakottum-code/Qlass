@@ -266,7 +266,7 @@ function SectionStats({ queues, procedures, showStatus = false }) {
     <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 14 }}>
         <StatChip label="คิวทั้งหมด" value={total} color="var(--accent)" />
-        <StatChip label="รายได้" value={revenue ? `฿${revenue.toLocaleString()}` : "—"} color="var(--green)" />
+        <StatChip label="มูลค่าโปรที่จอง" value={revenue ? `฿${revenue.toLocaleString()}` : "—"} color="var(--green)" />
         <StatChip label="ลูกค้าใหม่" value={byType.new} color="var(--blue)" />
         <StatChip label="ลูกค้าเก่า" value={byType.old} color="var(--text2)" />
         <StatChip label="ใช้คอร์ส" value={byType.course} color="var(--amber)" />
