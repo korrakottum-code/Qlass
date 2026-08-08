@@ -466,22 +466,39 @@ export default function App() {
       }
     }
 
+    // ─── กำลังเรียกคิวรอเข้ารับบริการ แต่ยังไม่ได้เลือกห้อง/เวลา ───
+    // อย่าปล่อยให้คิวหลุดออกจาก "คิวรอ" ไปเป็นสถานะอื่นที่ไม่มีห้อง/เวลา (จะหาไม่เจอทั้งสองหน้า)
+    let submitForm = form;
+    let revertedToWaitingQueue = false;
+    if (editingQueueId) {
+      const original = queues.find((q) => q.id === editingQueueId);
+      if (original?.status === "waiting_queue" && form.status !== "waiting_queue" && !form.roomId) {
+        submitForm = { ...form, status: "waiting_queue" };
+        revertedToWaitingQueue = true;
+      }
+    }
+
     recordClientDiagnostic("write_outcome", { outcome: "started" });
-    const useServerCreate = !editingQueueId && shouldUseServerQueueCreate(currentUser, form);
+    const useServerCreate = !editingQueueId && shouldUseServerQueueCreate(currentUser, submitForm);
     try {
       if (editingQueueId) {
-        await updateQueue(editingQueueId, form);
-        showToast("success", "แก้ไขคิวเรียบร้อย");
+        await updateQueue(editingQueueId, submitForm);
+        showToast(
+          revertedToWaitingQueue ? "error" : "success",
+          revertedToWaitingQueue
+            ? "ยังไม่ได้เลือกห้อง/เวลา — คิวนี้จะยังอยู่ในคิวรอ (Waiting Queue)"
+            : "แก้ไขคิวเรียบร้อย"
+        );
         setEditingQueueId(null);
       } else {
         let newQueue;
         if (useServerCreate) {
           if (!serverQueueRequestIdRef.current) serverQueueRequestIdRef.current = crypto.randomUUID();
-          newQueue = await createQueueOnServer({ requestId: serverQueueRequestIdRef.current, form });
+          newQueue = await createQueueOnServer({ requestId: serverQueueRequestIdRef.current, form: submitForm });
           serverQueueRequestIdRef.current = null;
         } else {
           newQueue = await createQueue({
-            ...form,
+            ...submitForm,
             createdAt: getTodayStr(),
             recordedBy: currentUser?.id || null,
           });
@@ -525,6 +542,13 @@ export default function App() {
 
   const editQueue = useCallback((q) => {
     setForm({ ...q });
+    setEditingQueueId(q.id);
+    navigateTo("booking");
+  }, [navigateTo]);
+
+  // เรียกคิวรอเข้ารับบริการ: เปิดฟอร์มพร้อมให้เลือกห้อง/เวลาทันที ไม่ต้องกดปุ่ม "ลงคิวรอ" อีกครั้ง
+  const callInWaitingQueue = useCallback((q) => {
+    setForm({ ...q, status: "pending" });
     setEditingQueueId(q.id);
     navigateTo("booking");
   }, [navigateTo]);
@@ -1018,7 +1042,7 @@ export default function App() {
                 branches={filteredBranches}
                 procedures={procedures}
                 staff={staff}
-                onCallIn={editQueue}
+                onCallIn={callInWaitingQueue}
                 onUpdateStatus={(q) => setModal({ type: "status", data: q })}
                 onDelete={deleteQueue}
               />
