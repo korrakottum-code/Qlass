@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { CUSTOMER_TYPES, ROLES } from "../utils/constants";
 import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass, canViewAllBranches, isoToLocalDateStr } from "../utils/helpers";
+import { buildPromoPriceIndex, queueBookedValue } from "../utils/promoValue";
 import AdSpendCard from "../components/AdSpendCard";
 
 // ─── Date Distribution Bar Chart ───
@@ -241,9 +242,9 @@ function StatChip({ label, value, color }) {
   );
 }
 
-function SectionStats({ queues, procedures, showStatus = false }) {
+function SectionStats({ queues, procedures, promoPriceIndex, showStatus = false }) {
   const total = queues.length;
-  const revenue = queues.reduce((s, q) => s + (Number(q.price) || 0), 0);
+  const revenue = queues.reduce((s, q) => s + queueBookedValue(q, promoPriceIndex), 0);
   const byType = {
     new: queues.filter((q) => q.customerType === "new").length,
     old: queues.filter((q) => q.customerType === "old").length,
@@ -302,6 +303,7 @@ function SectionStats({ queues, procedures, showStatus = false }) {
 
 function TopPromoRanking({ title, queues, promos, procedures }) {
   const promoStats = useMemo(() => {
+    const promoPriceIndex = buildPromoPriceIndex(promos);
     const stats = {};
     queues.forEach(q => {
       if (q.promoId) {
@@ -309,7 +311,7 @@ function TopPromoRanking({ title, queues, promos, procedures }) {
           stats[q.promoId] = { count: 0, revenue: 0 };
         }
         stats[q.promoId].count++;
-        stats[q.promoId].revenue += Number(q.price) || 0;
+        stats[q.promoId].revenue += queueBookedValue(q, promoPriceIndex);
       }
     });
     return Object.entries(stats)
@@ -385,6 +387,7 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
   const [customStart, setCustomStart] = useState(getTodayStr());
   const [customEnd, setCustomEnd] = useState(getTodayStr());
   const [densityMode, setDensityMode] = useState("compact"); // compact | detailed
+  const promoPriceIndex = useMemo(() => buildPromoPriceIndex(promos), [promos]);
   const isMultiBranch = canViewAllBranches(currentUser);
   const isSuperAdmin = currentUser?.role === "superadmin";
 
@@ -676,7 +679,7 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
         }
         defaultOpen={false}
       >
-        <SectionStats queues={crossFilteredRecorded} procedures={procedures} />
+        <SectionStats queues={crossFilteredRecorded} procedures={procedures} promoPriceIndex={promoPriceIndex} />
         {hasAnyCrossFilter && (
           <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginBottom: 8, padding: "6px 10px", background: "rgba(185,94,66,0.08)", borderRadius: 6, border: "1px solid var(--accent)" }}>
             <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 700 }}>🔍 กรอง:</span>
@@ -708,12 +711,12 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
           <DateDistributionChart title="📅 คิวไปนัดวันไหนบ้าง" queues={crossFilteredRecorded} />
           <div className={`summary-chart-scroll ${densityMode}`}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginTop: 12 }}>
-            {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} onSelect={(v) => handleCrossFilter("branch", v)} selectedValues={crossFilter.branch} maxItems={densityMode === "compact" ? 8 : 14} />}
-            <MiniBarChart title="👤 ผู้บันทึก (ตามบทบาท)" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const s = staff?.find(x => x.id === q.recordedBy); const roleLabel = ROLES.find(r => r.value === s?.role)?.label || "ไม่ระบุ"; if (!m[roleLabel]) m[roleLabel] = { value: 0, revenue: 0 }; m[roleLabel].value++; m[roleLabel].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${260+i*25},60%,60%)`} onSelect={(v) => handleCrossFilter("role", v)} selectedValues={crossFilter.role} maxItems={densityMode === "compact" ? 8 : 14} />
-            <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} onSelect={(v) => handleCrossFilter("room", v)} selectedValues={crossFilter.room} maxItems={densityMode === "compact" ? 8 : 14} />
-            <MiniBarChart title="💉 หัตถการ" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} onSelect={(v) => handleCrossFilter("procedure", v)} selectedValues={crossFilter.procedure} maxItems={densityMode === "compact" ? 8 : 14} />
-            <MiniBarChart title="🎁 โปร" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const p = promos.find(x => x.id === q.promoId); const k = p?.name || "ไม่ระบุโปร"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${15+i*22},75%,58%)`} onSelect={(v) => handleCrossFilter("promo", v)} selectedValues={crossFilter.promo} maxItems={densityMode === "compact" ? 8 : 14} />
-            <MiniBarChart title="👤 แอดมิน (บันทึกคิว)" data={(() => { const m = {}; const adminIds = new Set((staff || []).filter(s => s?.role === "admin").map(s => s.id)); crossFilteredRecorded.forEach(q => { if (!adminIds.has(q.recordedBy)) return; const s = staff.find(x => x.id === q.recordedBy); const k = s?.nickname || s?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${30+i*20},70%,55%)`} onSelect={(v) => handleCrossFilter("recorder", v)} selectedValues={crossFilter.recorder} maxItems={densityMode === "compact" ? 8 : 14} />
+            {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += queueBookedValue(q, promoPriceIndex); }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} onSelect={(v) => handleCrossFilter("branch", v)} selectedValues={crossFilter.branch} maxItems={densityMode === "compact" ? 8 : 14} />}
+            <MiniBarChart title="👤 ผู้บันทึก (ตามบทบาท)" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const s = staff?.find(x => x.id === q.recordedBy); const roleLabel = ROLES.find(r => r.value === s?.role)?.label || "ไม่ระบุ"; if (!m[roleLabel]) m[roleLabel] = { value: 0, revenue: 0 }; m[roleLabel].value++; m[roleLabel].revenue += queueBookedValue(q, promoPriceIndex); }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${260+i*25},60%,60%)`} onSelect={(v) => handleCrossFilter("role", v)} selectedValues={crossFilter.role} maxItems={densityMode === "compact" ? 8 : 14} />
+            <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += queueBookedValue(q, promoPriceIndex); }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} onSelect={(v) => handleCrossFilter("room", v)} selectedValues={crossFilter.room} maxItems={densityMode === "compact" ? 8 : 14} />
+            <MiniBarChart title="💉 หัตถการ" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += queueBookedValue(q, promoPriceIndex); }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} onSelect={(v) => handleCrossFilter("procedure", v)} selectedValues={crossFilter.procedure} maxItems={densityMode === "compact" ? 8 : 14} />
+            <MiniBarChart title="🎁 โปร" data={(() => { const m = {}; crossFilteredRecorded.forEach(q => { const p = promos.find(x => x.id === q.promoId); const k = p?.name || "ไม่ระบุโปร"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += queueBookedValue(q, promoPriceIndex); }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${15+i*22},75%,58%)`} onSelect={(v) => handleCrossFilter("promo", v)} selectedValues={crossFilter.promo} maxItems={densityMode === "compact" ? 8 : 14} />
+            <MiniBarChart title="👤 แอดมิน (บันทึกคิว)" data={(() => { const m = {}; const adminIds = new Set((staff || []).filter(s => s?.role === "admin").map(s => s.id)); crossFilteredRecorded.forEach(q => { if (!adminIds.has(q.recordedBy)) return; const s = staff.find(x => x.id === q.recordedBy); const k = s?.nickname || s?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += queueBookedValue(q, promoPriceIndex); }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${30+i*20},70%,55%)`} onSelect={(v) => handleCrossFilter("recorder", v)} selectedValues={crossFilter.recorder} maxItems={densityMode === "compact" ? 8 : 14} />
           </div>
           </div>
           </>
@@ -731,7 +734,7 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
         }
         defaultOpen={true}
       >
-        <SectionStats queues={appointmentQueues} procedures={procedures} showStatus={true} />
+        <SectionStats queues={appointmentQueues} procedures={procedures} promoPriceIndex={promoPriceIndex} showStatus={true} />
         {advanceBookings.length > 0 && (
           <div style={{ fontSize: 12, color: "var(--amber)", marginBottom: 8, padding: "4px 10px", background: "rgba(245,158,11,0.1)", borderRadius: 6 }}>
             📌 ในจำนวนนี้ <strong>{advanceBookings.length}</strong> คิว จองล่วงหน้ามาจากวันก่อนหน้า
@@ -741,10 +744,10 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
           <>
           <div className={`summary-chart-scroll ${densityMode}`}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginTop: 12 }}>
-            {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; appointmentQueues.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} maxItems={densityMode === "compact" ? 8 : 14} />}
-            <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; appointmentQueues.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} maxItems={densityMode === "compact" ? 8 : 14} />
-            <MiniBarChart title="💉 หัตถการ" data={(() => { const m = {}; appointmentQueues.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} maxItems={densityMode === "compact" ? 8 : 14} />
-            <MiniBarChart title="🎁 โปร" data={(() => { const m = {}; appointmentQueues.forEach(q => { const p = promos.find(x => x.id === q.promoId); const k = p?.name || "ไม่ระบุโปร"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += Number(q.price)||0; }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${15+i*22},75%,58%)`} maxItems={densityMode === "compact" ? 8 : 14} />
+            {isMultiBranch && <MiniBarChart title="🏠 สาขา" data={(() => { const m = {}; appointmentQueues.forEach(q => { const b = branches.find(x => x.id === q.branchId); const k = b?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += queueBookedValue(q, promoPriceIndex); }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${200+i*30},60%,55%)`} maxItems={densityMode === "compact" ? 8 : 14} />}
+            <MiniBarChart title="🚪 ห้อง" data={(() => { const m = {}; appointmentQueues.forEach(q => { const r = rooms.find(x => x.id === q.roomId); const k = r ? `[${r.type}] ${r.name}` : "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += queueBookedValue(q, promoPriceIndex); }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => i%2===0?"var(--blue)":"var(--green)"} maxItems={densityMode === "compact" ? 8 : 14} />
+            <MiniBarChart title="💉 หัตถการ" data={(() => { const m = {}; appointmentQueues.forEach(q => { const p = procedures.find(x => x.id === q.procedureId); const k = p?.name || "ไม่ระบุ"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += queueBookedValue(q, promoPriceIndex); }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${340+i*25},65%,55%)`} maxItems={densityMode === "compact" ? 8 : 14} />
+            <MiniBarChart title="🎁 โปร" data={(() => { const m = {}; appointmentQueues.forEach(q => { const p = promos.find(x => x.id === q.promoId); const k = p?.name || "ไม่ระบุโปร"; if (!m[k]) m[k] = { value: 0, revenue: 0 }; m[k].value++; m[k].revenue += queueBookedValue(q, promoPriceIndex); }); return Object.entries(m).map(([label,v])=>({label,...v})).sort((a,b)=>b.value-a.value); })()} colorFn={(i) => `hsl(${15+i*22},75%,58%)`} maxItems={densityMode === "compact" ? 8 : 14} />
           </div>
           </div>
           </>
