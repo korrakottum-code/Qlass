@@ -1200,6 +1200,7 @@ export default function App() {
                   }
                 }}
                 onEditQueue={(q) => { editQueue(q); }}
+                onMoveToWaitingQueue={moveToWaitingQueue}
               />
             )}
 

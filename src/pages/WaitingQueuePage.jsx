@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { CUSTOMER_TYPES, QUEUE_STATUSES } from "../utils/constants";
-import { formatThaiDate, getCustomerBadgeClass, OVERDUE_MOVE_NOTE_PREFIX } from "../utils/helpers";
+import { formatThaiDate, getCustomerBadgeClass, getTodayStr, OVERDUE_MOVE_NOTE_PREFIX } from "../utils/helpers";
 
 function StatusBadge({ status }) {
   const s = QUEUE_STATUSES.find((x) => x.value === (status || "pending"));
@@ -42,13 +42,17 @@ export default function WaitingQueuePage({
   onCallIn, onUpdateStatus, onDelete,
 }) {
   const [qfBranch, setQfBranch] = useState("all");
+  const [qfDate, setQfDate] = useState(getTodayStr());
   const [activeTab, setActiveTab] = useState("unspecified");
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { queue }
   const [deleteInput, setDeleteInput] = useState("");
 
+  // กรองสาขา + วันที่ (ลบวันที่ออก = ดูทุกวัน) — พฤติกรรมเดียวกับหน้าตารางคิว
   const branchFiltered = useMemo(
-    () => queues.filter((q) => qfBranch === "all" || q.branchId === qfBranch),
-    [queues, qfBranch]
+    () => queues
+      .filter((q) => qfBranch === "all" || q.branchId === qfBranch)
+      .filter((q) => !qfDate || q.date === qfDate),
+    [queues, qfBranch, qfDate]
   );
 
   const tabCounts = useMemo(() => {
@@ -74,6 +78,10 @@ export default function WaitingQueuePage({
             <option value="all">ทุกสาขา</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">วันที่</label>
+          <input type="date" value={qfDate} onChange={(e) => setQfDate(e.target.value)} />
         </div>
       </div>
 
@@ -209,6 +217,10 @@ export default function WaitingQueuePage({
           </div>
         </div>
       )}
+
+      <div style={{ fontSize: 12, color: "var(--text3)", textAlign: "right", marginTop: 8 }}>
+        แสดง {visibleQueues.length} คิว{qfDate ? ` • ${formatThaiDate(qfDate)}` : " • ทุกวัน"}
+      </div>
 
       {/* ── Delete Confirm Modal ── */}
       {deleteConfirm && (
