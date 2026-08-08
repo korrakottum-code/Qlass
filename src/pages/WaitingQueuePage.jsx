@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { CUSTOMER_TYPES, QUEUE_STATUSES } from "../utils/constants";
-import { formatThaiDate, getCustomerBadgeClass } from "../utils/helpers";
+import { formatThaiDate, getCustomerBadgeClass, OVERDUE_MOVE_NOTE_PREFIX } from "../utils/helpers";
 
 function StatusBadge({ status }) {
   const s = QUEUE_STATUSES.find((x) => x.value === (status || "pending"));
@@ -16,21 +16,53 @@ function StatusBadge({ status }) {
   );
 }
 
+const TABS = [
+  { value: "unspecified", label: "คิวรอลงมายังไม่ระบุ", emoji: "⏳", color: "#d97706", bg: "rgba(217,119,6,0.15)" },
+  { value: "unconfirmed", label: "คิวไม่ยืนยัน", emoji: "⚠️", color: "#b45309", bg: "rgba(217,119,6,0.15)" },
+  { value: "cancelled", label: "คิวยกเลิก", emoji: "❌", color: "#6b7280", bg: "rgba(107,114,128,0.1)" },
+];
+
+function matchesTab(q, tab) {
+  const status = q.status || "pending";
+  const isOverdueMove = (q.statusNote || "").startsWith(OVERDUE_MOVE_NOTE_PREFIX);
+  if (tab === "unspecified") return status === "waiting_queue" && !isOverdueMove;
+  if (tab === "unconfirmed") return status === "waiting_queue" && isOverdueMove;
+  if (tab === "cancelled") return status === "cancelled";
+  return false;
+}
+
+const EMPTY_MESSAGES = {
+  unspecified: "ยังไม่มีคิวรอในขณะนี้",
+  unconfirmed: "ไม่มีคิวที่ถูกย้ายเข้ามาเพราะเลยเวลายืนยัน",
+  cancelled: "ไม่มีคิวที่ยกเลิก",
+};
+
 export default function WaitingQueuePage({
   queues, branches, procedures, staff,
   onCallIn, onUpdateStatus, onDelete,
 }) {
   const [qfBranch, setQfBranch] = useState("all");
+  const [activeTab, setActiveTab] = useState("unspecified");
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { queue }
   const [deleteInput, setDeleteInput] = useState("");
 
-  const waitingQueues = useMemo(() => {
-    return queues
-      .filter((q) => (q.status || "pending") === "waiting_queue")
-      .filter((q) => qfBranch === "all" || q.branchId === qfBranch)
+  const branchFiltered = useMemo(
+    () => queues.filter((q) => qfBranch === "all" || q.branchId === qfBranch),
+    [queues, qfBranch]
+  );
+
+  const tabCounts = useMemo(() => {
+    const counts = {};
+    TABS.forEach((t) => { counts[t.value] = branchFiltered.filter((q) => matchesTab(q, t.value)).length; });
+    return counts;
+  }, [branchFiltered]);
+
+  const visibleQueues = useMemo(() => {
+    return branchFiltered
+      .filter((q) => matchesTab(q, activeTab))
       .slice()
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-  }, [queues, qfBranch]);
+  }, [branchFiltered, activeTab]);
 
   return (
     <>
@@ -45,24 +77,37 @@ export default function WaitingQueuePage({
         </div>
       </div>
 
+      {/* แท็บกลุ่ม */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-        <span style={{
-          display: "inline-flex", alignItems: "center", gap: 5,
-          padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700,
-          background: "rgba(217,119,6,0.15)", border: "1.5px solid #d97706", color: "#d97706",
-        }}>
-          ⏳ คิวรอทั้งหมด
-          <span style={{ background: "#d97706", color: "#fff", borderRadius: 10, padding: "0 5px", fontSize: 10, fontWeight: 800 }}>
-            {waitingQueues.length}
-          </span>
-        </span>
+        {TABS.map((t) => (
+          <button
+            key={t.value}
+            onClick={() => setActiveTab(t.value)}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 5,
+              padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700,
+              background: activeTab === t.value ? t.bg : "var(--surface2)",
+              border: `1.5px solid ${activeTab === t.value ? t.color : "var(--border)"}`,
+              color: activeTab === t.value ? t.color : "var(--text2)",
+              cursor: "pointer",
+            }}
+          >
+            {t.emoji} {t.label}
+            <span style={{
+              background: t.color, color: "#fff", borderRadius: 10,
+              padding: "0 5px", fontSize: 10, fontWeight: 800,
+            }}>
+              {tabCounts[t.value] || 0}
+            </span>
+          </button>
+        ))}
       </div>
 
-      {waitingQueues.length === 0 ? (
+      {visibleQueues.length === 0 ? (
         <div className="card">
           <div className="empty">
             <div className="e-icon">📭</div>
-            <p>ยังไม่มีคิวรอในขณะนี้</p>
+            <p>{EMPTY_MESSAGES[activeTab]}</p>
           </div>
         </div>
       ) : (
@@ -76,7 +121,7 @@ export default function WaitingQueuePage({
                 <col style={{ width: 160 }} />
                 <col style={{ width: 90 }} />
                 <col style={{ width: 110 }} />
-                <col style={{ width: 130 }} />
+                <col style={{ width: 150 }} />
               </colgroup>
               <thead>
                 <tr>
@@ -90,7 +135,7 @@ export default function WaitingQueuePage({
                 </tr>
               </thead>
               <tbody>
-                {waitingQueues.map((q) => {
+                {visibleQueues.map((q) => {
                   const branch = branches.find((b) => b.id === q.branchId);
                   const proc = procedures.find((p) => p.id === q.procedureId);
                   const ct = CUSTOMER_TYPES.find((c) => c.value === q.customerType);
@@ -111,7 +156,12 @@ export default function WaitingQueuePage({
                       <td>
                         <div style={{ fontWeight: 600 }}>{q.name}</div>
                         <div style={{ fontSize: 11, color: "var(--text3)" }}>{q.phone}</div>
-                        {q.note && (
+                        {q.statusNote && (
+                          <div style={{ fontSize: 10, color: "var(--text3)", fontStyle: "italic", marginTop: 2, whiteSpace: "pre-line" }}>
+                            📝 {q.statusNote}
+                          </div>
+                        )}
+                        {!q.statusNote && q.note && (
                           <div style={{ fontSize: 10, color: "var(--text3)", fontStyle: "italic", marginTop: 2 }}>
                             📝 {q.note}
                           </div>
@@ -131,13 +181,15 @@ export default function WaitingQueuePage({
                       </td>
                       <td>
                         <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap" }}>
-                          <button
-                            className="btn btn-sm btn-primary"
-                            title="เรียกเข้ารับบริการ (เลือกห้อง/เวลา)"
-                            onClick={() => onCallIn(q)}
-                          >
-                            📞 เรียกเข้า
-                          </button>
+                          {activeTab !== "cancelled" && (
+                            <button
+                              className="btn btn-sm btn-primary"
+                              title="เรียกเข้ารับบริการ (เลือกห้อง/เวลา)"
+                              onClick={() => onCallIn(q)}
+                            >
+                              📞 เรียกเข้า
+                            </button>
+                          )}
                           <button
                             className="btn btn-sm"
                             title="เปลี่ยนสถานะ (เช่น มาแล้ว/เสร็จ, ยกเลิก) โดยไม่ต้องระบุห้อง"
@@ -164,7 +216,7 @@ export default function WaitingQueuePage({
           onClick={() => setDeleteConfirm(null)}>
           <div style={{ background: "var(--surface)", borderRadius: 14, padding: "24px 28px", minWidth: 320, maxWidth: 400, boxShadow: "0 8px 32px rgba(0,0,0,0.2)" }}
             onClick={(e) => e.stopPropagation()}>
-            <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6, color: "var(--red)" }}>🗑️ ยืนยันการลบคิวรอ</div>
+            <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6, color: "var(--red)" }}>🗑️ ยืนยันการลบคิว</div>
             <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 14 }}>
               พิมพ์ชื่อลูกค้า <strong style={{ color: "var(--text1)" }}>{deleteConfirm.queue.name}</strong> เพื่อยืนยัน
             </div>

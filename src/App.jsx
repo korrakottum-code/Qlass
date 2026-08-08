@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
-import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed } from "./utils/helpers";
+import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed, buildOverdueMoveNote } from "./utils/helpers";
 import {
   getAllStaff, getAllBranches, getAllProcedures, getAllPromos, getAllRooms, getAllRoomSchedules, getAllQueues,
   createBranch, updateBranch, deleteBranch as deleteBranchDB,
@@ -478,6 +478,11 @@ export default function App() {
       }
     }
 
+    // ─── คิวที่ลงวันเดียวกัน (walk-in) ให้ขึ้น "ยืนยันแล้ว" ทันที ไม่ต้องรอยืนยัน ───
+    if (!editingQueueId && submitForm.status !== "waiting_queue" && submitForm.date === getTodayStr()) {
+      submitForm = { ...submitForm, status: "confirmed" };
+    }
+
     recordClientDiagnostic("write_outcome", { outcome: "started" });
     const useServerCreate = !editingQueueId && shouldUseServerQueueCreate(currentUser, submitForm);
     try {
@@ -552,6 +557,27 @@ export default function App() {
     setEditingQueueId(q.id);
     navigateTo("booking");
   }, [navigateTo]);
+
+  // ย้ายคิวที่เลยเวลายืนยันเข้าคิวรอ (กดเอง ไม่ auto) — เคลียร์ห้อง/เวลาทิ้งเพื่อปล่อย slot ให้คิวอื่น
+  // เก็บห้อง/เวลาเดิมไว้เป็นข้อความใน statusNote แทน ไม่เพิ่มคอลัมน์ใหม่
+  const moveToWaitingQueue = useCallback(async (q) => {
+    const room = rooms.find((r) => r.id === q.roomId);
+    try {
+      const updated = await updateQueue(q.id, {
+        ...q,
+        status: "waiting_queue",
+        roomId: "",
+        timeBlock: null,
+        durationBlocks: null,
+        statusNote: buildOverdueMoveNote(q, room),
+      });
+      setQueues((prev) => prev.map((x) => (x.id === q.id ? updated : x)));
+      showToast("success", "ย้ายเข้าคิวรอเรียบร้อย — ช่วงเวลานี้ว่างให้ลงคิวอื่นได้แล้ว");
+    } catch (error) {
+      console.error("Move to waiting queue failed:", error);
+      showToast("error", "ย้ายเข้าคิวรอไม่สำเร็จ กรุณาลองอีกครั้ง");
+    }
+  }, [rooms, showToast]);
 
   const deleteQueue = useCallback(async (id, queueSnapshot) => {
     await deleteQueueDB(id);
@@ -1033,6 +1059,7 @@ export default function App() {
                 onEdit={editQueue}
                 onDelete={deleteQueue}
                 onUpdateStatus={(q) => setModal({ type: "status", data: q })}
+                onMoveToWaitingQueue={moveToWaitingQueue}
               />
             )}
 

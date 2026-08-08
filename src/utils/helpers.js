@@ -9,6 +9,30 @@ export function isActiveQueueStatus(status) {
   return !INACTIVE_QUEUE_STATUSES.includes(status);
 }
 
+// ─── คิวลงล่วงหน้าที่ยังไม่ยืนยันเมื่อถึงวันนัด — เตือน (ไม่ auto ย้าย) ───
+// สถานะที่ยังถือว่า "ยังไม่ยืนยัน" — ต้องรอ/โทรตามอยู่
+const UNCONFIRMED_QUEUE_STATUSES = ["pending", "follow1", "follow2", "follow3"];
+// เวลาตัดรอบเตือน = 12:00 (block 144)
+export const UNCONFIRMED_WARNING_BLOCK = 144;
+
+export function isOverdueUnconfirmed(queue, todayStr = getTodayStr()) {
+  if (queue.date !== todayStr) return false;
+  if (!UNCONFIRMED_QUEUE_STATUSES.includes(queue.status || "pending")) return false;
+  const now = new Date();
+  const currentBlock = now.getHours() * 12 + Math.floor(now.getMinutes() / 5);
+  return currentBlock >= UNCONFIRMED_WARNING_BLOCK;
+}
+
+// คำนำหน้าคงที่ใน statusNote ไว้บอกว่าคิวนี้ถูกย้ายเข้าคิวรอเพราะเลยเวลายืนยัน
+// (ไม่ใช่ walk-in ที่ไม่เคยมีห้อง/เวลามาตั้งแต่แรก) — ใช้แยกกลุ่มในหน้าคิวรอ โดยไม่ต้องเพิ่มคอลัมน์ใหม่
+export const OVERDUE_MOVE_NOTE_PREFIX = "🕐 เดิมนัด";
+
+export function buildOverdueMoveNote(queue, room) {
+  const timeLabel = queue.timeBlock !== null && queue.timeBlock !== undefined ? blockToTime(queue.timeBlock) : "-";
+  const base = `${OVERDUE_MOVE_NOTE_PREFIX} ${room?.name || "-"} ${timeLabel} (${formatThaiDate(queue.date)}) — ย้ายเข้าคิวรอเพราะยังไม่ยืนยัน`;
+  return queue.statusNote ? `${base}\n${queue.statusNote}` : base;
+}
+
 export function genId(prefix) {
   return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 }

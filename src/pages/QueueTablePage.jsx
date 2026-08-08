@@ -1,10 +1,12 @@
 import { useState, useMemo } from "react";
 import { CUSTOMER_TYPES, QUEUE_STATUSES, DAY_START_BLOCK, DAY_END_BLOCK } from "../utils/constants";
-import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass } from "../utils/helpers";
+import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass, isOverdueUnconfirmed } from "../utils/helpers";
 
 const ALL_ROOMS_TAB = "__all__";
 // คิวรอ (Waiting Queue) มีหน้าของตัวเองแล้ว — ไม่แสดงซ้ำในตารางนี้
 const TABLE_STATUSES = QUEUE_STATUSES.filter((s) => s.value !== "waiting_queue");
+// สถานะที่ยังถือว่า "ยังไม่ยืนยัน" — ปุ่ม "ย้ายเข้าคิวรอ" ใช้ได้เฉพาะกลุ่มนี้
+const UNCONFIRMED_STATUSES = ["pending", "follow1", "follow2", "follow3"];
 
 // ตัวเลือกเวลาสำหรับกรอง "ใครมีคิวตอน ... บ้าง" — ทุกครึ่งชั่วโมงตลอดวัน
 const TIME_FILTER_OPTIONS = (() => {
@@ -29,7 +31,7 @@ function StatusBadge({ status }) {
 
 export default function QueueTablePage({
   queues, branches, rooms, procedures, promos, staff, roomSchedules,
-  onEdit, onDelete, onUpdateStatus,
+  onEdit, onDelete, onUpdateStatus, onMoveToWaitingQueue,
 }) {
   const [qfBranch, setQfBranch] = useState("all");
   const [qfDate, setQfDate] = useState(getTodayStr());
@@ -37,6 +39,7 @@ export default function QueueTablePage({
   const [qfTimeBlock, setQfTimeBlock] = useState(""); // "" = ไม่กรองเวลา
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { queue }
   const [deleteInput, setDeleteInput] = useState("");
+  const [moveConfirm, setMoveConfirm] = useState(null); // { queue }
   const [qfStatus, setQfStatus] = useState("all");
   const [qfRecordedBy, setQfRecordedBy] = useState("all");
   // แท็บห้องที่เลือกไว้ ต่อสาขา — ไม่มี key = "ทั้งหมด" (ทุกห้องรวมกัน)
@@ -80,6 +83,12 @@ export default function QueueTablePage({
     const counts = {};
     dayQueues.forEach((q) => { const s = q.status || "pending"; counts[s] = (counts[s] || 0) + 1; });
     return counts;
+  }, [queues, qfDate, qfBranch]);
+
+  // คิวที่ลงล่วงหน้าแล้วยังไม่ยืนยันเมื่อเลย 12:00 ของวันนัด (สำหรับวันที่กำลังดูอยู่)
+  const overdueCount = useMemo(() => {
+    if (qfDate !== getTodayStr()) return 0;
+    return queues.filter((q) => (qfBranch === "all" || q.branchId === qfBranch) && isOverdueUnconfirmed(q)).length;
   }, [queues, qfDate, qfBranch]);
 
   const roomScheduleNotesByRoomId = useMemo(() => {
@@ -190,6 +199,17 @@ export default function QueueTablePage({
               </span>
             </button>
           ))}
+        </div>
+      )}
+
+      {overdueCount > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
+          padding: "8px 14px", borderRadius: "var(--radius-sm)",
+          border: "1.5px solid #d97706", background: "rgba(217,119,6,0.12)",
+          color: "#b45309", fontSize: 13, fontWeight: 700,
+        }}>
+          ⚠️ {overdueCount} คิวยังไม่ยืนยัน เลยเวลา 12:00 แล้ว — กด "➡️ ย้ายเข้าคิวรอ" เพื่อปล่อยเวลาให้ลงคิวอื่นได้
         </div>
       )}
 
@@ -325,8 +345,13 @@ export default function QueueTablePage({
                         const qStatus = q.status || "pending";
                         const isDone = qStatus === "done";
                         const isCancelled = ["cancelled", "no_show"].includes(qStatus);
+                        const isOverdue = isOverdueUnconfirmed(q);
                         return (
-                          <tr key={q.id} style={{ opacity: isCancelled ? 0.5 : 1, background: isDone ? "rgba(5,150,105,0.04)" : undefined }}>
+                          <tr key={q.id} style={{
+                            opacity: isCancelled ? 0.5 : 1,
+                            background: isOverdue ? "rgba(217,119,6,0.06)" : isDone ? "rgba(5,150,105,0.04)" : undefined,
+                            borderLeft: isOverdue ? "3px solid #d97706" : undefined,
+                          }}>
                             <td style={{ fontFamily: "var(--mono)", fontWeight: 600, fontSize: 13 }}>
                               {q.timeBlock !== null ? (
                                 <>
@@ -365,9 +390,20 @@ export default function QueueTablePage({
                                 ) : <span style={{ color: "var(--text3)" }}>—</span>;
                               })()}
                             </td>
-                            <td><StatusBadge status={q.status} /></td>
                             <td>
-                              <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+                              <StatusBadge status={q.status} />
+                              {isOverdue && (
+                                <div style={{
+                                  marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4,
+                                  padding: "1px 8px", borderRadius: 20, fontSize: 10, fontWeight: 700,
+                                  background: "rgba(217,119,6,0.15)", color: "#b45309", whiteSpace: "nowrap",
+                                }}>
+                                  ⚠️ เลยเวลายืนยัน
+                                </div>
+                              )}
+                            </td>
+                            <td>
+                              <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap" }}>
                                 <button
                                   className="btn btn-sm"
                                   title="อัปเดตสถานะ"
@@ -377,6 +413,16 @@ export default function QueueTablePage({
                                   📋
                                 </button>
                                 <button className="btn btn-sm btn-secondary" onClick={() => onEdit(q)}>✏️</button>
+                                {UNCONFIRMED_STATUSES.includes(qStatus) && q.roomId && (
+                                  <button
+                                    className="btn btn-sm"
+                                    title="ย้ายเข้าคิวรอ — ปล่อยห้อง/เวลานี้ให้ลงคิวอื่นได้"
+                                    onClick={() => setMoveConfirm({ queue: q })}
+                                    style={{ background: "rgba(217,119,6,0.12)", border: "1.5px solid #d97706", color: "#b45309", borderRadius: 6, padding: "3px 8px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                                  >
+                                    ➡️ ย้ายเข้าคิวรอ
+                                  </button>
+                                )}
                                 <button className="btn btn-sm btn-danger" onClick={() => { setDeleteConfirm({ queue: q }); setDeleteInput(""); }}>🗑️</button>
                               </div>
                             </td>
@@ -429,6 +475,29 @@ export default function QueueTablePage({
                 disabled={deleteInput.trim() !== deleteConfirm.queue.name.trim()}
                 onClick={() => { onDelete(deleteConfirm.queue.id, deleteConfirm.queue); setDeleteConfirm(null); }}
               >ลบ</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── Move-to-Waiting-Queue Confirm Modal ── */}
+      {moveConfirm && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => setMoveConfirm(null)}>
+          <div style={{ background: "var(--surface)", borderRadius: 14, padding: "24px 28px", minWidth: 320, maxWidth: 400, boxShadow: "0 8px 32px rgba(0,0,0,0.2)" }}
+            onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6, color: "#b45309" }}>➡️ ย้ายเข้าคิวรอ</div>
+            <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 14 }}>
+              ย้าย <strong style={{ color: "var(--text1)" }}>{moveConfirm.queue.name}</strong> เข้าคิวรอ — ห้อง/เวลาเดิมจะถูกปล่อยว่างให้ลงคิวอื่นได้ทันที (ข้อมูลห้อง/เวลาเดิมจะถูกเก็บไว้ในหมายเหตุแทน)
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="btn btn-secondary" onClick={() => setMoveConfirm(null)}>ยกเลิก</button>
+              <button
+                className="btn btn-primary"
+                style={{ background: "#d97706", borderColor: "#d97706" }}
+                onClick={() => { onMoveToWaitingQueue(moveConfirm.queue); setMoveConfirm(null); }}
+              >
+                ➡️ ย้ายเข้าคิวรอ
+              </button>
             </div>
           </div>
         </div>
