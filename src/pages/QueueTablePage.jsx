@@ -3,6 +3,8 @@ import { CUSTOMER_TYPES, QUEUE_STATUSES, DAY_START_BLOCK, DAY_END_BLOCK } from "
 import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass } from "../utils/helpers";
 
 const ALL_ROOMS_TAB = "__all__";
+// คิวรอ (Waiting Queue) มีหน้าของตัวเองแล้ว — ไม่แสดงซ้ำในตารางนี้
+const TABLE_STATUSES = QUEUE_STATUSES.filter((s) => s.value !== "waiting_queue");
 
 // ตัวเลือกเวลาสำหรับกรอง "ใครมีคิวตอน ... บ้าง" — ทุกครึ่งชั่วโมงตลอดวัน
 const TIME_FILTER_OPTIONS = (() => {
@@ -45,6 +47,7 @@ export default function QueueTablePage({
   const filteredQueues = useMemo(() => {
     return queues
       .filter((q) => {
+        if ((q.status || "pending") === "waiting_queue") return false;
         if (qfBranch !== "all" && q.branchId !== qfBranch) return false;
         if (qfDate && q.date !== qfDate) return false;
         if (qfStatus !== "all" && (q.status || "pending") !== qfStatus) return false;
@@ -139,7 +142,7 @@ export default function QueueTablePage({
           <label className="form-label">สถานะ</label>
           <select value={qfStatus} onChange={(e) => setQfStatus(e.target.value)}>
             <option value="all">ทุกสถานะ</option>
-            {QUEUE_STATUSES.map((s) => (
+            {TABLE_STATUSES.map((s) => (
               <option key={s.value} value={s.value}>{s.emoji} {s.label}</option>
             ))}
           </select>
@@ -165,7 +168,7 @@ export default function QueueTablePage({
       {/* Status summary chips */}
       {Object.keys(statusStats).length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-          {QUEUE_STATUSES.filter((s) => statusStats[s.value]).map((s) => (
+          {TABLE_STATUSES.filter((s) => statusStats[s.value]).map((s) => (
             <button
               key={s.value}
               onClick={() => setQfStatus(qfStatus === s.value ? "all" : s.value)}

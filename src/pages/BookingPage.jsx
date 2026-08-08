@@ -32,6 +32,18 @@ export default function BookingPage({
   const [qpPrice, setQpPrice] = useState("");
   const [qpProcedureId, setQpProcedureId] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // ลงคิวรอ (Waiting Queue): ยังไม่ระบุห้อง/เวลา — derived straight from form.status
+  // so it can never drift out of sync after a save resets the form.
+  const isWaitingQueueMode = form.status === "waiting_queue";
+  // ปุ่มลงคิวรอ แสดงเฉพาะตอนสร้างใหม่ หรือกำลังแก้ไขคิวที่ "เป็นคิวรอ" อยู่แล้ว
+  // (กันไม่ให้เผลอเปลี่ยนคิวที่ยืนยัน/เสร็จแล้วกลับไปเป็นคิวรอผ่านฟอร์มนี้)
+  const [waitingQueueToggleAllowed, setWaitingQueueToggleAllowed] = useState(
+    () => !editingQueueId || form.status === "waiting_queue"
+  );
+  useEffect(() => {
+    setWaitingQueueToggleAllowed(!editingQueueId || form.status === "waiting_queue");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingQueueId]);
   const { isSaving: isBookingSaving, run: runBookingSubmit } = useSubmissionLock();
   const { isSaving: isQuickPromoSaving, run: runQuickPromoSave } = useSubmissionLock();
   // Rooms for selected branch
@@ -301,6 +313,36 @@ export default function BookingPage({
               </div>
             </div>
 
+            {/* ลงคิวรอ (Waiting Queue) */}
+            {waitingQueueToggleAllowed && (
+              <div className="form-group full">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm((f) => f.status === "waiting_queue"
+                      ? { ...f, status: "pending" }
+                      : { ...f, status: "waiting_queue", roomId: "", timeBlock: null, durationBlocks: null }
+                    );
+                  }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8, width: "100%",
+                    padding: "10px 14px", borderRadius: "var(--radius-sm)",
+                    border: `1.5px solid ${isWaitingQueueMode ? "#d97706" : "var(--border2)"}`,
+                    background: isWaitingQueueMode ? "rgba(217,119,6,0.15)" : "var(--surface2)",
+                    color: isWaitingQueueMode ? "#d97706" : "var(--text2)",
+                    fontWeight: 700, fontSize: 13, cursor: "pointer",
+                  }}
+                >
+                  ⏳ ลงคิวรอ (Waiting Queue) — ยังไม่ระบุห้อง/เวลา
+                </button>
+                {isWaitingQueueMode && (
+                  <div style={{ marginTop: 6, fontSize: 11, color: "#b45309", fontWeight: 600 }}>
+                    จะไม่ระบุห้อง/เวลา — ไปที่หน้า "คิวรอ" เพื่อเรียกลูกค้าเข้ารับบริการเมื่อมีคิวว่าง
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* สาขา + ห้อง */}
             <div className="form-group">
               <label className="form-label"><span className="req">*</span> สาขา</label>
@@ -312,33 +354,35 @@ export default function BookingPage({
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </div>
-            <div className="form-group">
-              <label className="form-label">ห้องหัตถการ</label>
-              <select
-                value={form.roomId}
-                onChange={(e) => setForm((f) => ({ ...f, roomId: e.target.value, procedureId: "", promoId: "", price: "" }))}
-              >
-                <option value="">-- เลือกห้อง --</option>
-                {branchRooms.map((r) => {
-                  const rt = ROOM_TYPES.find((t) => t.value === r.type);
-                  return <option key={r.id} value={r.id}>[{r.type}] {r.name}</option>;
-                })}
-              </select>
-              {selectedRoom?.notes && (
-                <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: "#dc2626", lineHeight: 1.5 }}>
-                  ⚠️ {selectedRoom.notes}
-                </div>
-              )}
-              {scheduleNotes.length > 0 && (
-                <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {scheduleNotes.map((note, idx) => (
-                    <span key={`${note}_${idx}`} style={{ fontSize: 11, fontWeight: 700, color: "#b45309", lineHeight: 1.5, background: "#fef3c7", borderRadius: 5, padding: "3px 8px" }}>
-                      📅 {note}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
+            {!isWaitingQueueMode && (
+              <div className="form-group">
+                <label className="form-label">ห้องหัตถการ</label>
+                <select
+                  value={form.roomId}
+                  onChange={(e) => setForm((f) => ({ ...f, roomId: e.target.value, procedureId: "", promoId: "", price: "" }))}
+                >
+                  <option value="">-- เลือกห้อง --</option>
+                  {branchRooms.map((r) => {
+                    const rt = ROOM_TYPES.find((t) => t.value === r.type);
+                    return <option key={r.id} value={r.id}>[{r.type}] {r.name}</option>;
+                  })}
+                </select>
+                {selectedRoom?.notes && (
+                  <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: "#dc2626", lineHeight: 1.5 }}>
+                    ⚠️ {selectedRoom.notes}
+                  </div>
+                )}
+                {scheduleNotes.length > 0 && (
+                  <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {scheduleNotes.map((note, idx) => (
+                      <span key={`${note}_${idx}`} style={{ fontSize: 11, fontWeight: 700, color: "#b45309", lineHeight: 1.5, background: "#fef3c7", borderRadius: 5, padding: "3px 8px" }}>
+                        📅 {note}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* หัตถการ + โปร */}
             <div className="form-group">
@@ -470,6 +514,7 @@ export default function BookingPage({
             </div>
 
             {/* เลือกเวลา */}
+            {!isWaitingQueueMode && (
             <div className="form-group full">
               <label className="form-label">
                 เวลานัด (บล็อค 5 นาที)
@@ -556,6 +601,7 @@ export default function BookingPage({
                 })}
               </div>
             </div>
+            )}
 
             {/* หมายเหตุ */}
             <div className="form-group full">
@@ -601,6 +647,14 @@ export default function BookingPage({
               onClick={(e) => e.stopPropagation()}
             >
               <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 16, color: "var(--accent)" }}>✅ ยืนยันการบันทึกคิว</div>
+              {isWaitingQueueMode && (
+                <div style={{
+                  marginBottom: 14, padding: "6px 12px", borderRadius: 20, display: "inline-flex",
+                  fontSize: 12, fontWeight: 700, color: "#d97706", background: "rgba(217,119,6,0.15)",
+                }}>
+                  ⏳ คิวรอ (Waiting Queue) — ยังไม่ระบุห้อง/เวลา
+                </div>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13, marginBottom: 20 }}>
                 {[
                   ["👤 ชื่อ",        form.name || "—"],

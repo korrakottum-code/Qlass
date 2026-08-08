@@ -43,6 +43,7 @@ import StaffModal from "./components/modals/StaffModal";
 
 import BookingPage from "./pages/BookingPage";
 import QueueTablePage from "./pages/QueueTablePage";
+import WaitingQueuePage from "./pages/WaitingQueuePage";
 import BranchesPage from "./pages/BranchesPage";
 import ProceduresPage from "./pages/ProceduresPage";
 import PromosPage from "./pages/PromosPage";
@@ -1007,6 +1008,18 @@ export default function App() {
                 onEdit={editQueue}
                 onDelete={deleteQueue}
                 onUpdateStatus={(q) => setModal({ type: "status", data: q })}
+              />
+            )}
+
+            {page === "waiting-queue" && (
+              <WaitingQueuePage
+                queues={filteredQueues}
+                branches={filteredBranches}
+                procedures={procedures}
+                staff={staff}
+                onCallIn={editQueue}
+                onUpdateStatus={(q) => setModal({ type: "status", data: q })}
+                onDelete={deleteQueue}
               />
             )}
 
