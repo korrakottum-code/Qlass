@@ -188,25 +188,35 @@ export default function WaitingQueuePage({
                         ) : <span style={{ color: "var(--text3)" }}>—</span>}
                       </td>
                       <td>
-                        <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "stretch" }}>
                           {activeTab !== "cancelled" && (
                             <button
                               className="btn btn-sm btn-primary"
                               title="เรียกเข้ารับบริการ (เลือกห้อง/เวลา)"
                               onClick={() => onCallIn(q)}
+                              style={{ fontSize: 11, whiteSpace: "nowrap" }}
                             >
                               📞 เรียกเข้า
                             </button>
                           )}
-                          <button
-                            className="btn btn-sm"
-                            title="เปลี่ยนสถานะ (เช่น มาแล้ว/เสร็จ, ยกเลิก) โดยไม่ต้องระบุห้อง"
-                            onClick={() => onUpdateStatus(q)}
-                            style={{ background: "var(--surface3)", border: "1.5px solid var(--border2)", borderRadius: 6, padding: "3px 8px", fontSize: 14, cursor: "pointer" }}
-                          >
-                            📋
-                          </button>
-                          <button className="btn btn-sm btn-danger" onClick={() => { setDeleteConfirm({ queue: q }); setDeleteInput(""); }}>🗑️</button>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button
+                              className="btn btn-sm"
+                              title="เปลี่ยนสถานะ (เช่น มาแล้ว/เสร็จ, ยกเลิก) โดยไม่ต้องระบุห้อง"
+                              onClick={() => onUpdateStatus(q)}
+                              style={{ flex: 1, background: "var(--surface3)", border: "1.5px solid var(--border2)", borderRadius: 6, padding: "3px 6px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              📋 สถานะ
+                            </button>
+                            <button
+                              className="btn btn-sm btn-danger"
+                              title="ลบคิว"
+                              onClick={() => { setDeleteConfirm({ queue: q }); setDeleteInput(""); }}
+                              style={{ flex: 1, fontSize: 11, whiteSpace: "nowrap" }}
+                            >
+                              🗑️ ลบ
+                            </button>
+                          </div>
                         </div>
                       </td>
                     </tr>

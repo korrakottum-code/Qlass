@@ -322,7 +322,7 @@ export default function QueueTablePage({
                       <col style={{ width: 90 }} />
                       <col style={{ width: 90 }} />
                       <col style={{ width: 110 }} />
-                      <col style={{ width: 90 }} />
+                      <col style={{ width: 132 }} />
                     </colgroup>
                     <thead>
                       <tr>
@@ -403,27 +403,43 @@ export default function QueueTablePage({
                               )}
                             </td>
                             <td>
-                              <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap" }}>
-                                <button
-                                  className="btn btn-sm"
-                                  title="อัปเดตสถานะ"
-                                  onClick={() => onUpdateStatus(q)}
-                                  style={{ background: "var(--surface3)", border: "1.5px solid var(--border2)", borderRadius: 6, padding: "3px 8px", fontSize: 14, cursor: "pointer" }}
-                                >
-                                  📋
-                                </button>
-                                <button className="btn btn-sm btn-secondary" onClick={() => onEdit(q)}>✏️</button>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "stretch" }}>
+                                <div style={{ display: "flex", gap: 4 }}>
+                                  <button
+                                    className="btn btn-sm"
+                                    title="อัปเดตสถานะคิว"
+                                    onClick={() => onUpdateStatus(q)}
+                                    style={{ flex: 1, background: "var(--surface3)", border: "1.5px solid var(--border2)", borderRadius: 6, padding: "3px 6px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                                  >
+                                    📋 สถานะ
+                                  </button>
+                                  <button
+                                    className="btn btn-sm btn-secondary"
+                                    title="แก้ไขข้อมูลคิว"
+                                    onClick={() => onEdit(q)}
+                                    style={{ flex: 1, fontSize: 11, whiteSpace: "nowrap" }}
+                                  >
+                                    ✏️ แก้ไข
+                                  </button>
+                                </div>
                                 {UNCONFIRMED_STATUSES.includes(qStatus) && q.roomId && (
                                   <button
                                     className="btn btn-sm"
                                     title="ย้ายเข้าคิวรอ — ปล่อยห้อง/เวลานี้ให้ลงคิวอื่นได้"
                                     onClick={() => setMoveConfirm({ queue: q })}
-                                    style={{ background: "rgba(217,119,6,0.12)", border: "1.5px solid #d97706", color: "#b45309", borderRadius: 6, padding: "3px 8px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                                    style={{ background: "rgba(217,119,6,0.12)", border: "1.5px solid #d97706", color: "#b45309", borderRadius: 6, padding: "3px 6px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
                                   >
                                     ➡️ ย้ายเข้าคิวรอ
                                   </button>
                                 )}
-                                <button className="btn btn-sm btn-danger" onClick={() => { setDeleteConfirm({ queue: q }); setDeleteInput(""); }}>🗑️</button>
+                                <button
+                                  className="btn btn-sm btn-danger"
+                                  title="ลบคิว"
+                                  onClick={() => { setDeleteConfirm({ queue: q }); setDeleteInput(""); }}
+                                  style={{ fontSize: 11, whiteSpace: "nowrap" }}
+                                >
+                                  🗑️ ลบ
+                                </button>
                               </div>
                             </td>
                           </tr>
