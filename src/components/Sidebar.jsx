@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { NAV_ITEMS, ROLES } from "../utils/constants";
 
-export default function Sidebar({ currentPage, onNavigate, branchCount, queueCount, currentUser, onLogout }) {
+export default function Sidebar({ currentPage, onNavigate, branchCount, queueCount, waitingQueueCount, currentUser, onLogout }) {
   const [collapsed, setCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -125,6 +125,9 @@ export default function Sidebar({ currentPage, onNavigate, branchCount, queueCou
                 {showLabels && <span>{item.label}</span>}
                 {showLabels && item.id === "queue-table" && queueCount > 0 && (
                   <span className="nav-badge">{queueCount}</span>
+                )}
+                {showLabels && item.id === "waiting-queue" && waitingQueueCount > 0 && (
+                  <span className="nav-badge">{waitingQueueCount}</span>
                 )}
               </button>
             )

@@ -905,6 +905,7 @@ export default function App() {
         onNavigate={navigateTo}
         branchCount={filteredBranches.length}
         queueCount={filteredQueues.filter(q => q.date?.startsWith(new Date().toISOString().slice(0, 7)) && ["new", "old"].includes(q.customerType)).length}
+        waitingQueueCount={filteredQueues.filter(q => (q.status || "pending") === "waiting_queue").length}
         currentUser={currentUser}
         onLogout={handleLogout}
       />
