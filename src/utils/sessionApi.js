@@ -21,6 +21,17 @@ export function createSessionApi(invoke) {
     createQueueV1(token, requestId, queue) {
       return callSessionFunction({ action: "create_queue_v1", token, requestId, queue });
     },
+    async createStaffServer(token, staff) {
+      const data = await callSessionFunction({ action: "staff_create", token, staff });
+      return data.staff;
+    },
+    async updateStaffServer(token, staffId, staff) {
+      const data = await callSessionFunction({ action: "staff_update", token, staffId, staff });
+      return data.staff;
+    },
+    async deleteStaffServer(token, staffId) {
+      await callSessionFunction({ action: "staff_delete", token, staffId });
+    },
     flushClientDiagnostics(token, events) {
       return callSessionFunction({ action: "client_diagnostics", token, events });
     },

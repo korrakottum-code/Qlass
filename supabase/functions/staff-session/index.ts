@@ -90,6 +90,39 @@ function sanitizeDiagnostic(value: unknown) {
   return safe;
 }
 
+// Goal 18: staff writes go through this server boundary only. The payload is
+// validated here because the browser can no longer be trusted once its direct
+// staff grants are revoked.
+function staffWriteRow(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const staff = value as Record<string, unknown>;
+  const name = String(staff.name ?? "").trim();
+  const role = String(staff.role ?? "");
+  const pin = String(staff.pin ?? "");
+  const rates = (staff.commissionRates && typeof staff.commissionRates === "object" && !Array.isArray(staff.commissionRates))
+    ? staff.commissionRates as Record<string, unknown>
+    : {};
+  const rateNew = Number(rates.new ?? 0);
+  const rateOld = Number(rates.old ?? 0);
+  const rateCourse = Number(rates.course ?? 0);
+
+  if (!name || !authenticatedRoles.has(role) || !/^\d{4}$/.test(pin)) return null;
+  if (![rateNew, rateOld, rateCourse].every((rate) => Number.isFinite(rate) && rate >= 0)) return null;
+
+  return {
+    name,
+    nickname: String(staff.nickname ?? ""),
+    phone: String(staff.phone ?? ""),
+    branch_id: staff.branchId ? String(staff.branchId) : null,
+    role,
+    pin,
+    active: staff.active !== false,
+    commission_rate_new: rateNew,
+    commission_rate_old: rateOld,
+    commission_rate_course: rateCourse,
+  };
+}
+
 function staffDetails(staff: Record<string, unknown>, includePin: boolean) {
   const details: Record<string, unknown> = {
     ...publicStaff(staff),
@@ -161,6 +194,47 @@ Deno.serve(async (req) => {
       const { data, error } = await supabase.from("staff").select(columns).order("created_at");
       if (error) throw error;
       return response({ staff: (data ?? []).map((staff) => staffDetails(staff, includePin)) }, 200, origin);
+    }
+
+    if (body?.action === "staff_create" || body?.action === "staff_update") {
+      const current = await findSession(body.token);
+      if (!current) return response({ error: "invalid_session" }, 401, origin);
+      if (!staffManagementRoles.has(String(current.user.role ?? ""))) {
+        return response({ error: "forbidden" }, 403, origin);
+      }
+
+      const row = staffWriteRow(body.staff);
+      if (!row) return response({ error: "invalid_staff_payload" }, 400, origin);
+
+      if (body.action === "staff_update") {
+        if (typeof body.staffId !== "string" || body.staffId.length === 0) {
+          return response({ error: "invalid_staff_payload" }, 400, origin);
+        }
+        const { data, error } = await supabase.from("staff").update(row).eq("id", body.staffId).select().single();
+        if (error) throw error;
+        return response({ staff: staffDetails(data, true) }, 200, origin);
+      }
+
+      const { data, error } = await supabase.from("staff").insert(row).select().single();
+      if (error) throw error;
+      return response({ staff: staffDetails(data, true) }, 200, origin);
+    }
+
+    if (body?.action === "staff_delete") {
+      const current = await findSession(body.token);
+      if (!current) return response({ error: "invalid_session" }, 401, origin);
+      if (!staffManagementRoles.has(String(current.user.role ?? ""))) {
+        return response({ error: "forbidden" }, 403, origin);
+      }
+      if (typeof body.staffId !== "string" || body.staffId.length === 0) {
+        return response({ error: "invalid_staff_payload" }, 400, origin);
+      }
+      if (body.staffId === current.user.id) {
+        return response({ error: "cannot_delete_self" }, 400, origin);
+      }
+      const { error } = await supabase.from("staff").delete().eq("id", body.staffId);
+      if (error) throw error;
+      return response({ ok: true }, 200, origin);
     }
 
     if (body?.action === "session") {
