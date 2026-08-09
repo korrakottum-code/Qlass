@@ -20,7 +20,7 @@ import { learnFromCorrection } from "./utils/smartParser";
 import { checkFreshRoomBookingConflict } from "./utils/bookingConflict";
 import { shouldUseServerQueueCreate, createQueueOnServer } from "./utils/serverQueueCreate";
 import { extractQueueCreateErrorCode, queueCreateErrorMessage } from "./utils/queueCreateGate";
-import { fetchAuthenticatedStaff, fetchLoginDirectory, getReleaseStatus, getServerSessionToken, loginWithPin, restoreServerSession, revokeServerSession, useServerSession, flushClientDiagnostics } from "./utils/sessionAuth";
+import { fetchAuthenticatedStaff, fetchLoginDirectory, getReleaseStatus, getServerSessionToken, loginWithPin, restoreServerSession, revokeServerSession, useServerSession, flushClientDiagnostics, createStaffServer, updateStaffServer, deleteStaffServer } from "./utils/sessionAuth";
 import { recordClientDiagnostic } from "./utils/clientDiagnostics";
 import { controlledRefreshEnabled, getControlledRefreshStatus, serverDiagnosticsEnabled, flushClientDiagnostics as flushDiagnostics } from "./utils/clientObservability";
 import { reconcileRealtimeQueue } from "./utils/realtimeQueueState";
@@ -792,9 +792,21 @@ export default function App() {
     setModal(null);
   }, [showToast]);
 
+  // Goal 18: staff writes go through the server boundary when server sessions
+  // are on, so the browser's direct staff grants can be revoked afterwards.
+  const persistStaffCreate = useCallback((data) => (
+    useServerSession ? createStaffServer(getServerSessionToken(), data) : createStaff(data)
+  ), []);
+  const persistStaffUpdate = useCallback((id, data) => (
+    useServerSession ? updateStaffServer(getServerSessionToken(), id, data) : updateStaff(id, data)
+  ), []);
+  const persistStaffDelete = useCallback((id) => (
+    useServerSession ? deleteStaffServer(getServerSessionToken(), id) : deleteStaffDB(id)
+  ), []);
+
   const saveStaff = useCallback(async (data) => {
     if (data.id) {
-      const updated = await updateStaff(data.id, data);
+      const updated = await persistStaffUpdate(data.id, data);
       setStaff(prev => prev.map(s => s.id === data.id ? updated : s));
       // อัปเดต currentUser ถ้าแก้ไขตัวเอง (ไม่เก็บ PIN)
       if (currentUser?.id === data.id) {
@@ -803,12 +815,12 @@ export default function App() {
         localStorage.setItem('qlass_user', JSON.stringify(safeData));
       }
     } else {
-      const created = await createStaff(data);
+      const created = await persistStaffCreate(data);
       setStaff(prev => [...prev, created]);
     }
     setModal(null);
     showToast("success", "บันทึกข้อมูลพนักงานเรียบร้อย");
-  }, [showToast, currentUser]);
+  }, [showToast, currentUser, persistStaffCreate, persistStaffUpdate]);
 
   // ─── Delete helpers ───
   const deleteBranch = useCallback(async (id) => {
@@ -863,18 +875,18 @@ export default function App() {
   }, [showToast]);
 
   const deleteStaff = useCallback(async (id) => {
-    await deleteStaffDB(id);
+    await persistStaffDelete(id);
     setStaff(prev => prev.filter(s => s.id !== id));
     showToast("success", "ลบพนักงานแล้ว");
-  }, [showToast]);
+  }, [showToast, persistStaffDelete]);
 
   const toggleStaffActive = useCallback(async (id) => {
     const staffMember = staff.find(s => s.id === id);
     if (staffMember) {
-      const updated = await updateStaff(id, { ...staffMember, active: !staffMember.active });
+      const updated = await persistStaffUpdate(id, { ...staffMember, active: !staffMember.active });
       setStaff(prev => prev.map(s => s.id === id ? updated : s));
     }
-  }, [staff]);
+  }, [staff, persistStaffUpdate]);
 
   // ═══════ TICKET ACTIONS ═══════
   const createTicket = useCallback(async (ticketData, _images) => {
