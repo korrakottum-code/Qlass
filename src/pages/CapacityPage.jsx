@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { getTodayStr, formatThaiDate } from "../utils/helpers";
 import {
   computeCapacitySummary, listDates, daysUntilEndOfMonth,
@@ -41,6 +41,29 @@ function StatCard({ label, value, sub, color }) {
       <div style={{ fontSize: 11, color: "var(--text3)" }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 800, color: color || "var(--accent)", marginTop: 4 }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+}
+
+// การ์ดเดียวโชว์ M กับ T คู่กันในบรรทัดเดียว — เดิมแยกเป็น 2 การ์ดเต็ม ทำให้ล้นไปอยู่คนละแถวบนจอที่ไม่กว้างพอ
+function TypeSplitCard({ mFree, mCap, tFree, tCap }) {
+  return (
+    <div style={{
+      flex: "2 1 280px", minWidth: 280, padding: "12px 14px", borderRadius: 10,
+      background: "var(--surface)", border: "1px solid var(--border)",
+      display: "flex", gap: 18,
+    }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 11, color: "var(--text3)" }}>ว่าง ห้องฉีด (M)</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "var(--blue)", marginTop: 4 }}>{blocksToHours(mFree).toLocaleString()} ชม.</div>
+        <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 2 }}>จาก {blocksToHours(mCap).toLocaleString()} ชม.</div>
+      </div>
+      <div style={{ width: 1, background: "var(--border)" }} />
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 11, color: "var(--text3)" }}>ว่าง ห้องเครื่อง (T)</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "var(--green)", marginTop: 4 }}>{blocksToHours(tFree).toLocaleString()} ชม.</div>
+        <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 2 }}>จาก {blocksToHours(tCap).toLocaleString()} ชม.</div>
+      </div>
     </div>
   );
 }
@@ -89,6 +112,15 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
     : null;
   const selectedBranchName = selected ? (branches.find((b) => b.id === selected.branchId)?.name || "-") : "";
 
+  // กดช่องในตาราง (ซึ่งอาจอยู่บนสุดของจอ) แล้วผลลัพธ์เดิมโผล่ท้ายตาราง 29 สาขา
+  // ไกลเกินจะสังเกตเห็น — เลื่อนจอไปหาให้อัตโนมัติทันทีที่เลือก
+  const detailRef = useRef(null);
+  useEffect(() => {
+    if (selected && detailRef.current) {
+      detailRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [selected]);
+
   return (
     <>
       {/* Controls */}
@@ -133,8 +165,10 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
         <StatCard label="ความจุรวม" value={`${blocksToHours(summary.totals.capacity).toLocaleString()} ชม.`} sub={`${dates.length} วัน · ${visibleRooms.length} ห้อง`} />
         <StatCard label="จองแล้ว" value={totalPct === null ? "—" : `${100 - totalPct}%`} sub={`${blocksToHours(summary.totals.booked).toLocaleString()} ชม.`} color="var(--blue)" />
         <StatCard label="ยังว่าง (รับเพิ่มได้)" value={totalPct === null ? "—" : `${totalPct}%`} sub={`${blocksToHours(summary.totals.free).toLocaleString()} ชม.`} color="var(--green)" />
-        <StatCard label="ว่าง ห้องฉีด (M)" value={`${blocksToHours(summary.totals.byType.M.free).toLocaleString()} ชม.`} sub={`จาก ${blocksToHours(summary.totals.byType.M.capacity).toLocaleString()} ชม.`} color="var(--blue)" />
-        <StatCard label="ว่าง ห้องเครื่อง (T)" value={`${blocksToHours(summary.totals.byType.T.free).toLocaleString()} ชม.`} sub={`จาก ${blocksToHours(summary.totals.byType.T.capacity).toLocaleString()} ชม.`} color="var(--green)" />
+        <TypeSplitCard
+          mFree={summary.totals.byType.M.free} mCap={summary.totals.byType.M.capacity}
+          tFree={summary.totals.byType.T.free} tCap={summary.totals.byType.T.capacity}
+        />
       </div>
 
       {/* คำแนะนำฝั่งการตลาด */}
@@ -264,7 +298,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
 
       {/* Drill-down รายวัน */}
       {selected && selectedCell && (
-        <div className="card" style={{ marginBottom: 14 }}>
+        <div ref={detailRef} className="card" style={{ marginBottom: 14, scrollMarginTop: 16 }}>
           <div className="card-header"><h3>📍 {selectedBranchName} — {formatThaiDate(selected.date)}</h3></div>
           <div className="card-body" style={{ display: "flex", flexWrap: "wrap", gap: 16, fontSize: 13 }}>
             <div style={{ flex: "1 1 200px" }}>
