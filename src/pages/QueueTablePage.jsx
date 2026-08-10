@@ -466,7 +466,7 @@ export default function QueueTablePage({
       {deleteConfirm && (
         <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
           onClick={() => setDeleteConfirm(null)}>
-          <div style={{ background: "var(--surface)", borderRadius: 14, padding: "24px 28px", minWidth: 320, maxWidth: 400, boxShadow: "0 8px 32px rgba(0,0,0,0.2)" }}
+          <div style={{ background: "var(--surface)", borderRadius: 14, padding: "24px 28px", minWidth: "min(320px, calc(100vw - 32px))", maxWidth: 400, boxShadow: "0 8px 32px rgba(0,0,0,0.2)" }}
             onClick={(e) => e.stopPropagation()}>
             <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6, color: "var(--red)" }}>🗑️ ยืนยันการลบคิว</div>
             <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 14 }}>
@@ -500,7 +500,7 @@ export default function QueueTablePage({
       {moveConfirm && (
         <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
           onClick={() => setMoveConfirm(null)}>
-          <div style={{ background: "var(--surface)", borderRadius: 14, padding: "24px 28px", minWidth: 320, maxWidth: 400, boxShadow: "0 8px 32px rgba(0,0,0,0.2)" }}
+          <div style={{ background: "var(--surface)", borderRadius: 14, padding: "24px 28px", minWidth: "min(320px, calc(100vw - 32px))", maxWidth: 400, boxShadow: "0 8px 32px rgba(0,0,0,0.2)" }}
             onClick={(e) => e.stopPropagation()}>
             <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6, color: "#b45309" }}>➡️ ย้ายเข้าคิวรอ</div>
             <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 14 }}>

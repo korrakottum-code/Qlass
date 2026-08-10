@@ -93,6 +93,9 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   }, [dayQueues, date, filterBranch]);
   const ROW_H = 30;  // ความสูงแต่ละ block 5 นาที (ลดจาก 40 ให้เห็นช่วงเวลาได้มากขึ้นโดยไม่ต้องเลื่อน)
   const TIME_COL = 72; // คอลัมน์เวลาซ้าย
+  // ความกว้างขั้นต่ำต่อห้อง — บนมือถือคอลัมน์จะไม่ถูกบีบจนอ่านชื่อไม่ออก
+  // แต่เลื่อนดูห้องถัดไปในแนวนอนแทน (คอลัมน์เวลา sticky ติดซ้ายไว้เสมอ)
+  const ROOM_COL_MIN = 118;
 
   return (
     <>
@@ -135,12 +138,12 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
         <div className="card"><div className="empty"><div className="e-icon">🚪</div><p>ไม่พบห้อง</p></div></div>
       ) : (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 230px)" }}>
-            <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
+          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100dvh - 230px)" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed", minWidth: TIME_COL + filteredRooms.length * ROOM_COL_MIN }}>
               {/* Header: ชื่อห้องเป็น column */}
               <thead>
                 <tr style={{ position: "sticky", top: 0, zIndex: 3, background: "var(--surface2)" }}>
-                  <th style={{ width: TIME_COL, padding: "8px 10px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text3)", borderBottom: "2px solid var(--border2)", borderRight: "2px solid var(--border2)" }}>
+                  <th style={{ width: TIME_COL, padding: "8px 10px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text3)", borderBottom: "2px solid var(--border2)", borderRight: "2px solid var(--border2)", position: "sticky", left: 0, zIndex: 4, background: "var(--surface2)" }}>
                     เวลา
                   </th>
                   {filteredRooms.map((room) => {
@@ -195,7 +198,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                           width: TIME_COL, padding: "0 8px",
                           height: ROW_H, verticalAlign: "middle",
                           borderRight: "2px solid var(--border2)",
-                          background: isHourStart ? "var(--surface2)" : isHalfHour ? "var(--surface3)" : "transparent",
+                          position: "sticky", left: 0, zIndex: 2,
+                          background: isHourStart ? "var(--surface2)" : isHalfHour ? "var(--surface3)" : "var(--surface1)",
                           fontFamily: "var(--mono)", fontWeight: isHourStart ? 800 : isHalfHour ? 600 : 400,
                           fontSize: isHourStart ? 13 : isHalfHour ? 11 : 10,
                           color: isHourStart ? "var(--text1)" : "var(--text3)",
@@ -301,8 +305,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
           />
           <div style={{
             position: "fixed",
-            left: Math.min(popup.x, window.innerWidth - 280),
-            top: Math.min(popup.y + 4, window.innerHeight - 240),
+            left: Math.max(8, Math.min(popup.x, window.innerWidth - 288)),
+            top: Math.max(8, Math.min(popup.y + 4, window.innerHeight - 300)),
             zIndex: 1000,
             background: "var(--surface1)",
             border: "1.5px solid var(--border2)",
@@ -310,7 +314,9 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
             boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
             padding: "16px 18px",
             minWidth: 240,
-            maxWidth: 300,
+            maxWidth: "min(300px, calc(100vw - 16px))",
+            maxHeight: "calc(100dvh - 16px)",
+            overflowY: "auto",
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
               <div style={{ fontWeight: 800, fontSize: 15 }}>{popup.q.name}</div>
@@ -401,7 +407,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
         return (
           <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={() => setBookingForm(null)}>
-            <div style={{ background: "var(--surface1)", borderRadius: 16, padding: "22px 26px", minWidth: 340, maxWidth: 440, width: "94%", boxShadow: "0 8px 40px rgba(0,0,0,0.22)" }}
+            <div style={{ background: "var(--surface1)", borderRadius: 16, padding: "22px 26px", minWidth: "min(340px, calc(100vw - 24px))", maxWidth: 440, width: "94%", maxHeight: "92dvh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.22)" }}
               onClick={(e) => e.stopPropagation()}>
 
               {/* Header */}
