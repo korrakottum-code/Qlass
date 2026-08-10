@@ -247,18 +247,24 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
                     <tr key={`${b.id}_${type}`}>
                       <td style={{
                         position: "sticky", left: 0, zIndex: 2, background: "var(--surface)",
-                        padding: "6px 10px", fontSize: 12, fontWeight: idx === 0 ? 700 : 500, whiteSpace: "nowrap",
+                        padding: "6px 10px", fontSize: 12, fontWeight: idx === 0 ? 700 : 500,
                         borderBottom: idx === 1 ? "1px solid var(--border)" : "none",
                         borderTop: idx === 0 ? "2px solid var(--border2)" : "none",
                         borderRight: "2px solid var(--border2)",
-                        overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140,
+                        maxWidth: 140,
                         color: idx === 0 ? "var(--text1)" : "var(--text2)",
                       }}>
-                        {idx === 0 ? b.name : ""}
-                        {idx === 0 && branchAverages[b.id] != null && (
-                          <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 800, color: "var(--accent)" }}>{branchAverages[b.id]}%</span>
-                        )}
-                        {" "}<span style={{ fontSize: 10, color: type === "M" ? "var(--blue)" : "var(--green)" }}>{typeLabel}</span>
+                        {/* ชื่อสาขายาวถูกตัดด้วย ellipsis เฉพาะตัวมันเอง — ป้าย % และ M/T เป็นคนละช่อง
+                            ไม่โดนตัดหายไปด้วย (เดิมตัดรวมกันทั้งเซลล์ ทำให้ % หายบนจอแคบ) */}
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 4, minWidth: 0 }}>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                            {idx === 0 ? b.name : ""}
+                          </span>
+                          {idx === 0 && branchAverages[b.id] != null && (
+                            <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, color: "var(--accent)" }}>{branchAverages[b.id]}%</span>
+                          )}
+                          <span style={{ flexShrink: 0, fontSize: 10, color: type === "M" ? "var(--blue)" : "var(--green)" }}>{typeLabel}</span>
+                        </div>
                       </td>
                       {dates.map((date) => {
                         const cell = summary.days.find((d) => d.date === date)?.byBranch[b.id]?.byType[type];
@@ -287,14 +293,18 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
                   <tr key={b.id}>
                     <td style={{
                       position: "sticky", left: 0, zIndex: 2, background: "var(--surface)",
-                      padding: "6px 10px", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
+                      padding: "6px 10px", fontSize: 12, fontWeight: 700,
                       borderBottom: "1px solid var(--border)", borderRight: "2px solid var(--border2)",
-                      overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140,
+                      maxWidth: 140,
                     }}>
-                      {b.name}
-                      {branchAverages[b.id] != null && (
-                        <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: "var(--accent)" }}>{branchAverages[b.id]}%</span>
-                      )}
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                          {b.name}
+                        </span>
+                        {branchAverages[b.id] != null && (
+                          <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, color: "var(--accent)" }}>{branchAverages[b.id]}%</span>
+                        )}
+                      </div>
                     </td>
                     {dates.map((date) => {
                       const cell = summary.days.find((d) => d.date === date)?.byBranch[b.id];
