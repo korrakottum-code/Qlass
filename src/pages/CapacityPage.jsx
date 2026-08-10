@@ -32,15 +32,16 @@ function freeColor(pct) {
   return `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
 }
 
+// compact เพราะต้องอยู่ 3 การ์ดในแถวเดียวกันเสมอแม้จอมือถือแคบสุด (เดิม flex-wrap ทำให้การ์ดที่ 3 ตกไปอยู่คนละบรรทัด)
 function StatCard({ label, value, sub, color }) {
   return (
     <div style={{
-      flex: "1 1 140px", minWidth: 140, padding: "12px 14px", borderRadius: 10,
+      minWidth: 0, padding: "10px 10px", borderRadius: 10,
       background: "var(--surface)", border: "1px solid var(--border)",
     }}>
-      <div style={{ fontSize: 11, color: "var(--text3)" }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: color || "var(--accent)", marginTop: 4 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 2 }}>{sub}</div>}
+      <div style={{ fontSize: 10, color: "var(--text3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: color || "var(--accent)", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
+      {sub && <div style={{ fontSize: 10, color: "var(--text2)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
     </div>
   );
 }
@@ -49,7 +50,7 @@ function StatCard({ label, value, sub, color }) {
 function TypeSplitCard({ mFree, mCap, tFree, tCap }) {
   return (
     <div style={{
-      flex: "2 1 280px", minWidth: 280, padding: "12px 14px", borderRadius: 10,
+      padding: "12px 14px", borderRadius: 10,
       background: "var(--surface)", border: "1px solid var(--border)",
       display: "flex", gap: 18,
     }}>
@@ -70,7 +71,7 @@ function TypeSplitCard({ mFree, mCap, tFree, tCap }) {
 
 const THAI_DOW = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
-export default function CapacityPage({ rooms, roomSchedules, queues, branches, procedures, promos }) {
+export default function CapacityPage({ rooms, roomSchedules, queues, branches, procedures }) {
   const [range, setRange] = useState("7d"); // 7d | eom
   const [filterBranch, setFilterBranch] = useState("all");
   const [splitByType, setSplitByType] = useState(false);
@@ -106,15 +107,6 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
 
   const totalPct = freePercent(summary.totals);
   const freerType = summary.totals.byType.M.free >= summary.totals.byType.T.free ? "M" : "T";
-  const promosByType = useMemo(() => {
-    const byType = { M: [], T: [] };
-    (promos || []).filter((p) => p.active !== false).forEach((p) => {
-      const proc = procedures.find((x) => x.id === p.procedureId);
-      if (proc?.roomType === "M") byType.M.push(p);
-      else if (proc?.roomType === "T") byType.T.push(p);
-    });
-    return byType;
-  }, [promos, procedures]);
 
   const selectedCell = selected
     ? summary.days.find((d) => d.date === selected.date)?.byBranch[selected.branchId]
@@ -160,49 +152,31 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
         </div>
       </div>
 
-      {/* Stat cards */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-        <StatCard label="ความจุรวม" value={`${blocksToHours(summary.totals.capacity).toLocaleString()} ชม.`} sub={`${dates.length} วัน · ${visibleRooms.length} ห้อง`} />
-        <StatCard label="จองแล้ว" value={totalPct === null ? "—" : `${100 - totalPct}%`} sub={`${blocksToHours(summary.totals.booked).toLocaleString()} ชม.`} color="var(--blue)" />
-        <StatCard label="ยังว่าง (รับเพิ่มได้)" value={totalPct === null ? "—" : `${totalPct}%`} sub={`${blocksToHours(summary.totals.free).toLocaleString()} ชม.`} color="var(--green)" />
+      {/* Stat cards — บังคับ 3 การ์ดแรกอยู่แถวเดียวกันเสมอด้วย grid (เดิม flex-wrap ทำให้การ์ดที่ 3
+          ตกไปอยู่คนละบรรทัดบนจอแคบ) ส่วนการ์ด M/T แยกเป็นแถวของตัวเองด้านล่าง */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+          <StatCard label="ความจุรวม" value={`${blocksToHours(summary.totals.capacity).toLocaleString()} ชม.`} sub={`${dates.length} วัน · ${visibleRooms.length} ห้อง`} />
+          <StatCard label="จองแล้ว" value={totalPct === null ? "—" : `${100 - totalPct}%`} sub={`${blocksToHours(summary.totals.booked).toLocaleString()} ชม.`} color="var(--blue)" />
+          <StatCard label="ยังว่าง (รับเพิ่มได้)" value={totalPct === null ? "—" : `${totalPct}%`} sub={`${blocksToHours(summary.totals.free).toLocaleString()} ชม.`} color="var(--green)" />
+        </div>
         <TypeSplitCard
           mFree={summary.totals.byType.M.free} mCap={summary.totals.byType.M.capacity}
           tFree={summary.totals.byType.T.free} tCap={summary.totals.byType.T.capacity}
         />
       </div>
 
-      {/* คำแนะนำฝั่งการตลาด — โปรในระบบไม่ได้ผูกกับสาขา (ใช้ได้ทั่วทั้งเครือ) จึงลิสต์ชื่อโปร
-          จะเหมือนกันทุกสาขาเสมอ "โดยธรรมชาติ" ไม่ใช่บั๊ก — ส่วนที่เปลี่ยนตามตัวกรองจริงคือ
-          ชั่วโมงว่างและว่าตรงไหนควรดันโปรกลุ่มไหน ข้อความเลยบอกตรงๆ แทนที่จะทำให้ดูเหมือน
-          ลิสต์ถูกกรองเฉพาะสาขา (แบบเดิมที่ทำให้คนใช้เข้าใจผิดว่าระบบพัง) */}
+      {/* คำแนะนำฝั่งการตลาด — บอกแค่ว่าห้องประเภทไหนว่างกว่า ไม่แจงชื่อโปร (เดิมสุ่มเอา 6 โปรแรก
+          ที่ตรงประเภทห้องมาโชว์ ไม่มีเกณฑ์คัดจริง ทำให้ดูเหมือนระบบเลือกเอง — เอาออกดีกว่าใส่
+          ข้อมูลที่อธิบายไม่ได้ว่าทำไมถูกเลือก) */}
       {summary.totals.capacity > 0 && (
         <div style={{
           marginBottom: 14, padding: "10px 14px", borderRadius: 10, fontSize: 13,
           background: "var(--surface2)", border: "1px solid var(--border)",
-          display: "flex", flexDirection: "column", gap: 6,
         }}>
-          <div style={{ fontWeight: 700, color: "var(--text2)" }}>
-            💡 {filterBranch === "all" ? "ภาพรวมทุกสาขา" : branches.find((b) => b.id === filterBranch)?.name}
-            {" "}ว่างฝั่ง <b style={{ color: freerType === "M" ? "var(--blue)" : "var(--green)" }}>{freerType === "M" ? "ห้องฉีด (M)" : "ห้องเครื่อง (T)"}</b> มากกว่า
-            {" "}— ลองดันโปรกลุ่มนี้ที่นี่ก่อน (โปรใช้ได้ทุกสาขาเหมือนกันหมด ไม่ได้ผูกเฉพาะสาขาที่เลือก)
-          </div>
-          {[["M", "ห้องฉีด (M)", "var(--blue)"], ["T", "ห้องเครื่อง (T)", "var(--green)"]].map(([type, label, color]) => {
-            const list = promosByType[type];
-            const shown = list.slice(0, 6);
-            const extra = list.length - shown.length;
-            return (
-              <div key={type}>
-                <b style={{ color }}>{label}</b>
-                {" "}ว่าง {blocksToHours(summary.totals.byType[type].free).toLocaleString()} ชม.
-                {type === freerType && <span style={{ color: "var(--accent)", fontWeight: 700 }}> ← ว่างกว่า</span>}
-                {shown.length > 0 ? (
-                  <> — {shown.map((p) => p.name).join(" · ")}{extra > 0 && ` · +อีก ${extra} โปร`}</>
-                ) : (
-                  <span style={{ color: "var(--text3)" }}> — ไม่มีโปรเปิดใช้งานสำหรับห้องประเภทนี้</span>
-                )}
-              </div>
-            );
-          })}
+          💡 {filterBranch === "all" ? "ภาพรวมทุกสาขา" : branches.find((b) => b.id === filterBranch)?.name}
+          {" "}ว่างฝั่ง <b style={{ color: freerType === "M" ? "var(--blue)" : "var(--green)" }}>{freerType === "M" ? "ห้องฉีด (M)" : "ห้องเครื่อง (T)"}</b> มากกว่า
+          {" "}— เหมาะโฟกัสแคมเปญ/โปรกลุ่มห้อง{freerType === "M" ? "ฉีด" : "เครื่อง"}ที่นี่ก่อน
         </div>
       )}
 
@@ -254,17 +228,20 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
                         maxWidth: 140,
                         color: idx === 0 ? "var(--text1)" : "var(--text2)",
                       }}>
-                        {/* ชื่อสาขายาวถูกตัดด้วย ellipsis เฉพาะตัวมันเอง — ป้าย % และ M/T เป็นคนละช่อง
-                            ไม่โดนตัดหายไปด้วย (เดิมตัดรวมกันทั้งเซลล์ ทำให้ % หายบนจอแคบ) */}
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 4, minWidth: 0 }}>
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-                            {idx === 0 ? b.name : ""}
-                          </span>
-                          {idx === 0 && branchAverages[b.id] != null && (
-                            <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, color: "var(--accent)" }}>{branchAverages[b.id]}%</span>
-                          )}
-                          <span style={{ flexShrink: 0, fontSize: 10, color: type === "M" ? "var(--blue)" : "var(--green)" }}>{typeLabel}</span>
-                        </div>
+                        {/* ชื่อสาขา (แถวบนสุดเท่านั้น) กับป้าย M/T แยกกันคนละบรรทัดเสมอ — ทำให้ป้าย
+                            "ห้องฉีด (M)" ของแถวบนและ "ห้องเครื่อง (T)" ของแถวล่างเริ่มที่ตำแหน่ง
+                            ซ้ายเดียวกันพอดี ไม่ใช่ตำแหน่งเลื่อนไปตามความยาวชื่อสาขา+% แบบเดิม */}
+                        {idx === 0 && (
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 4, minWidth: 0 }}>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                              {b.name}
+                            </span>
+                            {branchAverages[b.id] != null && (
+                              <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, color: "var(--accent)" }}>{branchAverages[b.id]}%</span>
+                            )}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 10, color: type === "M" ? "var(--blue)" : "var(--green)" }}>{typeLabel}</div>
                       </td>
                       {dates.map((date) => {
                         const cell = summary.days.find((d) => d.date === date)?.byBranch[b.id]?.byType[type];
