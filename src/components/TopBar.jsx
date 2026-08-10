@@ -11,6 +11,7 @@ const PAGE_TITLES = {
   rooms: "🚪 จัดการห้องหัตถการ",
   "room-schedule": "📅 ตารางห้อง/เครื่อง",
   summary: "📊 สรุปประจำวัน",
+  capacity: "🟢 คิวว่าง (Capacity)",
   commission: "💰 ค่าคอมมิชชั่น",
   staff: "👥 จัดการพนักงาน",
 };

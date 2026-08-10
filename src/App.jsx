@@ -50,6 +50,7 @@ import PromosPage from "./pages/PromosPage";
 import RoomsPage from "./pages/RoomsPage";
 import RoomSchedulePage from "./pages/RoomSchedulePage";
 import SummaryPage from "./pages/SummaryPage";
+import CapacityPage from "./pages/CapacityPage";
 import TimelinePage from "./pages/TimelinePage";
 import StaffPage from "./pages/StaffPage";
 import CommissionPage from "./pages/CommissionPage";
@@ -1222,6 +1223,17 @@ export default function App() {
                 }}
                 onEditQueue={(q) => { editQueue(q); }}
                 onMoveToWaitingQueue={moveToWaitingQueue}
+              />
+            )}
+
+            {page === "capacity" && (
+              <CapacityPage
+                queues={filteredQueues}
+                branches={filteredBranches}
+                rooms={filteredRooms}
+                roomSchedules={filteredRoomSchedules}
+                procedures={procedures}
+                promos={promos}
               />
             )}
 
