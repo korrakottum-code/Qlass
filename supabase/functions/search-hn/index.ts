@@ -7,7 +7,14 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 // environments are migrated and the legacy keys are deactivated.
 const serviceRoleKey = Deno.env.get("QLASS_SUPABASE_SECRET_KEY")
   ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const allowedOrigin = Deno.env.get("QLASS_ALLOWED_ORIGIN") ?? "";
+// Exact-match origin allowlist. QLASS_ALLOWED_ORIGINS (comma-separated) wins;
+// the legacy single QLASS_ALLOWED_ORIGIN remains as a fallback. No wildcards:
+// every allowed origin is spelled out, and an empty list fails closed.
+const allowedOrigins = (Deno.env.get("QLASS_ALLOWED_ORIGINS") ?? Deno.env.get("QLASS_ALLOWED_ORIGIN") ?? "")
+  .split(",").map((value) => value.trim()).filter(Boolean);
+function isAllowedOrigin(origin: string | null): origin is string {
+  return typeof origin === "string" && allowedOrigins.includes(origin);
+}
 const proclinicCookiesB64 = Deno.env.get("PROCLINIC_COOKIES_B64") ?? "";
 const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -18,7 +25,7 @@ const jsonHeaders = { "Content-Type": "application/json" };
 function corsHeaders(origin: string | null) {
   return {
     ...jsonHeaders,
-    "Access-Control-Allow-Origin": allowedOrigin && origin === allowedOrigin ? origin : "null",
+    "Access-Control-Allow-Origin": isAllowedOrigin(origin) ? origin : "null",
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-qlass-session",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Vary": "Origin",
@@ -155,7 +162,7 @@ async function auditLookup(staffId: string, q: string, resultCount: number, sour
 Deno.serve(async (req) => {
   const origin = req.headers.get("origin");
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(origin) });
-  if (!allowedOrigin || origin !== allowedOrigin) return response({ error: "origin_not_allowed" }, 403, origin);
+  if (!isAllowedOrigin(origin)) return response({ error: "origin_not_allowed" }, 403, origin);
   if (req.method !== "POST") return response({ error: "method_not_allowed" }, 405, origin);
 
   try {
