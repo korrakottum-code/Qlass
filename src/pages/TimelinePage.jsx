@@ -142,8 +142,9 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
             <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed", minWidth: TIME_COL + filteredRooms.length * ROOM_COL_MIN }}>
               {/* Header: ชื่อห้องเป็น column */}
               <thead>
-                <tr style={{ position: "sticky", top: 0, zIndex: 3, background: "var(--surface2)" }}>
-                  <th style={{ width: TIME_COL, padding: "8px 10px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text3)", borderBottom: "2px solid var(--border2)", borderRight: "2px solid var(--border2)", position: "sticky", left: 0, zIndex: 4, background: "var(--surface2)" }}>
+                {/* sticky ต้องอยู่บน th (เบราว์เซอร์ไม่รองรับ sticky บน tr) — หัวตารางถึงติดหัวจอจริงตอนเลื่อนลง */}
+                <tr>
+                  <th style={{ width: TIME_COL, padding: "8px 10px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--text3)", borderBottom: "2px solid var(--border2)", borderRight: "2px solid var(--border2)", position: "sticky", top: 0, left: 0, zIndex: 5, background: "var(--surface2)" }}>
                     เวลา
                   </th>
                   {filteredRooms.map((room) => {
@@ -155,6 +156,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                         padding: "6px 10px", textAlign: "center",
                         borderBottom: "2px solid var(--border2)",
                         borderRight: "1px solid var(--border)",
+                        position: "sticky", top: 0, zIndex: 3,
                         background: room.type === "M" ? "#eff6ff" : "#f0fdf4",
                       }}>
                         <div style={{ fontSize: 12, fontWeight: 800, color: room.type === "M" ? "var(--blue)" : "var(--green)" }}>
@@ -199,7 +201,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                           height: ROW_H, verticalAlign: "middle",
                           borderRight: "2px solid var(--border2)",
                           position: "sticky", left: 0, zIndex: 2,
-                          background: isHourStart ? "var(--surface2)" : isHalfHour ? "var(--surface3)" : "var(--surface1)",
+                          background: isHourStart ? "var(--surface2)" : isHalfHour ? "var(--surface3)" : "var(--surface)",
                           fontFamily: "var(--mono)", fontWeight: isHourStart ? 800 : isHalfHour ? 600 : 400,
                           fontSize: isHourStart ? 13 : isHalfHour ? 11 : 10,
                           color: isHourStart ? "var(--text1)" : "var(--text3)",
@@ -308,7 +310,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
             left: Math.max(8, Math.min(popup.x, window.innerWidth - 288)),
             top: Math.max(8, Math.min(popup.y + 4, window.innerHeight - 300)),
             zIndex: 1000,
-            background: "var(--surface1)",
+            background: "var(--surface)",
             border: "1.5px solid var(--border2)",
             borderRadius: 12,
             boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
@@ -407,7 +409,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
         return (
           <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={() => setBookingForm(null)}>
-            <div style={{ background: "var(--surface1)", borderRadius: 16, padding: "22px 26px", minWidth: "min(340px, calc(100vw - 24px))", maxWidth: 440, width: "94%", maxHeight: "92dvh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.22)" }}
+            <div style={{ background: "var(--surface)", borderRadius: 16, padding: "22px 26px", minWidth: "min(340px, calc(100vw - 24px))", maxWidth: 440, width: "94%", maxHeight: "92dvh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.22)" }}
               onClick={(e) => e.stopPropagation()}>
 
               {/* Header */}
