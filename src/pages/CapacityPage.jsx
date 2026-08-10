@@ -5,14 +5,31 @@ import {
   blocksToHours, freePercent,
 } from "../utils/capacity";
 
-// สีของ heatmap ตาม % ว่าง — เขียว = ว่างเยอะ (ลงโปรได้), แดง = แน่นแล้ว
+// สีของ heatmap ตาม % ว่าง — ไล่เฉดต่อเนื่อง (แดง→ส้ม→เหลือง→เขียวอ่อน→เขียวเข้ม)
+// แทนที่จะแบ่ง 5 บั้นหยาบๆ เพราะข้อมูลจริงกระจุกช่วง 60-100% ทำให้บั้นแบบเดิม
+// ออกมาเป็นสีเขียวซ้ำกันหมด แยกไม่ออกว่าตรงไหนว่างกว่าจริง
+const FREE_COLOR_STOPS = [
+  { pct: 0, h: 0, s: 78, l: 80 },
+  { pct: 25, h: 22, s: 82, l: 78 },
+  { pct: 50, h: 45, s: 85, l: 74 },
+  { pct: 75, h: 88, s: 55, l: 74 },
+  { pct: 100, h: 142, s: 50, l: 68 },
+];
 function freeColor(pct) {
   if (pct === null) return "var(--surface3)";
-  if (pct >= 60) return "#bbf7d0";
-  if (pct >= 40) return "#d9f99d";
-  if (pct >= 25) return "#fef08a";
-  if (pct >= 10) return "#fed7aa";
-  return "#fecaca";
+  const clamped = Math.max(0, Math.min(100, pct));
+  let lo = FREE_COLOR_STOPS[0];
+  let hi = FREE_COLOR_STOPS[FREE_COLOR_STOPS.length - 1];
+  for (let i = 0; i < FREE_COLOR_STOPS.length - 1; i++) {
+    if (clamped >= FREE_COLOR_STOPS[i].pct && clamped <= FREE_COLOR_STOPS[i + 1].pct) {
+      lo = FREE_COLOR_STOPS[i]; hi = FREE_COLOR_STOPS[i + 1]; break;
+    }
+  }
+  const t = hi.pct === lo.pct ? 0 : (clamped - lo.pct) / (hi.pct - lo.pct);
+  const h = lo.h + (hi.h - lo.h) * t;
+  const s = lo.s + (hi.s - lo.s) * t;
+  const l = lo.l + (hi.l - lo.l) * t;
+  return `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
 }
 
 function StatCard({ label, value, sub, color }) {
@@ -234,12 +251,13 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
             </tbody>
           </table>
         </div>
-        <div style={{ display: "flex", gap: 10, padding: "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap", fontSize: 11, color: "var(--text2)" }}>
-          {[["#bbf7d0", "ว่าง ≥60%"], ["#d9f99d", "40-59%"], ["#fef08a", "25-39%"], ["#fed7aa", "10-24%"], ["#fecaca", "แน่น <10%"]].map(([c, l]) => (
-            <span key={l} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ width: 12, height: 12, borderRadius: 3, background: c, border: "1px solid var(--border)", display: "inline-block" }} />{l}
-            </span>
-          ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap", fontSize: 11, color: "var(--text2)" }}>
+          <span>แน่น</span>
+          <div style={{
+            width: 140, height: 12, borderRadius: 4, border: "1px solid var(--border)",
+            background: `linear-gradient(to right, ${FREE_COLOR_STOPS.map((s) => `hsl(${s.h},${s.s}%,${s.l}%) ${s.pct}%`).join(", ")})`,
+          }} />
+          <span>ว่างมาก</span>
           <span style={{ marginLeft: "auto" }}>กดช่องเพื่อดูรายละเอียดวัน/สาขานั้น · กด "แยก M/T" ด้านบนเพื่อแยกดูห้องฉีด/ห้องเครื่องแยกแถว</span>
         </div>
       </div>
