@@ -345,6 +345,9 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
 }
 
 @media(max-width:768px){
+  /* iOS Safari ซูมหน้าจอเองเมื่อโฟกัสช่องกรอกที่ font-size < 16px —
+     บังคับ 16px บนมือถือเพื่อไม่ให้จอเด้งซูมตอนแอดมินกรอกฟอร์ม */
+  input,select,textarea{font-size:16px}
   .mobile-menu-btn{display:flex}
   .mobile-overlay.open{display:block}
   .sidebar{
