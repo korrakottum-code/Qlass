@@ -171,8 +171,10 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
         />
       </div>
 
-      {/* คำแนะนำฝั่งการตลาด — โชว์ทั้งสองฝั่ง M/T คู่กัน พร้อมชั่วโมงว่างจริงของตัวกรองปัจจุบัน
-          กันดูเหมือน list ตายตัว (เดิมโชว์ฝั่งเดียวเป็น "ผู้ชนะ" ทำให้ดูเหมือนไม่ขยับตามตัวกรอง) */}
+      {/* คำแนะนำฝั่งการตลาด — โปรในระบบไม่ได้ผูกกับสาขา (ใช้ได้ทั่วทั้งเครือ) จึงลิสต์ชื่อโปร
+          จะเหมือนกันทุกสาขาเสมอ "โดยธรรมชาติ" ไม่ใช่บั๊ก — ส่วนที่เปลี่ยนตามตัวกรองจริงคือ
+          ชั่วโมงว่างและว่าตรงไหนควรดันโปรกลุ่มไหน ข้อความเลยบอกตรงๆ แทนที่จะทำให้ดูเหมือน
+          ลิสต์ถูกกรองเฉพาะสาขา (แบบเดิมที่ทำให้คนใช้เข้าใจผิดว่าระบบพัง) */}
       {summary.totals.capacity > 0 && (
         <div style={{
           marginBottom: 14, padding: "10px 14px", borderRadius: 10, fontSize: 13,
@@ -180,14 +182,16 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
           display: "flex", flexDirection: "column", gap: 6,
         }}>
           <div style={{ fontWeight: 700, color: "var(--text2)" }}>
-            💡 โปรที่เหมาะไดร์ฟตอนนี้ ({filterBranch === "all" ? "ทุกสาขา" : branches.find((b) => b.id === filterBranch)?.name || ""})
+            💡 {filterBranch === "all" ? "ภาพรวมทุกสาขา" : branches.find((b) => b.id === filterBranch)?.name}
+            {" "}ว่างฝั่ง <b style={{ color: freerType === "M" ? "var(--blue)" : "var(--green)" }}>{freerType === "M" ? "ห้องฉีด (M)" : "ห้องเครื่อง (T)"}</b> มากกว่า
+            {" "}— ลองดันโปรกลุ่มนี้ที่นี่ก่อน (โปรใช้ได้ทุกสาขาเหมือนกันหมด ไม่ได้ผูกเฉพาะสาขาที่เลือก)
           </div>
           {[["M", "ห้องฉีด (M)", "var(--blue)"], ["T", "ห้องเครื่อง (T)", "var(--green)"]].map(([type, label, color]) => {
             const list = promosByType[type];
             const shown = list.slice(0, 6);
             const extra = list.length - shown.length;
             return (
-              <div key={type} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <div key={type}>
                 <b style={{ color }}>{label}</b>
                 {" "}ว่าง {blocksToHours(summary.totals.byType[type].free).toLocaleString()} ชม.
                 {type === freerType && <span style={{ color: "var(--accent)", fontWeight: 700 }}> ← ว่างกว่า</span>}
