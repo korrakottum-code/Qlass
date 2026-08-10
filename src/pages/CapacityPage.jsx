@@ -33,6 +33,7 @@ const THAI_DOW = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 export default function CapacityPage({ rooms, roomSchedules, queues, branches, procedures, promos }) {
   const [range, setRange] = useState("7d"); // 7d | eom
   const [filterBranch, setFilterBranch] = useState("all");
+  const [splitByType, setSplitByType] = useState(false);
   const [selected, setSelected] = useState(null); // { branchId, date }
 
   const today = getTodayStr();
@@ -95,6 +96,19 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">ตารางด้านล่าง</label>
+          <button
+            onClick={() => setSplitByType((v) => !v)}
+            style={{
+              padding: "7px 14px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700,
+              border: splitByType ? "1.5px solid var(--accent)" : "1.5px solid var(--border)",
+              background: splitByType ? "var(--accent-soft, rgba(0,0,0,0.05))" : "var(--surface2)",
+              color: splitByType ? "var(--accent)" : "var(--text2)",
+            }}>
+            {splitByType ? "✓ แยก M/T แล้ว" : "แยก M/T"}
+          </button>
+        </div>
       </div>
 
       {/* Stat cards */}
@@ -150,33 +164,72 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
             </thead>
             <tbody>
               {visibleBranches.map((b) => (
-                <tr key={b.id}>
-                  <td style={{
-                    position: "sticky", left: 0, zIndex: 2, background: "var(--surface)",
-                    padding: "6px 10px", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
-                    borderBottom: "1px solid var(--border)", borderRight: "2px solid var(--border2)",
-                    overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140,
-                  }}>{b.name}</td>
-                  {dates.map((date) => {
-                    const cell = summary.days.find((d) => d.date === date)?.byBranch[b.id];
-                    const pct = freePercent(cell);
-                    const isSel = selected && selected.branchId === b.id && selected.date === date;
-                    return (
-                      <td key={date}
-                        onClick={() => setSelected(isSel ? null : { branchId: b.id, date })}
-                        title={cell ? `ว่าง ${blocksToHours(cell.free)} ชม. จาก ${blocksToHours(cell.capacity)} ชม.` : "ปิด/ไม่มีห้อง"}
-                        style={{
-                          padding: "8px 2px", textAlign: "center", fontSize: 11, fontWeight: 700,
-                          background: freeColor(pct), cursor: cell ? "pointer" : "default",
-                          color: "#1f2937",
-                          borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)",
-                          outline: isSel ? "2px solid var(--accent)" : "none", outlineOffset: -2,
-                        }}>
-                        {pct === null ? "—" : `${pct}%`}
+                splitByType ? (
+                  [["M", "ห้องฉีด (M)"], ["T", "ห้องเครื่อง (T)"]].map(([type, typeLabel], idx) => (
+                    <tr key={`${b.id}_${type}`}>
+                      <td style={{
+                        position: "sticky", left: 0, zIndex: 2, background: "var(--surface)",
+                        padding: "6px 10px", fontSize: 12, fontWeight: idx === 0 ? 700 : 500, whiteSpace: "nowrap",
+                        borderBottom: idx === 1 ? "1px solid var(--border)" : "none",
+                        borderTop: idx === 0 ? "2px solid var(--border2)" : "none",
+                        borderRight: "2px solid var(--border2)",
+                        overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140,
+                        color: idx === 0 ? "var(--text1)" : "var(--text2)",
+                      }}>
+                        {idx === 0 ? b.name : ""} <span style={{ fontSize: 10, color: type === "M" ? "var(--blue)" : "var(--green)" }}>{typeLabel}</span>
                       </td>
-                    );
-                  })}
-                </tr>
+                      {dates.map((date) => {
+                        const cell = summary.days.find((d) => d.date === date)?.byBranch[b.id]?.byType[type];
+                        const pct = freePercent(cell);
+                        const isSel = selected && selected.branchId === b.id && selected.date === date;
+                        return (
+                          <td key={date}
+                            onClick={() => setSelected(isSel ? null : { branchId: b.id, date })}
+                            title={cell ? `${typeLabel}: ว่าง ${blocksToHours(cell.free)} ชม. จาก ${blocksToHours(cell.capacity)} ชม.` : "ปิด/ไม่มีห้อง"}
+                            style={{
+                              padding: "6px 2px", textAlign: "center", fontSize: 11, fontWeight: 700,
+                              background: freeColor(pct), cursor: cell ? "pointer" : "default",
+                              color: "#1f2937",
+                              borderBottom: idx === 1 ? "1px solid var(--border)" : "none",
+                              borderTop: idx === 0 ? "2px solid var(--border2)" : "none",
+                              borderRight: "1px solid var(--border)",
+                              outline: isSel ? "2px solid var(--accent)" : "none", outlineOffset: -2,
+                            }}>
+                            {pct === null ? "—" : `${pct}%`}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))
+                ) : (
+                  <tr key={b.id}>
+                    <td style={{
+                      position: "sticky", left: 0, zIndex: 2, background: "var(--surface)",
+                      padding: "6px 10px", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
+                      borderBottom: "1px solid var(--border)", borderRight: "2px solid var(--border2)",
+                      overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140,
+                    }}>{b.name}</td>
+                    {dates.map((date) => {
+                      const cell = summary.days.find((d) => d.date === date)?.byBranch[b.id];
+                      const pct = freePercent(cell);
+                      const isSel = selected && selected.branchId === b.id && selected.date === date;
+                      return (
+                        <td key={date}
+                          onClick={() => setSelected(isSel ? null : { branchId: b.id, date })}
+                          title={cell ? `ว่าง ${blocksToHours(cell.free)} ชม. จาก ${blocksToHours(cell.capacity)} ชม.` : "ปิด/ไม่มีห้อง"}
+                          style={{
+                            padding: "8px 2px", textAlign: "center", fontSize: 11, fontWeight: 700,
+                            background: freeColor(pct), cursor: cell ? "pointer" : "default",
+                            color: "#1f2937",
+                            borderBottom: "1px solid var(--border)", borderRight: "1px solid var(--border)",
+                            outline: isSel ? "2px solid var(--accent)" : "none", outlineOffset: -2,
+                          }}>
+                          {pct === null ? "—" : `${pct}%`}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                )
               ))}
             </tbody>
           </table>
@@ -187,7 +240,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
               <span style={{ width: 12, height: 12, borderRadius: 3, background: c, border: "1px solid var(--border)", display: "inline-block" }} />{l}
             </span>
           ))}
-          <span style={{ marginLeft: "auto" }}>กดช่องเพื่อดูรายละเอียดวัน/สาขานั้น</span>
+          <span style={{ marginLeft: "auto" }}>กดช่องเพื่อดูรายละเอียดวัน/สาขานั้น · กด "แยก M/T" ด้านบนเพื่อแยกดูห้องฉีด/ห้องเครื่องแยกแถว</span>
         </div>
       </div>
 
