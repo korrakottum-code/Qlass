@@ -7,11 +7,12 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 // environments are migrated and the legacy keys are deactivated.
 const serviceRoleKey = Deno.env.get("QLASS_SUPABASE_SECRET_KEY")
   ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-// Exact-match origin allowlist. QLASS_ALLOWED_ORIGINS (comma-separated) wins;
-// the legacy single QLASS_ALLOWED_ORIGIN remains as a fallback. No wildcards:
-// every allowed origin is spelled out, and an empty list fails closed.
-const allowedOrigins = (Deno.env.get("QLASS_ALLOWED_ORIGINS") ?? Deno.env.get("QLASS_ALLOWED_ORIGIN") ?? "")
-  .split(",").map((value) => value.trim()).filter(Boolean);
+// Exact-match origin allowlist: the union of the legacy single
+// QLASS_ALLOWED_ORIGIN (production) and the optional comma-separated
+// QLASS_ALLOWED_ORIGINS (extra origins such as localhost for dev preview).
+// No wildcards: every origin is spelled out, and an empty union fails closed.
+const allowedOrigins = [Deno.env.get("QLASS_ALLOWED_ORIGIN") ?? "", ...(Deno.env.get("QLASS_ALLOWED_ORIGINS") ?? "").split(",")]
+  .map((value) => value.trim()).filter(Boolean);
 function isAllowedOrigin(origin: string | null): origin is string {
   return typeof origin === "string" && allowedOrigins.includes(origin);
 }
