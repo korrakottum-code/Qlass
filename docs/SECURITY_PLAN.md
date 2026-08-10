@@ -3,6 +3,92 @@
 This is the active execution plan for Qlass. The application is already used by
 hundreds of people, so every change must preserve existing data and behaviour.
 
+## Quick summary (plain language)
+
+This document tracks 38 numbered "Goals" — a checklist of security and
+reliability fixes for the clinic booking system, done one at a time so nothing
+breaks for staff or customers. Goals 8-13 each carry a literal `Status:` line
+you can search for; Goals 14-38 have no `Status:` line at all, which itself
+means they have not started yet. As of the last update to this file:
+
+- **Live in production today:** Goals 1-10 and 12, plus most of Goal 11
+  (11A-11C — the automated test/CI safety net). One piece of Goal 11 (11D,
+  optional error/usage telemetry) is built and tested but intentionally still
+  switched off.
+- **Built, tested, but deliberately NOT turned on yet:** Goal 13 (the safer
+  way to create a booking, with built-in double-booking protection). It needs
+  one explicitly approved test with a single real operator first — see Goal
+  13's own Status line for exactly what that requires.
+- **Not started:** Goals 14-38, i.e. every remaining item on the list below —
+  except that a couple of small, unplanned fixes done along the way (see
+  "Maintenance completed after Goal 7") happen to double as partial progress
+  toward Goal 18.
+- **What that means today, plainly:** direct database write access from the
+  browser to bookings/rooms/master data has NOT yet been shut off (that's
+  Goals 22-26, not started) — the server-side checks added so far are real
+  protection, but the old, less-safe direct path still technically exists
+  until those later Goals close it. Ask your assistant for a current,
+  plain-Thai status check any time — this file is the technical working
+  notes, not a live dashboard, and can lag behind what actually shipped this
+  week.
+
+**Quick glossary** (terms that repeat throughout this file):
+- **Edge Function** — a small piece of server code Qlass runs on Supabase's
+  servers, so sensitive checks (like verifying a PIN) never run inside the
+  browser, where anyone could tamper with them.
+- **RLS (Row-Level Security)** — a database-level lock that decides, per row,
+  who is allowed to read or write it — a second layer of protection behind the
+  server code, in case the server logic is ever bypassed.
+- **canary** — testing a change on one real user/operator first, watching
+  closely, before turning it on for everyone (named after canaries once used
+  to detect danger in mines before it reached the miners).
+- **idempotent / idempotency** — retrying the same action twice (e.g. because
+  the network blipped) produces the same one result, never a duplicate.
+- **shadow mode** — a new rule runs silently in the background and logs what
+  it *would* have done, without actually blocking or changing anything yet, so
+  mistakes are caught before the rule goes live.
+- **clone / restore project** — a separate, throwaway copy of the real
+  database used to test risky changes safely, before touching real customer
+  data.
+- **anon key / service (secret) key** — the "anon" key is the public key
+  embedded in the website that anyone can see; the "service"/"secret" key is
+  the private key only the server holds. Giving the public key too much access
+  is what several early Goals (5, 18, 21-26) close off.
+- **PIN hash / pepper** — instead of storing a staff PIN as plain readable
+  text, it's scrambled with a one-way formula (a "hash"); the "pepper" is an
+  extra secret ingredient in that formula that never leaves the server, so
+  even someone with database access can't reverse it back to the PIN.
+- **RPO/RTO** — RPO = how much recent data we could afford to lose in a worst
+  case (e.g. "up to 24 hours"); RTO = how long we could afford to be down
+  before service is restored. Goal 38 sets these targets and tests we can
+  actually meet them.
+- **PITR (point-in-time recovery)** — a paid database feature that lets you
+  restore to any exact minute in the past, not just the last daily backup.
+  Goal 38 evaluates whether it's worth paying for separately.
+- **off-by-default flag** — the main safety switch used throughout this
+  entire plan: new/risky behaviour ships turned OFF for everyone by default,
+  and is only switched on for a small test group first (see "canary" above),
+  never the other way around.
+- **soak period** — watching a change run for an agreed stretch of time (e.g.
+  24-48 hours) before trusting it further — either after switching it on for
+  real, or during a non-blocking "shadow mode" watch period before it's
+  switched on at all.
+- **control totals** — known-correct counts/sums (e.g. "124,537 queues")
+  recorded before a change, so you can immediately tell after the change if
+  any row was silently added, lost, or altered.
+- **before-image** — a saved copy of a database row's old values, taken right
+  before it's changed, so a specific edit can be reversed exactly if needed.
+- **grants** — the specific list of who (which key/role) is allowed to read,
+  write, or delete a given database table; "removing a grant" means revoking
+  that permission.
+- **cascade (delete) rule** — a database setting where deleting one record
+  automatically deletes everything linked to it (e.g. deleting a branch could
+  auto-delete its rooms and queues). Several Goals replace this with a safer
+  "archive instead of delete" pattern.
+- **checksum** — a short fingerprint calculated from a file or record; if two
+  checksums match, the content is guaranteed identical, used here to prove a
+  copied file/object wasn't corrupted or altered.
+
 ## Non-negotiable rules
 
 - Execute one Goal at a time: branch -> pull request -> preview/clone checks ->
@@ -103,7 +189,10 @@ hundreds of people, so every change must preserve existing data and behaviour.
 - Added bounded client-only diagnostics with a release identifier. They retain
   no business data and do not send telemetry remotely.
 - The remaining server telemetry and controlled-refresh portion is retained as
-  Goal 11D below; it is deliberately not treated as complete.
+  Goal 11D below. Its rehearsal (on a clone, not production) is complete, but
+  it has never been turned on in production and stays off until Goal 13's
+  production cutover finishes first — see the enforced order in Goal 11's
+  Rollback note below. Do not read "rehearsal complete" as "live."
 
 ## Maintenance completed after Goal 7
 
@@ -120,14 +209,18 @@ do not change the canonical order of the remaining Goals:
   completed HN controls from Goals 4-6 operable, but it is not the recurring
   recovery and incident drill required by Goal 38.
 
-Goal 12A's non-production rehearsal passed in PR #108. Its production
+Goal 12A (the clone-only rehearsal sub-phase of Goal 12) passed in PR #108.
+Goal 12B (the production-application-and-verification sub-phase) — production
 foundation, corrective trigger, concurrent indexes, and source-history
-alignment were completed in PRs #111, #112, and #113. They must never be
+alignment — was completed in PRs #111, #112, and #113. They must never be
 applied a second time. The current production recheck is recorded in
-`docs/GOAL_12B_HANDOFF.md`. Goal 13's clone-only server-create rehearsal
-passed in PR #109; its production cutover remains a separate, explicitly
-authorized canary. Goal 11D is complete as an off-by-default observability
-preparation; its production deployment remains separately gated.
+`docs/GOAL_12B_HANDOFF.md`. ("12A"/"12B" are sub-phases of Goal 12, not
+separately numbered Goals in the canonical list below.) Goal 13's clone-only
+server-create rehearsal passed in PR #109; its production cutover remains a
+separate, explicitly authorized canary. Goal 11D's rehearsal is complete as an
+off-by-default observability preparation; its production deployment has not
+happened and stays gated until after Goal 13's production cutover (see Goal
+11's Rollback note).
 
 ## Remaining Goals
 
@@ -135,7 +228,22 @@ The Goal numbers below are the canonical order from this point onward. A Goal
 may be split further before implementation if its review shows more than one
 independent production risk.
 
-### Goal 8 - freeze a complete production integrity baseline (read-only)
+Note: Goals 8-13 immediately below repeat, at full canonical detail, Goals
+already summarized above (under "Completed work" or "Maintenance completed
+after Goal 7") — kept here only because later Goals (14 onward) must not
+break the exact behaviour/regression contract they established. They are
+**not all in the same state** — always check each one's own `Status:` line
+rather than assuming from this note:
+- **Goals 8, 9, 10, 12 are fully closed**, nothing pending.
+- **Goal 11**: sub-phases 11A-11C are closed and live; 11D is built and
+  rehearsed but intentionally still off, with a real pending step (turn it on
+  after Goal 13's cutover) — not fully closed.
+- **Goal 13**: still needs an explicit decision from the owner before any
+  production deployment — not closed at all.
+
+The first genuinely open Goal with nothing built yet is **Goal 14**.
+
+### Goal 8 - freeze a complete production integrity baseline (read-only) — already done, kept as reference contract only
 
 Status: **completed in PR #100**. Retained below as the baseline contract for
 later Goals.
@@ -162,7 +270,7 @@ totals for later Goals.
 Rollback: none required because this Goal makes no production changes. Stop the
 queries if latency or database load rises.
 
-### Goal 9 - make queue status updates status-only
+### Goal 9 - make queue status updates status-only — already done, kept as reference contract only
 
 Status: **completed in PR #101**. Retained below as the regression contract for
 later queue APIs.
@@ -188,7 +296,7 @@ Rollback: redeploy the previous frontend. No schema or data rollback is needed.
 If any field changes unexpectedly, stop status updates until the previous build
 is restored.
 
-### Goal 10 - prevent duplicate submissions and preserve failed drafts
+### Goal 10 - prevent duplicate submissions and preserve failed drafts — already done, kept as reference contract only
 
 Status: **completed in PR #102**. Retained below as the regression contract for
 all later write paths.
@@ -213,10 +321,11 @@ unchanged.
 
 Rollback: previous frontend deployment. No database rollback.
 
-### Goal 11 - add release observability and critical-flow CI
+### Goal 11 - add release observability and critical-flow CI (covers sub-phases 11A-11D) — 11A-11C done/live (reference only); 11D has a real pending step, see Status
 
-Status: **rehearsal complete; production controls remain off**. Goals 11A-11C
-were completed in PRs #103, #104, and #105. Goal 11D's clone evidence and
+Status: **11A-11C complete and live** (PRs #103, #104, #105). **11D rehearsal
+complete; production controls remain off** and stay off until after Goal 13's
+production cutover (see Rollback below). Goal 11D's clone evidence and
 rollback are recorded in `docs/GOAL_11D_SAFE_OBSERVABILITY_REHEARSAL.md`.
 The independent expiry-sweep rehearsal is recorded in
 `docs/GOAL_11D_INDEPENDENT_EXPIRY_SWEEP_REHEARSAL.md`. No production telemetry
@@ -250,16 +359,18 @@ deploy Goal 11D while Goal 13 remains pending. The enforced migration order and
 later explicit-Go checklist are in
 `docs/GOAL_11D_PRODUCTION_CUTOVER_RUNBOOK.md`.
 
-### Goal 12 - add queue concurrency and audit foundations
+### Goal 12 - add queue concurrency and audit foundations (covers sub-phases 12A/12B) — already done, kept as reference contract only
 
-Status: **completed**. The restore-clone rehearsal passed in PR #108. The
-low-lock production foundation was applied once, verified, and recorded in PRs
-#111, #112, and #113. A read-only production recheck on 2026-08-02 confirmed
-124,537 queues, zero audit rows, all additive metadata columns, the private
-metadata trigger, and both required valid/ready indexes. Do **not** rerun the
-migration, trigger replacement, or index helper.
+Status: **completed**. The restore-clone rehearsal (12A) passed in PR #108. The
+low-lock production foundation (12B) was applied once, verified, and recorded
+in PRs #111, #112, and #113. A read-only production recheck on 2026-08-02
+confirmed 124,537 queues, zero audit rows, all additive metadata columns, the
+private metadata trigger, and both required valid/ready indexes. Do **not**
+rerun the migration, trigger replacement, or index helper.
 
-Phase A rehearsal gate:
+Phase A (= Goal 12A) rehearsal gate (historical record — already satisfied in
+PR #108; kept here as the regression contract for later Goals, not an open
+task):
 
 - Apply the proposed additive migration only on the restore project.
 - Measure migration duration, lock behaviour, query plans, write overhead, and
@@ -298,7 +409,9 @@ Status: **clone rehearsal complete in PR #109; canary preparation in review**.
 The 2026-08-02 follow-up re-rehearsal fixed a cancelled/no-show conflict-rule
 mismatch and a missing-duration guard before any production decision. See
 `docs/GOAL_13_PRODUCTION_CANARY_RUNBOOK.md`. No client cutover or production
-deployment is authorized until a separate canary Goal is reviewed and approved.
+deployment is authorized until the owner gives an explicit, separate Go for
+the production canary described in that runbook — this is an approval step
+inside Goal 13 itself, not a separately numbered Goal elsewhere in this list.
 
 Scope:
 
@@ -471,8 +584,10 @@ Rollback: disable shadow collection. No database/data rollback.
 Scope:
 
 - Confirm every table in the exposed schema has an explicit RLS decision.
-- Start with staff projections and low-risk reference tables after all consumers
-  use trusted sessions/server APIs.
+- Start with staff projections and low-risk reference *reads* — this Goal is
+  read-only; it does not require Goals 22-26 (which remove direct browser
+  *write* grants) to finish first. "Trusted sessions/server APIs" here means
+  reads already routed through Goals 3/18's server boundary.
 - Policies must include ownership/role/branch predicates; `TO authenticated`
   alone is not authorization.
 - UPDATE policies require both `USING` and `WITH CHECK`; privileged functions
