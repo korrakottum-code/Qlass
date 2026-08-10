@@ -112,6 +112,7 @@ export const NAV_ITEMS = [
   { id: "queue-table",   label: "ตารางคิว",            icon: "📋" },
   { id: "timeline",      label: "Timeline คิว",        icon: "🗓️" },
   { id: "summary",       label: "สรุปประจำวัน",        icon: "📊" },
+  { id: "capacity",      label: "คิวว่าง (Capacity)",  icon: "🟢" },
   { id: "commission",    label: "ค่าคอมมิชชั่น",       icon: "💰" },
   { id: "export",        label: "Export ข้อมูล",       icon: "📥" },
   { id: "tickets",       label: "แจ้งปัญหาระบบ",       icon: "🎫" },
@@ -133,7 +134,7 @@ export const ROLES = [
     branchScope: "all",
     color: "#b45309",
     bg: "rgba(180,83,9,0.1)",
-    pages: ["ceo-dashboard","summary"],
+    pages: ["ceo-dashboard","summary","capacity"],
   },
   {
     value: "superadmin",
@@ -141,7 +142,7 @@ export const ROLES = [
     branchScope: "all",
     color: "#dc2626",
     bg: "rgba(220,38,38,0.1)",
-    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","commission","export","tickets","branches","procedures","promos","rooms","room-schedule","staff","activity-log"],
+    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","branches","procedures","promos","rooms","room-schedule","staff","activity-log"],
   },
   {
     value: "head_admin",
@@ -149,7 +150,7 @@ export const ROLES = [
     branchScope: "all",
     color: "#7c3aed",
     bg: "rgba(124,58,237,0.1)",
-    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","commission","export","tickets","procedures","promos","rooms","room-schedule","staff","activity-log"],
+    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","procedures","promos","rooms","room-schedule","staff","activity-log"],
   },
   {
     value: "admin",
@@ -157,7 +158,7 @@ export const ROLES = [
     branchScope: "all",
     color: "#2563eb",
     bg: "rgba(37,99,235,0.1)",
-    pages: ["booking","queue-table","waiting-queue","timeline","summary","commission","export","tickets","room-schedule"],
+    pages: ["booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","room-schedule"],
   },
   {
     value: "branch_manager",
