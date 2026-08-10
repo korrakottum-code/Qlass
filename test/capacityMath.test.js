@@ -9,6 +9,7 @@ import {
   blocksToHours,
   freePercent,
   segmentOfBlock,
+  averageFreePercentByBranch,
 } from "../src/utils/capacity.js";
 
 // ห้องเปิด 11:00-20:00 (block 132-240) เหมือนค่า default ของระบบ
@@ -118,4 +119,29 @@ test("schedule index routes day-specific and everyday rules to the right room", 
   // rm ปิดทั้งวัน = 0, rt โดนหักช่วงเที่ยง = 96
   assert.equal(branch.capacity, 96);
   assert.equal(branch.byType.M.capacity, 0);
+});
+
+test("branch average pools capacity/free across days before dividing, not a mean of daily percents", () => {
+  const roomB2 = { id: "rb2", branchId: "b2", type: "T", openBlock: 132, closeBlock: 240 };
+  const { summary } = (() => {
+    const s = computeCapacitySummary({
+      rooms: [roomM, roomB2],
+      roomSchedules: [
+        // b2 ปิดทั้งวันที่สอง — ต้องไม่ถูกนับเป็น 0% ในค่าเฉลี่ย (capacity 0 = ไม่มีข้อมูล ไม่ใช่ "เต็ม")
+        { roomId: "rb2", date: "2026-08-16", available: false, noteOnly: false, startBlock: null, endBlock: null },
+      ],
+      queues: [
+        { roomId: "rm", date: "2026-08-15", timeBlock: 132, durationBlocks: 108, status: "confirmed" }, // b1 เต็มวันแรก
+      ],
+      procedures: [],
+      dates: ["2026-08-15", "2026-08-16"],
+    });
+    return { summary: s };
+  })();
+
+  const avg = averageFreePercentByBranch(summary);
+  // b1: วันแรกจองเต็ม (free 0/108), วันสองว่างเต็ม (free 108/108) → รวม 108/216 = 50%
+  assert.equal(avg.b1, 50);
+  // b2: วันแรกว่างเต็ม 108/108, วันสองปิด (capacity 0 ไม่นับ) → รวม 108/108 = 100%
+  assert.equal(avg.b2, 100);
 });

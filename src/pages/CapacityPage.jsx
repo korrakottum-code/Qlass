@@ -1,8 +1,8 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { getTodayStr, formatThaiDate } from "../utils/helpers";
 import {
   computeCapacitySummary, listDates, daysUntilEndOfMonth,
-  blocksToHours, freePercent,
+  blocksToHours, freePercent, averageFreePercentByBranch,
 } from "../utils/capacity";
 
 // สีของ heatmap ตาม % ว่าง — ไล่เฉดต่อเนื่อง (แดง→ส้ม→เหลือง→เขียวอ่อน→เขียวเข้ม)
@@ -89,37 +89,37 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
     rooms: visibleRooms, roomSchedules, queues, procedures, dates,
   }), [visibleRooms, roomSchedules, queues, procedures, dates]);
 
-  const visibleBranches = useMemo(() => (
-    branches.filter((b) => (filterBranch === "all" || b.id === filterBranch)
-      && summary.days.some((d) => d.byBranch[b.id]))
-  ), [branches, filterBranch, summary]);
+  const branchAverages = useMemo(() => averageFreePercentByBranch(summary), [summary]);
+
+  // เรียงสาขาตาม % ว่างเฉลี่ยของช่วงที่ดูอยู่ — ค่าเริ่มต้นเอาสาขาที่ว่างสุด (ต้องการโปรดันมากสุด) ขึ้นก่อน
+  // ไม่งั้นต้องนั่งไล่เฉลี่ยเองทีละแถว
+  const [sortDir, setSortDir] = useState("desc"); // desc = ว่างมากสุดก่อน, asc = แน่นสุดก่อน
+  const visibleBranches = useMemo(() => {
+    const list = branches.filter((b) => (filterBranch === "all" || b.id === filterBranch)
+      && summary.days.some((d) => d.byBranch[b.id]));
+    return [...list].sort((a, b) => {
+      const av = branchAverages[a.id] ?? -1;
+      const bv = branchAverages[b.id] ?? -1;
+      return sortDir === "desc" ? bv - av : av - bv;
+    });
+  }, [branches, filterBranch, summary, branchAverages, sortDir]);
 
   const totalPct = freePercent(summary.totals);
   const freerType = summary.totals.byType.M.free >= summary.totals.byType.T.free ? "M" : "T";
-  const suggestedPromos = useMemo(() => {
-    const wantType = freerType;
-    return (promos || [])
-      .filter((p) => p.active !== false)
-      .filter((p) => {
-        const proc = procedures.find((x) => x.id === p.procedureId);
-        return proc?.roomType === wantType;
-      })
-      .slice(0, 6);
-  }, [promos, procedures, freerType]);
+  const promosByType = useMemo(() => {
+    const byType = { M: [], T: [] };
+    (promos || []).filter((p) => p.active !== false).forEach((p) => {
+      const proc = procedures.find((x) => x.id === p.procedureId);
+      if (proc?.roomType === "M") byType.M.push(p);
+      else if (proc?.roomType === "T") byType.T.push(p);
+    });
+    return byType;
+  }, [promos, procedures]);
 
   const selectedCell = selected
     ? summary.days.find((d) => d.date === selected.date)?.byBranch[selected.branchId]
     : null;
   const selectedBranchName = selected ? (branches.find((b) => b.id === selected.branchId)?.name || "-") : "";
-
-  // กดช่องในตาราง (ซึ่งอาจอยู่บนสุดของจอ) แล้วผลลัพธ์เดิมโผล่ท้ายตาราง 29 สาขา
-  // ไกลเกินจะสังเกตเห็น — เลื่อนจอไปหาให้อัตโนมัติทันทีที่เลือก
-  const detailRef = useRef(null);
-  useEffect(() => {
-    if (selected && detailRef.current) {
-      detailRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [selected]);
 
   return (
     <>
@@ -171,17 +171,34 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
         />
       </div>
 
-      {/* คำแนะนำฝั่งการตลาด */}
+      {/* คำแนะนำฝั่งการตลาด — โชว์ทั้งสองฝั่ง M/T คู่กัน พร้อมชั่วโมงว่างจริงของตัวกรองปัจจุบัน
+          กันดูเหมือน list ตายตัว (เดิมโชว์ฝั่งเดียวเป็น "ผู้ชนะ" ทำให้ดูเหมือนไม่ขยับตามตัวกรอง) */}
       {summary.totals.capacity > 0 && (
         <div style={{
           marginBottom: 14, padding: "10px 14px", borderRadius: 10, fontSize: 13,
           background: "var(--surface2)", border: "1px solid var(--border)",
+          display: "flex", flexDirection: "column", gap: 6,
         }}>
-          💡 ช่วงนี้ <b>{freerType === "M" ? "ห้องฉีด (M)" : "ห้องเครื่อง (T)"}</b> ว่างมากกว่า
-          {" "}({blocksToHours(summary.totals.byType[freerType].free).toLocaleString()} ชม.)
-          {suggestedPromos.length > 0 && (
-            <> — โปรที่เหมาะไดร์ฟ: {suggestedPromos.map((p) => p.name).join(" · ")}</>
-          )}
+          <div style={{ fontWeight: 700, color: "var(--text2)" }}>
+            💡 โปรที่เหมาะไดร์ฟตอนนี้ ({filterBranch === "all" ? "ทุกสาขา" : branches.find((b) => b.id === filterBranch)?.name || ""})
+          </div>
+          {[["M", "ห้องฉีด (M)", "var(--blue)"], ["T", "ห้องเครื่อง (T)", "var(--green)"]].map(([type, label, color]) => {
+            const list = promosByType[type];
+            const shown = list.slice(0, 6);
+            const extra = list.length - shown.length;
+            return (
+              <div key={type} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <b style={{ color }}>{label}</b>
+                {" "}ว่าง {blocksToHours(summary.totals.byType[type].free).toLocaleString()} ชม.
+                {type === freerType && <span style={{ color: "var(--accent)", fontWeight: 700 }}> ← ว่างกว่า</span>}
+                {shown.length > 0 ? (
+                  <> — {shown.map((p) => p.name).join(" · ")}{extra > 0 && ` · +อีก ${extra} โปร`}</>
+                ) : (
+                  <span style={{ color: "var(--text3)" }}> — ไม่มีโปรเปิดใช้งานสำหรับห้องประเภทนี้</span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -191,11 +208,17 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 120 + dates.length * 52 }}>
             <thead>
               <tr>
-                <th style={{
-                  position: "sticky", left: 0, zIndex: 3, background: "var(--surface2)",
-                  padding: "8px 10px", textAlign: "left", fontSize: 11, color: "var(--text3)",
-                  borderBottom: "2px solid var(--border2)", borderRight: "2px solid var(--border2)", minWidth: 110,
-                }}>สาขา \ % ว่าง</th>
+                <th
+                  onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
+                  title="กดเพื่อเรียงสาขาตาม % ว่างเฉลี่ยของช่วงนี้"
+                  style={{
+                    position: "sticky", left: 0, zIndex: 3, background: "var(--surface2)",
+                    padding: "8px 10px", textAlign: "left", fontSize: 11, color: "var(--text3)",
+                    borderBottom: "2px solid var(--border2)", borderRight: "2px solid var(--border2)", minWidth: 110,
+                    cursor: "pointer", userSelect: "none",
+                  }}>
+                  สาขา (เฉลี่ย {sortDir === "desc" ? "ว่างสุดก่อน ▼" : "แน่นสุดก่อน ▲"})
+                </th>
                 {dates.map((date) => {
                   const [y, m, d] = date.split("-").map(Number);
                   const dow = new Date(y, m - 1, d).getDay();
@@ -227,7 +250,11 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
                         overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140,
                         color: idx === 0 ? "var(--text1)" : "var(--text2)",
                       }}>
-                        {idx === 0 ? b.name : ""} <span style={{ fontSize: 10, color: type === "M" ? "var(--blue)" : "var(--green)" }}>{typeLabel}</span>
+                        {idx === 0 ? b.name : ""}
+                        {idx === 0 && branchAverages[b.id] != null && (
+                          <span style={{ marginLeft: 4, fontSize: 10, fontWeight: 800, color: "var(--accent)" }}>{branchAverages[b.id]}%</span>
+                        )}
+                        {" "}<span style={{ fontSize: 10, color: type === "M" ? "var(--blue)" : "var(--green)" }}>{typeLabel}</span>
                       </td>
                       {dates.map((date) => {
                         const cell = summary.days.find((d) => d.date === date)?.byBranch[b.id]?.byType[type];
@@ -259,7 +286,12 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
                       padding: "6px 10px", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
                       borderBottom: "1px solid var(--border)", borderRight: "2px solid var(--border2)",
                       overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140,
-                    }}>{b.name}</td>
+                    }}>
+                      {b.name}
+                      {branchAverages[b.id] != null && (
+                        <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: "var(--accent)" }}>{branchAverages[b.id]}%</span>
+                      )}
+                    </td>
                     {dates.map((date) => {
                       const cell = summary.days.find((d) => d.date === date)?.byBranch[b.id];
                       const pct = freePercent(cell);
@@ -296,33 +328,48 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
         </div>
       </div>
 
-      {/* Drill-down รายวัน */}
+      {/* Drill-down รายวัน — popup ลอย กดปิดแล้วดูสาขา/วันอื่นต่อได้เลย ไม่ต้องเลื่อนไปมาหาการ์ด */}
       {selected && selectedCell && (
-        <div ref={detailRef} className="card" style={{ marginBottom: 14, scrollMarginTop: 16 }}>
-          <div className="card-header"><h3>📍 {selectedBranchName} — {formatThaiDate(selected.date)}</h3></div>
-          <div className="card-body" style={{ display: "flex", flexWrap: "wrap", gap: 16, fontSize: 13 }}>
-            <div style={{ flex: "1 1 200px" }}>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>ภาพรวม</div>
-              <div>ว่าง <b style={{ color: "var(--green)" }}>{blocksToHours(selectedCell.free)} ชม.</b> จาก {blocksToHours(selectedCell.capacity)} ชม. ({freePercent(selectedCell)}%)</div>
-              <div style={{ marginTop: 4 }}>ห้องฉีด (M): ว่าง {blocksToHours(selectedCell.byType.M.free)} ชม. / ห้องเครื่อง (T): ว่าง {blocksToHours(selectedCell.byType.T.free)} ชม.</div>
+        <div
+          onClick={() => setSelected(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="card"
+            style={{ maxWidth: 480, width: "100%", maxHeight: "88dvh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.25)" }}
+          >
+            <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3>📍 {selectedBranchName} — {formatThaiDate(selected.date)}</h3>
+              <button
+                onClick={() => setSelected(null)}
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--text3)", lineHeight: 1, padding: 4 }}
+              >✕</button>
             </div>
-            <div style={{ flex: "1 1 200px" }}>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>ว่างช่วงไหนของวัน</div>
-              {[["morning", "เช้า (ก่อน 12:00)"], ["afternoon", "บ่าย (12:00-17:00)"], ["evening", "เย็น (17:00+)"]].map(([k, l]) => {
-                const seg = selectedCell.bySegment[k];
-                const pct = seg.capacity ? Math.round((seg.free / seg.capacity) * 100) : null;
-                return (
-                  <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                    <span style={{ width: 120, color: "var(--text2)" }}>{l}</span>
-                    <div style={{ flex: 1, height: 14, background: "var(--surface3)", borderRadius: 4, overflow: "hidden" }}>
-                      <div style={{ width: `${pct ?? 0}%`, height: "100%", background: freeColor(pct), borderRight: pct ? "1px solid var(--border)" : "none" }} />
+            <div className="card-body" style={{ display: "flex", flexWrap: "wrap", gap: 16, fontSize: 13 }}>
+              <div style={{ flex: "1 1 200px" }}>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>ภาพรวม</div>
+                <div>ว่าง <b style={{ color: "var(--green)" }}>{blocksToHours(selectedCell.free)} ชม.</b> จาก {blocksToHours(selectedCell.capacity)} ชม. ({freePercent(selectedCell)}%)</div>
+                <div style={{ marginTop: 4 }}>ห้องฉีด (M): ว่าง {blocksToHours(selectedCell.byType.M.free)} ชม. / ห้องเครื่อง (T): ว่าง {blocksToHours(selectedCell.byType.T.free)} ชม.</div>
+              </div>
+              <div style={{ flex: "1 1 200px" }}>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>ว่างช่วงไหนของวัน</div>
+                {[["morning", "เช้า (ก่อน 12:00)"], ["afternoon", "บ่าย (12:00-17:00)"], ["evening", "เย็น (17:00+)"]].map(([k, l]) => {
+                  const seg = selectedCell.bySegment[k];
+                  const pct = seg.capacity ? Math.round((seg.free / seg.capacity) * 100) : null;
+                  return (
+                    <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ width: 120, color: "var(--text2)" }}>{l}</span>
+                      <div style={{ flex: 1, height: 14, background: "var(--surface3)", borderRadius: 4, overflow: "hidden" }}>
+                        <div style={{ width: `${pct ?? 0}%`, height: "100%", background: freeColor(pct), borderRight: pct ? "1px solid var(--border)" : "none" }} />
+                      </div>
+                      <span style={{ minWidth: 88, textAlign: "right", fontWeight: 700 }}>
+                        {pct === null ? "—" : `ว่าง ${blocksToHours(seg.free)} ชม. (${pct}%)`}
+                      </span>
                     </div>
-                    <span style={{ minWidth: 88, textAlign: "right", fontWeight: 700 }}>
-                      {pct === null ? "—" : `ว่าง ${blocksToHours(seg.free)} ชม. (${pct}%)`}
-                    </span>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

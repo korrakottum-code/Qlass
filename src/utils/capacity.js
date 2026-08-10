@@ -186,3 +186,24 @@ export function freePercent(cell) {
   if (!cell || cell.capacity === 0) return null;
   return Math.round((cell.free / cell.capacity) * 100);
 }
+
+/**
+ * % ว่างเฉลี่ยของแต่ละสาขา ตลอดช่วงวันที่ที่ดูอยู่ (รวม capacity/free ทุกวันก่อนหารทีเดียว
+ * ไม่ใช่เฉลี่ยของเปอร์เซ็นต์รายวัน — กันวันที่ห้องปิดทั้งวัน (capacity 0) ไปดึงค่าเฉลี่ยเพี้ยน)
+ * คืนค่า Map<branchId, percentหรือnull>
+ */
+export function averageFreePercentByBranch(summary) {
+  const totals = {};
+  (summary.days || []).forEach((day) => {
+    Object.entries(day.byBranch).forEach(([branchId, cell]) => {
+      if (!totals[branchId]) totals[branchId] = { capacity: 0, free: 0 };
+      totals[branchId].capacity += cell.capacity;
+      totals[branchId].free += cell.free;
+    });
+  });
+  const result = {};
+  Object.entries(totals).forEach(([branchId, t]) => {
+    result[branchId] = freePercent(t);
+  });
+  return result;
+}
