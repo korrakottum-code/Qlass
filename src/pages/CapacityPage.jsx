@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { getTodayStr, formatThaiDate } from "../utils/helpers";
 import {
   computeCapacitySummary, listDates, daysUntilEndOfMonth,
-  blocksToHours, freePercent, averageFreePercentByBranch,
+  blocksToHours, freePercent, averageFreePercentByBranch, computeWeeklyPace,
 } from "../utils/capacity";
 
 // สีของ heatmap ตาม % ว่าง — ไล่เฉดต่อเนื่อง (แดง→ส้ม→เหลือง→เขียวอ่อน→เขียวเข้ม)
@@ -71,6 +71,47 @@ function TypeSplitCard({ mFree, mCap, tFree, tCap }) {
 
 const THAI_DOW = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
+// "เทียบกับปกติ" — 5 สถานะตามสเปกที่ผ่านรีวิว nak-song-sai 5 รอบ (scratchpad/pace-feature-spec.md)
+// จงใจไม่มีปุ่ม/ลิงก์ทำอะไรต่อ — เป็นสัญญาณเตือนเฉยๆ ตามที่เจ้าของงานตัดสินใจไว้
+const PACE_STYLE = {
+  green: { emoji: "🟢", label: "ปกติดี", bg: "#dcfce7", fg: "#166534" },
+  yellow: { emoji: "🟡", label: "ต่ำกว่าปกติ", bg: "#fef9c3", fg: "#854d0e" },
+  red: { emoji: "🔴", label: "ต่ำกว่าปกติมาก", bg: "#fecaca", fg: "#991b1b" },
+  high: { emoji: "❗", label: "สูงผิดปกติ ตรวจสอบข้อมูล", bg: "#e9d5ff", fg: "#6b21a8" },
+  "no-data": { emoji: "🆕", label: "ไม่มีข้อมูลเทียบ", bg: "var(--surface3)", fg: "var(--text3)" },
+};
+
+function PaceStrip({ weeklyPace }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text2)", marginBottom: 6 }}>
+        📈 เทียบกับปกติ (เทียบจังหวะการจองย้อนหลัง 8 สัปดาห์ ไม่ใช่เทียบยอดสุดท้าย)
+      </div>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto" }}>
+        {weeklyPace.map((row) => {
+          const style = PACE_STYLE[row.kind];
+          const [, m, d] = row.date.split("-");
+          const title = row.pace === null
+            ? "ยังไม่มีข้อมูลย้อนหลังพอจะเทียบ"
+            : `จองแล้ว ${row.pace}% ของค่าเฉลี่ยปกติ ณ จังหวะนี้`;
+          return (
+            <div key={row.date} title={title} style={{
+              flex: "0 0 auto", minWidth: 84, padding: "8px 10px", borderRadius: 10,
+              background: style.bg, color: style.fg, textAlign: "center",
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                {THAI_DOW[row.dow]} {d}/{m}
+              </div>
+              <div style={{ fontSize: 18, marginTop: 2 }}>{style.emoji}</div>
+              <div style={{ fontSize: 10, fontWeight: 700, marginTop: 2, lineHeight: 1.3 }}>{style.label}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function CapacityPage({ rooms, roomSchedules, queues, branches, procedures }) {
   const [range, setRange] = useState("7d"); // 7d | eom
   const [filterBranch, setFilterBranch] = useState("all");
@@ -91,6 +132,10 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
   }), [visibleRooms, roomSchedules, queues, procedures, dates]);
 
   const branchAverages = useMemo(() => averageFreePercentByBranch(summary), [summary]);
+
+  // "เทียบกับปกติ" เป็นภาพรวมทั้งเครือข่ายเสมอ — ไม่ผูกกับตัวกรองสาขา/ช่วงเวลาด้านบน (เฟส 1 ตาม
+  // ที่ตกลงกันไว้ — รายสาขาเป็นเฟส 2 ในอนาคต)
+  const weeklyPace = useMemo(() => computeWeeklyPace({ queues, branches, today }), [queues, branches, today]);
 
   // เรียงสาขาตาม % ว่างเฉลี่ยของช่วงที่ดูอยู่ — ค่าเริ่มต้นเอาสาขาที่ว่างสุด (ต้องการโปรดันมากสุด) ขึ้นก่อน
   // ไม่งั้นต้องนั่งไล่เฉลี่ยเองทีละแถว
@@ -163,6 +208,8 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
         ℹ️ ลูกค้าส่วนใหญ่ (~55-60%) จองล่วงหน้าแค่ 0-2 วันก่อนวันนัด — วันที่ไกลออกไปจึงมักโชว์ "ว่าง" เกินจริง
         เพราะยังไม่ถึงจังหวะที่คนจอง ไม่ใช่สัญญาณว่าสาขานั้นซบเซา ยิ่งใกล้วันจริงตัวเลขจะยิ่งน่าเชื่อถือ
       </div>
+
+      <PaceStrip weeklyPace={weeklyPace} />
 
       {/* Stat cards — บังคับ 3 การ์ดแรกอยู่แถวเดียวกันเสมอด้วย grid (เดิม flex-wrap ทำให้การ์ดที่ 3
           ตกไปอยู่คนละบรรทัดบนจอแคบ) ส่วนการ์ด M/T แยกเป็นแถวของตัวเองด้านล่าง */}

@@ -207,3 +207,145 @@ export function averageFreePercentByBranch(summary) {
   });
   return result;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// "เทียบกับปกติ" (Pace) — สเปกผ่านนักสส 5 รอบแล้ว (ดู scratchpad/pace-feature-spec.md
+// ตอนพัฒนา) สรุปกติกา:
+//
+// ลูกค้าส่วนใหญ่จองล่วงหน้าแค่ 0-2 วัน ก่อนวันนัด (ยืนยันจากข้อมูลจริง ~55-60%) ดังนั้นเทียบ
+// "คิวที่จองแล้วตอนนี้" กับ "ยอดสุดท้าย" ไม่ได้ — ต้องเทียบแบบจังหวะต่อจังหวะ: ณ ตอนนี้ห่างจาก
+// วันนัดกี่วัน แล้วเทียบกับค่าเฉลี่ยในอดีตที่เคยมีคิวจองแล้วเท่าไหร่ตอนอยู่ในจังหวะเดียวกัน
+// (คำนวณต่อสาขาที่เปิดอยู่จริงในแต่ละวัน กันสาขาใหม่ที่ทยอยเปิดมาดันค่าเฉลี่ยเพี้ยน)
+//
+// เกณฑ์เขียว/เหลือง/แดงขยับทีละ 5 แต้มต่อวันที่ห่างจากวันนัด (ไม่ใช้ตารางเกณฑ์แยกเป็นช่วงๆ
+// เพราะจะเกิดรอยต่อกระโดด — พิสูจน์แล้วว่าเกณฑ์ต่อเนื่องแบบนี้ทำให้ป้ายเปลี่ยนได้แค่ทิศทางเดียว
+// เสมอ (ยิ่งไกลวันนัด ป้ายดีขึ้นหรือเท่าเดิม ไม่มีทางแย่ลง) ต่างจากตารางเกณฑ์แยกช่วงที่กระโดด
+// ได้ทั้งสองทิศทางแบบสุ่ม)
+
+export const PACE_LOOKBACK_WEEKS = 8;
+export const PACE_HIGH_THRESHOLD = 200;
+
+// วันที่จาก timestamp ใดๆ (ISO string หรือ Date) → "YYYY-MM-DD" ตามเวลาเครื่อง
+// (ไม่ใช้ .slice(0,10) ตรงๆ กับ ISO timestamp เพราะจะได้วันที่ตาม UTC ไม่ใช่เวลาไทย)
+function toDateStr(value) {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return String(value).slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function daysBetweenDateStr(fromStr, toStr) {
+  const [fy, fm, fd] = fromStr.split("-").map(Number);
+  const [ty, tm, td] = toStr.split("-").map(Number);
+  const from = Date.UTC(fy, fm - 1, fd);
+  const to = Date.UTC(ty, tm - 1, td);
+  return Math.round((to - from) / 86400000);
+}
+
+function dowOfDateStr(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).getDay();
+}
+
+// เกณฑ์เขียว/เหลือง ณ วันที่ห่างจากวันนัด `daysAway` วัน — ขยับ 5 แต้ม/วัน มีขั้นต่ำ/ขั้นสูงกันเผื่อ
+// ขยายช่วงแสดงผลไกลกว่า 7 วันในอนาคต (ไม่ได้ทำงานจริงในช่วง 0-6 วันปัจจุบัน — เช็คแล้ว)
+export function paceThresholds(daysAway) {
+  const yellow = Math.min(90, Math.max(55, 90 - daysAway * 5));
+  const red = Math.min(60, Math.max(25, 60 - daysAway * 5));
+  return { yellow, red };
+}
+
+// ลำดับการเช็ค (ตามสเปก): ไม่มีข้อมูลเทียบก่อนเสมอ (กันหารด้วยศูนย์) → สูงผิดปกติ → เขียว/เหลือง/แดง
+export function paceLabelKind(pace, daysAway) {
+  if (pace === null || pace === undefined) return "no-data";
+  if (pace >= PACE_HIGH_THRESHOLD) return "high";
+  const { yellow, red } = paceThresholds(daysAway);
+  if (pace >= yellow) return "green";
+  if (pace >= red) return "yellow";
+  return "red";
+}
+
+// จำนวนสาขาที่ "เปิดอยู่จริง" ณ วันที่ dateStr (createdAt <= dateStr) — สาขาที่ไม่มี createdAt
+// (ข้อมูลเก่าก่อนมีฟิลด์นี้) ถือว่าเปิดมานานแล้ว นับรวมเสมอ
+function activeBranchCount(branches, dateStr) {
+  return (branches || []).filter((b) => !b.createdAt || toDateStr(b.createdAt) <= dateStr).length;
+}
+
+/**
+ * ค่าเฉลี่ยในอดีต (baseline) ต่อสาขา แยกตาม [วันในสัปดาห์][ห่างจากวันนัดกี่วัน]
+ * ใช้ข้อมูล "วันที่จบไปแล้ว" ย้อนหลัง PACE_LOOKBACK_WEEKS สัปดาห์ (ไม่รวมวันนี้ เพราะวันนี้ยังจอง
+ * ไม่จบ) คืนค่า object: { [dow]: { [leadDays]: เฉลี่ยคิวต่อสาขา หรือ null ถ้าไม่มีข้อมูลเลย } }
+ */
+export function computeNetworkPaceBaseline({ queues, branches, today, lookbackWeeks = PACE_LOOKBACK_WEEKS }) {
+  const lookbackDays = lookbackWeeks * 7;
+  const startStr = toDateStr(new Date(new Date(today).getTime() - lookbackDays * 86400000));
+  const endStr = toDateStr(new Date(new Date(today).getTime() - 86400000)); // เมื่อวาน — วันสุดท้ายที่ "จบแล้ว"
+
+  // จัดกลุ่มคิว active ในช่วงย้อนหลัง ตามวันนัด (date) — เก็บแค่ lead ของแต่ละคิว (date - createdAt)
+  const leadsByDate = {};
+  (queues || []).forEach((q) => {
+    if (!q.date || q.date < startStr || q.date > endStr) return;
+    if (INACTIVE_STATUSES.includes(q.status || "pending")) return;
+    const createdStr = toDateStr(q.createdAt) || q.date;
+    const lead = daysBetweenDateStr(createdStr, q.date);
+    if (lead < 0) return; // กันข้อมูลเพี้ยน (จองหลังวันนัด) ไม่ให้ปนสูตร
+    if (!leadsByDate[q.date]) leadsByDate[q.date] = [];
+    leadsByDate[q.date].push(lead);
+  });
+
+  // สะสมผลรวมต่อ [dow][leadDays] จากทุกวันที่จบแล้วในช่วงย้อนหลัง
+  // (ใช้ listDates เดิม — บวกวันแบบ local time ล้วน กัน bug ปนกันระหว่าง UTC/เวลาไทยที่เตือนไว้
+  // ในไฟล์อื่นของโปรเจกต์นี้)
+  const sums = {}; // sums[dow][leadDays] = { total: จำนวนสาขา-เฉลี่ยรวม, count: จำนวนวันตัวอย่าง }
+  const lookbackDates = listDates(startStr, lookbackDays);
+  lookbackDates.forEach((cur) => {
+    if (cur > endStr) return;
+    const dow = dowOfDateStr(cur);
+    const activeBranches = activeBranchCount(branches, cur);
+    if (activeBranches === 0) return;
+    const leads = leadsByDate[cur] || [];
+    if (!sums[dow]) sums[dow] = {};
+    for (let leadDays = 0; leadDays <= 6; leadDays++) {
+      const bookedByThen = leads.filter((l) => l >= leadDays).length;
+      if (!sums[dow][leadDays]) sums[dow][leadDays] = { total: 0, count: 0 };
+      sums[dow][leadDays].total += bookedByThen / activeBranches;
+      sums[dow][leadDays].count += 1;
+    }
+  });
+
+  const baseline = {};
+  Object.entries(sums).forEach(([dow, byLead]) => {
+    baseline[dow] = {};
+    Object.entries(byLead).forEach(([leadDays, agg]) => {
+      baseline[dow][leadDays] = agg.count > 0 ? agg.total / agg.count : null;
+    });
+  });
+  return baseline;
+}
+
+/**
+ * "เทียบกับปกติ" ของ 7 วันข้างหน้า (วันนี้ถึง +6 วัน) ทั้งเครือข่าย — 1 แถวสรุป ไม่ใช่รายสาขา
+ * คืนค่า array 7 แถว: { date, dow, leadDays, bookedSoFar, activeBranches, bookedPerBranch,
+ *   baselinePerBranch, pace, kind }
+ */
+export function computeWeeklyPace({ queues, branches, today }) {
+  const baseline = computeNetworkPaceBaseline({ queues, branches, today });
+  const dates = listDates(today, 7);
+
+  return dates.map((date, leadDays) => {
+    const dow = dowOfDateStr(date);
+    const activeBranches = activeBranchCount(branches, date);
+    const bookedSoFar = (queues || []).filter(
+      (q) => q.date === date && !INACTIVE_STATUSES.includes(q.status || "pending")
+    ).length;
+    const bookedPerBranch = activeBranches > 0 ? bookedSoFar / activeBranches : null;
+    const baselinePerBranch = baseline[dow]?.[leadDays] ?? null;
+
+    const pace = (bookedPerBranch !== null && baselinePerBranch !== null && baselinePerBranch > 0)
+      ? Math.round((bookedPerBranch / baselinePerBranch) * 100)
+      : null;
+    const kind = paceLabelKind(pace, leadDays);
+
+    return { date, dow, leadDays, bookedSoFar, activeBranches, bookedPerBranch, baselinePerBranch, pace, kind };
+  });
+}
