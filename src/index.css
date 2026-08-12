@@ -239,7 +239,7 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
 .ceo-quick-summary-item-detail{font-size:12px;line-height:1.45;color:#6f635a}
 .ceo-rank-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}
 .ceo-rank-list{display:flex;flex-direction:column;gap:8px}
-.ceo-rank-item{display:grid;grid-template-columns:34px 1fr auto;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:#faf7f5}
+.ceo-rank-item{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:#faf7f5}
 .ceo-rank-item.good{background:#f2fbf6}
 .ceo-rank-item.bad{background:#fff5f5}
 .ceo-rank-badge{font-size:11px;font-weight:700;color:#8b7f76}
