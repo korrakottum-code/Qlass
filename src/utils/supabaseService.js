@@ -12,9 +12,11 @@ export async function fetchBranches() {
     .from("branches")
     .select("*")
     .order("created_at", { ascending: true });
-  
+
   if (error) throw error;
-  return data.map(b => ({ id: b.id, name: b.name }));
+  // createdAt: ใช้คำนวณว่าสาขาไหน "เปิดอยู่จริง" ในวันที่ผ่านมาแล้วกี่วัน (เช่น Goal ที่ต้อง
+  // เทียบตัวเลขย้อนหลังแบบไม่ให้สาขาใหม่ที่ทยอยเปิดมาดันค่าเฉลี่ยเพี้ยน)
+  return data.map(b => ({ id: b.id, name: b.name, createdAt: b.created_at }));
 }
 
 export async function createBranch(branch) {

@@ -10,6 +10,10 @@ import {
   freePercent,
   segmentOfBlock,
   averageFreePercentByBranch,
+  paceThresholds,
+  paceLabelKind,
+  computeNetworkPaceBaseline,
+  computeWeeklyPace,
 } from "../src/utils/capacity.js";
 
 // ห้องเปิด 11:00-20:00 (block 132-240) เหมือนค่า default ของระบบ
@@ -144,4 +148,124 @@ test("branch average pools capacity/free across days before dividing, not a mean
   assert.equal(avg.b1, 50);
   // b2: วันแรกว่างเต็ม 108/108, วันสองปิด (capacity 0 ไม่นับ) → รวม 108/108 = 100%
   assert.equal(avg.b2, 100);
+});
+
+// ═══ Pace ("เทียบกับปกติ") — เลขทุกตัวตรวจซ้ำด้วยมือแล้วในสเปก (scratchpad/pace-feature-spec.md
+// ผ่านรีวิว nak-song-sai 5 รอบ) ก่อนเขียน test ชุดนี้ ===
+
+test("pace thresholds shift exactly 5 points per day, matching the reviewed spec table", () => {
+  const expected = [
+    [0, 90, 60], [1, 85, 55], [2, 80, 50], [3, 75, 45], [4, 70, 40], [5, 65, 35], [6, 60, 30],
+  ];
+  for (const [d, yellow, red] of expected) {
+    assert.deepEqual(paceThresholds(d), { yellow, red }, `day ${d}`);
+  }
+});
+
+test("pace thresholds clamp is inert within 0-6 days (documented in spec) but engages further out", () => {
+  // ทดสอบว่า clamp ยังทำงานถูกถ้าขยายช่วงในอนาคต แม้ตอนนี้ไม่ได้ใช้จริงในหน้าเว็บ (0-6 วัน)
+  assert.deepEqual(paceThresholds(8), { yellow: 55, red: 25 }); // natural 50/20 ถูก clamp ขึ้น
+  assert.deepEqual(paceThresholds(20), { yellow: 55, red: 25 });
+});
+
+test("pace label kind follows the check order: no-data first, then high, then green/yellow/red", () => {
+  assert.equal(paceLabelKind(null, 3), "no-data");
+  assert.equal(paceLabelKind(undefined, 0), "no-data");
+  assert.equal(paceLabelKind(250, 6), "high"); // สูงผิดปกติ ชนะทุกเกณฑ์อื่น แม้วันไกลๆ ก็ตาม
+  assert.equal(paceLabelKind(200, 0), "high"); // ขอบเขต ≥200% นับเป็น high
+
+  assert.equal(paceLabelKind(100, 0), "green");
+  assert.equal(paceLabelKind(59, 0), "red"); // <60 (เกณฑ์แดงวันนี้)
+  assert.equal(paceLabelKind(60, 0), "yellow"); // =60 ยังไม่ถึงเขียว (90) แต่พ้นแดงแล้ว
+});
+
+test("the exact case that broke rev.1: same Pace, adjacent day, must not flip to a worse label", () => {
+  // 56% ที่ห่าง 3 วัน vs 4 วัน ต้องได้ป้ายเดียวกัน (🟡 ทั้งคู่) — นี่คือบั๊กที่รีวิวรอบ 1 จับได้
+  assert.equal(paceLabelKind(56, 3), "yellow");
+  assert.equal(paceLabelKind(56, 4), "yellow");
+});
+
+test("the arithmetic error caught in review round 2: 35% at 6 days away is yellow, not red", () => {
+  // red(6) = 30; 35 >= 30 จึงยังไม่ถึงแดง — ฉบับร่างแรกเขียนป้ายผิดเป็นแดง ตรวจซ้ำแล้วแก้เป็นเหลือง
+  assert.equal(paceLabelKind(35, 6), "yellow");
+});
+
+test("label direction is monotonic: farther away can only stay same or improve for a fixed Pace", () => {
+  const rank = { red: 0, yellow: 1, green: 2 };
+  for (let pace = 0; pace <= 100; pace += 1) {
+    let prev = null;
+    for (let d = 0; d <= 6; d++) {
+      const kind = paceLabelKind(pace, d);
+      if (kind === "no-data" || kind === "high") continue;
+      if (prev !== null) assert.ok(rank[kind] >= rank[prev], `pace=${pace} regressed at day ${d}`);
+      prev = kind;
+    }
+  }
+});
+
+test("computeWeeklyPace: no historical data anywhere returns no-data for every day, never crashes/divides by zero", () => {
+  const branches = [{ id: "b1", name: "b1", createdAt: "2020-01-01" }];
+  const result = computeWeeklyPace({ queues: [], branches, today: "2026-08-11" });
+  assert.equal(result.length, 7);
+  result.forEach((row) => {
+    assert.equal(row.kind, "no-data");
+    assert.equal(row.pace, null);
+  });
+});
+
+test("computeWeeklyPace: reproduces the reviewed real-data scenario by hand (small fixture)", () => {
+  // จำลองสถานการณ์แบบย่อ: 1 สาขา, ย้อนหลัง 8 สัปดาห์ทุกวันอังคาร (dow=2) มีคิวจองเข้ามาแล้ว 10 คิว
+  // ก่อนวันนัด (lead>=0) เสมอ — วันนี้ (อังคาร 11 ส.ค. 2569) มีคิวเข้ามาแล้ว 10 คิวพอดี = ปกติ 100%
+  // 4 ส.ค. 2569 คืออังคารล่าสุดก่อนวันนี้ — ถอยหลังทีละ 7 วัน 8 ครั้ง ให้ครบทุกอังคารในช่วง
+  // lookback 56 วัน (16 มิ.ย. - 10 ส.ค.) พอดี ไม่ตกหล่นหรือเกินขอบเขต
+  const branches = [{ id: "b1", name: "b1", createdAt: "2020-01-01" }];
+  const queues = [];
+  for (let w = 0; w <= 7; w++) {
+    const tue = new Date(2026, 7, 4 - w * 7);
+    const y = tue.getFullYear(), m = String(tue.getMonth() + 1).padStart(2, "0"), d = String(tue.getDate()).padStart(2, "0");
+    const dateStr = `${y}-${m}-${d}`;
+    for (let i = 0; i < 10; i++) {
+      queues.push({ id: `hist_${w}_${i}`, date: dateStr, createdAt: `${dateStr}T09:00:00Z`, status: "pending", branchId: "b1" });
+    }
+  }
+  // วันนี้ (11 ส.ค. 2569 = อังคาร) มีคิวเข้ามาแล้ว 10 คิวพอดี ตอนนี้ (lead=0 เทียบกับ baseline lead=0 เฉลี่ย 10)
+  for (let i = 0; i < 10; i++) {
+    queues.push({ id: `today_${i}`, date: "2026-08-11", createdAt: "2026-08-11T09:00:00Z", status: "pending", branchId: "b1" });
+  }
+
+  const result = computeWeeklyPace({ queues, branches, today: "2026-08-11" });
+  const todayRow = result[0];
+  assert.equal(todayRow.date, "2026-08-11");
+  assert.equal(todayRow.leadDays, 0);
+  assert.equal(todayRow.bookedSoFar, 10);
+  assert.equal(todayRow.baselinePerBranch, 10);
+  assert.equal(todayRow.pace, 100);
+  assert.equal(todayRow.kind, "green");
+});
+
+test("computeNetworkPaceBaseline excludes today itself (still filling, not settled)", () => {
+  const branches = [{ id: "b1", name: "b1", createdAt: "2020-01-01" }];
+  // ยัดคิวจำนวนมหาศาลไว้ที่ "วันนี้" เท่านั้น — ถ้าโค้ดพลาดไปนับวันนี้เป็นข้อมูลย้อนหลัง
+  // baseline ของอังคารจะเพี้ยนขึ้นสูงลิ่วจาก 500 คิวนี้ทันที
+  const queues = Array.from({ length: 500 }, (_, i) => ({
+    id: `q${i}`, date: "2026-08-11", createdAt: "2026-08-11T09:00:00Z", status: "pending", branchId: "b1",
+  }));
+  const baseline = computeNetworkPaceBaseline({ queues, branches, today: "2026-08-11" });
+  // มีวันอังคาร 8 วันในช่วง lookback แต่ไม่มีคิวสักใบเดียวตกอยู่ในช่วงนั้น (ทุกคิวอยู่ที่ "วันนี้"
+  // ซึ่งถูกตัดออกจากช่วง) — baseline ต้องเป็น 0 (คำนวณได้จริงจาก 8 วันที่ไม่มีคิวเลย) ไม่ใช่เลข
+  // ที่ปนเปื้อนจาก 500 คิวที่ยัดไว้ที่วันนี้
+  assert.equal(baseline[2]?.[0], 0);
+});
+
+test("computeWeeklyPace: brand-new branch with zero eligible historical dates → no-data, not a crash", () => {
+  // สาขาเพิ่งเปิดวันนี้พอดี — ทุกวันในช่วง lookback ย้อนหลัง ยังไม่มีสาขานี้อยู่เลย (activeBranches=0
+  // ทุกวัน) จึงไม่มี baseline ให้เทียบเลยสักจังหวะ ต้องได้ "no-data" ทุกวัน ไม่ใช่ NaN/Infinity
+  const branches = [{ id: "new1", name: "new1", createdAt: "2026-08-11T00:00:00Z" }];
+  const queues = [{ id: "q1", date: "2026-08-11", createdAt: "2026-08-11T09:00:00Z", status: "pending", branchId: "new1" }];
+  const result = computeWeeklyPace({ queues, branches, today: "2026-08-11" });
+  result.forEach((row) => {
+    assert.equal(row.kind, "no-data");
+    assert.equal(row.pace, null);
+    assert.ok(!Number.isNaN(row.bookedPerBranch) || row.bookedPerBranch === null);
+  });
 });
