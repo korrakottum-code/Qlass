@@ -86,6 +86,10 @@ function PaceStrip({ weeklyPace }) {
     <div style={{ marginBottom: 14 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text2)", marginBottom: 6 }}>
         📈 เทียบกับปกติ (เทียบจังหวะการจองย้อนหลัง 8 สัปดาห์ ไม่ใช่เทียบยอดสุดท้าย)
+        {/* ตัวกรอง "สาขา" ด้านบนอยู่ติดกับแถบนี้พอดี ทำให้เข้าใจผิดได้ง่ายว่าเลือกสาขาแล้วต้องกรองด้วย
+            (ทดสอบจริงแล้วเจอ) ทั้งที่ตั้งใจให้เป็นภาพรวมทั้งเครือข่ายเสมอ (เฟส 1) — บอกให้ชัดในตัว UI
+            เอง ไม่ใช่แค่ comment ในโค้ดที่ผู้ใช้มองไม่เห็น */}
+        <span style={{ fontWeight: 400, color: "var(--text3)" }}> — ภาพรวมทั้งเครือข่ายเสมอ ไม่เปลี่ยนตามตัวกรองสาขาด้านบน</span>
       </div>
       <div style={{ display: "flex", gap: 6, overflowX: "auto" }}>
         {weeklyPace.map((row) => {
