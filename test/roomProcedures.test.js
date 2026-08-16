@@ -1,0 +1,134 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  buildRoomProcedureIndex,
+  isRoomConfigured,
+  isProcedureAllowedInRoom,
+  proceduresForRoom,
+  roomsForProcedure,
+  unservedProcedures,
+} from "../src/utils/roomProcedures.js";
+
+// ผังจำลองตามของจริง: สาขาหนึ่งมีเตียง D/T สองเตียง + Hifu + Pico อย่างละหนึ่ง
+const rooms = [
+  { id: "t1", name: "T01", branchId: "b1", type: "T" },
+  { id: "t2", name: "T02", branchId: "b1", type: "T" },
+  { id: "t3", name: "T03", branchId: "b1", type: "T" },
+  { id: "t4", name: "T04", branchId: "b1", type: "T" },
+  { id: "m1", name: "M01", branchId: "b1", type: "M" },
+  { id: "x1", name: "T01", branchId: "b2", type: "T" }, // อีกสาขา ยังไม่ตั้งค่า
+];
+
+const procedures = [
+  { id: "diode", name: "Diode", roomType: "T" },
+  { id: "treat", name: "Treatment", roomType: "T" },
+  { id: "hifu", name: "Hifu", roomType: "T" },
+  { id: "pico", name: "Pico", roomType: "T" },
+  { id: "botox", name: "Botox", roomType: "M" },
+];
+
+const links = [
+  { roomId: "t1", procedureId: "diode" },
+  { roomId: "t1", procedureId: "treat" },
+  { roomId: "t2", procedureId: "diode" },
+  { roomId: "t2", procedureId: "treat" },
+  { roomId: "t3", procedureId: "hifu" },
+  { roomId: "t4", procedureId: "pico" },
+];
+
+const index = buildRoomProcedureIndex(links);
+const byId = (id) => procedures.find((p) => p.id === id);
+const room = (id) => rooms.find((r) => r.id === id);
+
+test("เตียงที่ตั้งค่าแล้วรับเฉพาะหัตถการที่ผูกไว้", () => {
+  assert.equal(isProcedureAllowedInRoom(index, room("t4"), byId("pico")), true);
+  assert.equal(isProcedureAllowedInRoom(index, room("t4"), byId("diode")), false);
+});
+
+test("โจทย์ตั้งต้น — pico ลงเตียง diode ไม่ได้", () => {
+  assert.equal(isProcedureAllowedInRoom(index, room("t1"), byId("pico")), false);
+});
+
+test("เตียงที่ยังไม่ตั้งค่า ใช้กติกาเดิม M/T ไม่ใช่ห้ามหมด", () => {
+  // นี่คือข้อที่กันไม่ให้ทั้งเครือลงคิวไม่ได้ในวันที่ deploy
+  assert.equal(isRoomConfigured(index, "x1"), false);
+  assert.equal(isProcedureAllowedInRoom(index, room("x1"), byId("pico")), true);
+  assert.equal(isProcedureAllowedInRoom(index, room("x1"), byId("diode")), true);
+  assert.equal(isProcedureAllowedInRoom(index, room("x1"), byId("botox")), false);
+});
+
+test("ห้อง M ในสาขาที่ตั้งค่าฝั่ง T แล้ว ยังวิ่งกติกาเดิม", () => {
+  assert.equal(isProcedureAllowedInRoom(index, room("m1"), byId("botox")), true);
+  assert.equal(isProcedureAllowedInRoom(index, room("m1"), byId("pico")), false);
+});
+
+test("index ว่าง = ยังไม่มีใครตั้งค่าเลย ทุกอย่างวิ่งกติกาเดิม", () => {
+  const empty = buildRoomProcedureIndex([]);
+  rooms.forEach((r) => {
+    procedures.forEach((p) => {
+      assert.equal(isProcedureAllowedInRoom(empty, r, p), p.roomType === r.type);
+    });
+  });
+});
+
+test("proceduresForRoom กรอง dropdown ให้เหลือเฉพาะที่เตียงรับ", () => {
+  assert.deepEqual(proceduresForRoom(index, room("t1"), procedures).map((p) => p.id), ["diode", "treat"]);
+  assert.deepEqual(proceduresForRoom(index, room("t3"), procedures).map((p) => p.id), ["hifu"]);
+});
+
+test("roomsForProcedure หาเตียงที่รับหัตถการนี้ ภายในสาขาเดียวกัน", () => {
+  assert.deepEqual(roomsForProcedure(index, rooms, byId("diode"), "b1").map((r) => r.id), ["t1", "t2"]);
+  assert.deepEqual(roomsForProcedure(index, rooms, byId("pico"), "b1").map((r) => r.id), ["t4"]);
+  // ข้ามสาขาไม่ได้
+  assert.equal(roomsForProcedure(index, rooms, byId("pico"), "b1").some((r) => r.branchId !== "b1"), false);
+});
+
+test("เตียงรวม hifu+pico แบบสาขาเล็ก ตั้งค่าได้", () => {
+  const small = buildRoomProcedureIndex([
+    { roomId: "s1", procedureId: "diode" },
+    { roomId: "s1", procedureId: "treat" },
+    { roomId: "s2", procedureId: "hifu" },
+    { roomId: "s2", procedureId: "pico" },
+  ]);
+  const s2 = { id: "s2", name: "T02", branchId: "b9", type: "T" };
+  assert.equal(isProcedureAllowedInRoom(small, s2, byId("hifu")), true);
+  assert.equal(isProcedureAllowedInRoom(small, s2, byId("pico")), true);
+  assert.equal(isProcedureAllowedInRoom(small, s2, byId("diode")), false);
+});
+
+test("เตือนเมื่อมีหัตถการที่ไม่มีเตียงไหนรองรับเลยในสาขา", () => {
+  // ผังเต็มข้างบนครอบคลุมทุกหัตถการ T แล้ว → ไม่มีอะไรค้าง
+  assert.deepEqual(unservedProcedures(index, rooms, procedures, "b1"), []);
+
+  // ตั้งค่าครบทุกเตียงแล้ว แต่ลืมผูก pico ไว้กับเตียงไหนเลย → ต้องเตือน
+  const missingPico = buildRoomProcedureIndex([
+    ...links.filter((l) => l.procedureId !== "pico"),
+    { roomId: "t4", procedureId: "hifu" }, // t4 ถูกตั้งเป็นเตียง hifu ตัวที่สอง ไม่ใช่ pico
+  ]);
+  assert.deepEqual(
+    unservedProcedures(missingPico, rooms, procedures, "b1").map((p) => p.id),
+    ["pico"]
+  );
+});
+
+test("เตียงที่ยังไม่ถูกแตะในสาขาที่ตั้งค่าบางส่วน ยังอุดช่องว่างให้อยู่", () => {
+  // t4 ไม่มีแถวเลย → ยังวิ่งกติกาเดิม รับ T ได้ทุกตัว pico จึงยังลงได้ ไม่ต้องเตือน
+  const partial = buildRoomProcedureIndex(links.filter((l) => l.roomId !== "t4"));
+  assert.equal(isProcedureAllowedInRoom(partial, room("t4"), byId("pico")), true);
+  assert.deepEqual(unservedProcedures(partial, rooms, procedures, "b1"), []);
+});
+
+test("สาขาที่ยังไม่แตะเลย ไม่ต้องเตือน (ยังวิ่งกติกาเดิม ไม่มีอะไรพัง)", () => {
+  assert.deepEqual(unservedProcedures(index, rooms, procedures, "b2"), []);
+});
+
+test("ข้อมูลเสียไม่ทำให้ index พัง", () => {
+  const dirty = buildRoomProcedureIndex([
+    null,
+    { roomId: "t1" },
+    { procedureId: "pico" },
+    { roomId: "t1", procedureId: "diode" },
+  ]);
+  assert.equal(dirty.size, 1);
+  assert.equal(dirty.get("t1").size, 1);
+});
