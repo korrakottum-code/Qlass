@@ -391,6 +391,9 @@ export default function App() {
   // retries so create_queue_v1 stays idempotent; cleared on success or after a
   // server business rejection (nothing was written — the next attempt is new).
   const serverQueueRequestIdRef = useRef(null);
+  // Separate ref for the Timeline mini-popup's own submit flow (independent
+  // attempt lifecycle from the Booking page form above).
+  const timelineServerQueueRequestIdRef = useRef(null);
 
   const handleBookingSubmit = useCallback(async () => {
     if (!form.name.trim() || !form.phone.trim()) {
@@ -1202,14 +1205,22 @@ export default function App() {
                       return false;
                     }
                   }
+                  // คิวที่ลงวันเดียวกัน ให้ "ยืนยันแล้ว" ทันที — กฎเดียวกับหน้าบันทึกคิว
+                  // (กันคิวที่เพิ่งจองผ่าน Timeline วันนี้ โดนธง "เลยเวลายืนยัน" ทันทีหลัง 12:00)
+                  const sameDayConfirmed = (bookingForm.status || "pending") === "pending" && bookingForm.date === getTodayStr()
+                    ? { ...bookingForm, status: "confirmed" }
+                    : bookingForm;
+                  const useServerCreate = shouldUseServerQueueCreate(currentUser, sameDayConfirmed);
                   try {
-                    // คิวที่ลงวันเดียวกัน ให้ "ยืนยันแล้ว" ทันที — กฎเดียวกับหน้าบันทึกคิว
-                    // (กันคิวที่เพิ่งจองผ่าน Timeline วันนี้ โดนธง "เลยเวลายืนยัน" ทันทีหลัง 12:00)
-                    const sameDayConfirmed = (bookingForm.status || "pending") === "pending" && bookingForm.date === getTodayStr()
-                      ? { ...bookingForm, status: "confirmed" }
-                      : bookingForm;
-                    // บันทึกลง Supabase และอัปเดต state ทันที ไม่รอ Realtime
-                    const newQueue = await createQueue({ ...sameDayConfirmed, recordedBy: currentUser?.id || null });
+                    let newQueue;
+                    if (useServerCreate) {
+                      if (!timelineServerQueueRequestIdRef.current) timelineServerQueueRequestIdRef.current = crypto.randomUUID();
+                      newQueue = await createQueueOnServer({ requestId: timelineServerQueueRequestIdRef.current, form: sameDayConfirmed });
+                      timelineServerQueueRequestIdRef.current = null;
+                    } else {
+                      // บันทึกลง Supabase และอัปเดต state ทันที ไม่รอ Realtime
+                      newQueue = await createQueue({ ...sameDayConfirmed, recordedBy: currentUser?.id || null });
+                    }
                     if (newQueue) {
                       setQueues((prev) => prev.some((q) => q.id === newQueue.id) ? prev : [...prev, newQueue]);
                     }
@@ -1217,7 +1228,15 @@ export default function App() {
                     return true;
                   } catch (error) {
                     console.error("Timeline booking save failed:", error);
-                    showToast("error", "บันทึกคิวไม่สำเร็จ ข้อมูลในฟอร์มยังอยู่ครบ กรุณาลองอีกครั้ง");
+                    // Goal 13: after a server business rejection there is NO fallback to
+                    // the direct insert path — same rule as the Booking page.
+                    const serverCode = useServerCreate ? await extractQueueCreateErrorCode(error) : null;
+                    if (serverCode) {
+                      timelineServerQueueRequestIdRef.current = null;
+                      showToast("error", queueCreateErrorMessage(serverCode));
+                    } else {
+                      showToast("error", "บันทึกคิวไม่สำเร็จ ข้อมูลในฟอร์มยังอยู่ครบ กรุณาลองอีกครั้ง");
+                    }
                     return false;
                   }
                 }}
