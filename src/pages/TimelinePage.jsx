@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed } from "../utils/helpers";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
-import { proceduresForRoom } from "../utils/roomProcedures";
+import { proceduresForRoom, roomLockLabel } from "../utils/roomProcedures";
 
 // สถานะที่ยังถือว่า "ยังไม่ยืนยัน" — ปุ่มย้ายเข้าคิวรอใน popover ใช้ได้เฉพาะกลุ่มนี้
 const UNCONFIRMED_STATUSES = ["pending", "follow1", "follow2", "follow3"];
@@ -160,6 +160,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                     const branch = branches.find((b) => b.id === room.branchId);
                     const cnt = dayQueues.filter((q) => q.roomId === room.id).length;
                     const roomScheduleNotes = roomScheduleNotesByRoomId[room.id] || [];
+                    // ป้ายจากตัวล็อกจริง — วางไว้เหนือโน้ตที่พิมพ์เอง จะได้ไม่มีวันขัดกัน
+                    const lockLabel = roomLockLabel(roomProcedureIndex, room, procedures);
                     return (
                       <th key={room.id} style={{
                         padding: "6px 10px", textAlign: "center",
@@ -174,6 +176,13 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                         <div style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>
                           [{room.type}]{branch ? ` • ${branch.name}` : ""}
                         </div>
+                        {lockLabel && (
+                          <div style={{ marginTop: 3, display: "flex", justifyContent: "center" }}>
+                            <span title="เตียงนี้ลงได้เฉพาะหัตถการเหล่านี้ (ตั้งค่าที่หน้าจัดการห้อง)" style={{ fontSize: 10.5, fontWeight: 800, color: "var(--accent)", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: 6, padding: "1px 7px", lineHeight: 1.5, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              🔒 {lockLabel}
+                            </span>
+                          </div>
+                        )}
                         {roomScheduleNotes.length > 0 && (
                           <div style={{ marginTop: 3, display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 6 }}>
                             {roomScheduleNotes.map((note, idx) => (

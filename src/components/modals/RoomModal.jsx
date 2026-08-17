@@ -90,6 +90,18 @@ export default function RoomModal({
   const [procIds, setProcIds] = useState(() => (currentIds || []).filter((id) => !genericIds.has(id)));
   const configuredAtOpen = (currentIds || []).length > 0;
 
+  // หมายเหตุของเตียง (ช่องข้อความอิสระด้านล่าง) เอ่ยถึงเครื่องที่ยังไม่ได้ติ๊กไหม
+  // ตรวจแบบหยาบด้วยชื่อหัตถการที่โผล่ในข้อความ — จับได้เฉพาะเคสตรงตัว ("รับ Pico") ไม่ใช่
+  // ทุกวิธีเขียน แต่พอเตือนเคสที่เจอบ่อยสุด: โน้ตเก่าค้างจากผังก่อน
+  const noteConflicts = useMemo(() => {
+    if (procIds.length === 0) return [];
+    const text = notes.toLowerCase();
+    return selectableProcs
+      .filter((p) => !genericIds.has(p.id) && !procIds.includes(p.id))
+      .filter((p) => p.name.length >= 3 && text.includes(p.name.toLowerCase()))
+      .map((p) => p.name);
+  }, [notes, procIds, selectableProcs, genericIds]);
+
   function toggleProc(id) {
     if (genericIds.has(id)) return;
     setProcIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -429,6 +441,19 @@ export default function RoomModal({
                   </span>
                 )}
               </div>
+
+              {noteConflicts.length > 0 && (
+                <div style={{
+                  marginTop: 8, padding: "8px 11px", borderRadius: 6,
+                  border: "1.5px solid var(--amber)", background: "rgba(217,119,6,0.10)",
+                  fontSize: 11.5, lineHeight: 1.55, color: "var(--amber)", fontWeight: 600,
+                }}>
+                  ⚠️ หมายเหตุของเตียงนี้พูดถึง <strong>{noteConflicts.join(", ")}</strong> แต่ยังไม่ได้ติ๊ก
+                  <div style={{ fontWeight: 400, marginTop: 2 }}>
+                    หน้าร้านอ่านหมายเหตุเป็นหลัก ถ้าล็อกกับหมายเหตุพูดคนละอย่างจะสับสน — ติ๊กเพิ่ม หรือแก้หมายเหตุด้านล่างให้ตรงกัน
+                  </div>
+                </div>
+              )}
 
               {procIds.length === 0 ? (
                 <span style={{ fontSize: 11, fontWeight: 700, color: configuredAtOpen ? "var(--amber)" : "var(--text3)", lineHeight: 1.6, display: "block", marginTop: 5 }}>

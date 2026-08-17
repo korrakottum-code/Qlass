@@ -139,3 +139,25 @@ export function procedureRoomBlockMessage(room, procedure) {
   const procedureName = procedure?.name || "หัตถการนี้";
   return `❌ ${roomName} ไม่รับคิว ${procedureName} — กรุณาเลือกเตียงอื่นหรือแก้ที่หน้าจัดการห้อง`;
 }
+
+/**
+ * ป้ายสรุปว่าเตียงนี้รับอะไร — สร้างจากตัวล็อกโดยตรง ไม่ใช่จากโน้ตที่พิมพ์เอง
+ *
+ * ทำไมต้องมี: หน้าร้านอ่านโน้ตในหัวคอลัมน์ Timeline เป็นหลัก ถ้าล็อกบอกว่าเตียงรับ Hifu
+ * แต่โน้ตยังเขียนว่า "รับ Pico" คนจะเชื่อโน้ตแล้วสับสนว่าทำไมลง Pico ไม่ได้ ป้ายนี้จึงต้อง
+ * โผล่ข้าง ๆ โน้ต และต้องดึงจากแหล่งเดียวกับที่ระบบใช้บล็อกจริง จะได้ไม่มีวันพูดคนละอย่าง
+ *
+ * คืน null เมื่อเตียงยังไม่ตั้งค่า (ไม่มีอะไรจะโชว์ — วิ่งกติกาเดิม)
+ * ซ่อนหัตถการกลาง (ปิดคิว ฯลฯ) เพราะทุกเตียงมีเหมือนกัน ใส่ไปก็ไม่ช่วยแยกอะไร
+ */
+export function roomLockLabel(index, room, procedures) {
+  if (!room || !isRoomConfigured(index, room.id)) return null;
+  const set = index.get(room.id);
+  const names = (procedures || [])
+    .filter((p) => set.has(p.id) && !ALWAYS_ALLOWED_PROCEDURE_NAMES.includes(p.name))
+    .map((p) => p.name);
+  if (names.length === 0) return null;
+  // ถ้ายาวเกิน 3 ตัว ย่อเป็น "Diode, Treatment +4" — หัวคอลัมน์ Timeline แคบ
+  const shown = names.slice(0, 3).join(", ");
+  return names.length > 3 ? `${shown} +${names.length - 3}` : shown;
+}

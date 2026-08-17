@@ -9,6 +9,7 @@ import {
   unservedProcedures,
   shouldEnforceOnSave,
   ALWAYS_ALLOWED_PROCEDURE_NAMES,
+  roomLockLabel,
 } from "../src/utils/roomProcedures.js";
 
 // ผังจำลองตามของจริง: สาขาหนึ่งมีเตียง D/T สองเตียง + Hifu + Pico อย่างละหนึ่ง
@@ -171,4 +172,42 @@ test("รายชื่อหัตถการกลางคงที่ — 
     [...ALWAYS_ALLOWED_PROCEDURE_NAMES].sort(),
     ["Influencer", "ปรึกษาทั่วไป", "ปิดคิว", "โปรประจำเดือน (T)"].sort()
   );
+});
+
+// ─── ป้ายจากตัวล็อก — ต้องมาจากแหล่งเดียวกับที่ใช้บล็อก ไม่ใช่โน้ตที่พิมพ์เอง ───
+
+test("ป้ายของเตียงที่ตั้งค่าแล้ว บอกชื่อหัตถการที่รับ", () => {
+  assert.equal(roomLockLabel(index, room("t4"), procedures), "Pico");
+  assert.equal(roomLockLabel(index, room("t1"), procedures), "Diode, Treatment");
+});
+
+test("เตียงที่ยังไม่ตั้งค่า ไม่มีป้าย — ไม่มีอะไรจะบอก", () => {
+  assert.equal(roomLockLabel(index, room("x1"), procedures), null);
+  assert.equal(roomLockLabel(buildRoomProcedureIndex([]), room("t1"), procedures), null);
+});
+
+test("ป้ายซ่อนหัตถการกลาง เพราะทุกเตียงมีเหมือนกัน ใส่ไปไม่ช่วยแยก", () => {
+  const withGeneric = [
+    ...procedures,
+    { id: "close", name: "ปิดคิว", roomType: "T" },
+    { id: "infl", name: "Influencer", roomType: "T" },
+  ];
+  const idx = buildRoomProcedureIndex([
+    { roomId: "t4", procedureId: "pico" },
+    { roomId: "t4", procedureId: "close" },
+    { roomId: "t4", procedureId: "infl" },
+  ]);
+  assert.equal(roomLockLabel(idx, room("t4"), withGeneric), "Pico");
+});
+
+test("เตียงที่ติ๊กเฉพาะหัตถการกลาง ถือว่าไม่มีป้าย", () => {
+  const withGeneric = [...procedures, { id: "close", name: "ปิดคิว", roomType: "T" }];
+  const idx = buildRoomProcedureIndex([{ roomId: "t4", procedureId: "close" }]);
+  assert.equal(roomLockLabel(idx, room("t4"), withGeneric), null);
+});
+
+test("ป้ายยาวเกิน 3 ตัวถูกย่อ — หัวคอลัมน์ Timeline แคบ", () => {
+  const many = ["a", "b", "c", "d", "e"].map((id) => ({ id, name: id.toUpperCase(), roomType: "T" }));
+  const idx = buildRoomProcedureIndex(many.map((p) => ({ roomId: "t1", procedureId: p.id })));
+  assert.equal(roomLockLabel(idx, room("t1"), many), "A, B, C +2");
 });

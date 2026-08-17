@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { CUSTOMER_TYPES, ROOM_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
 import { WORK_BLOCKS, blockToTime, formatThaiDate, getEmptyBookingForm, getTodayStr, isActiveQueueStatus } from "../utils/helpers";
-import { proceduresForRoom, isRoomConfigured } from "../utils/roomProcedures";
+import { proceduresForRoom, isRoomConfigured, roomLockLabel } from "../utils/roomProcedures";
 import SmartParseBox from "../components/SmartParseBox";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
@@ -377,6 +377,11 @@ export default function BookingPage({
                     return <option key={r.id} value={r.id}>[{r.type}] {r.name}</option>;
                   })}
                 </select>
+                {roomIsConfigured && (
+                  <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: "var(--accent)", lineHeight: 1.5 }}>
+                    🔒 เตียงนี้รับ: {roomLockLabel(roomProcedureIndex, selectedRoom, procedures)}
+                  </div>
+                )}
                 {selectedRoom?.notes && (
                   <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: "#dc2626", lineHeight: 1.5 }}>
                     ⚠️ {selectedRoom.notes}
