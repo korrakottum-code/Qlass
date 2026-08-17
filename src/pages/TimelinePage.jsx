@@ -60,6 +60,17 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
     return notesByRoomId;
   }, [filteredRooms, roomSchedules, date]);
 
+  // สถานะปิด/เปิดเตียงต่อห้อง — memo ไว้ ไม่คำนวณในลูป render
+  // roomSchedules มี ~17,000 แถว ถ้าเรียก getBedSwitchState ตรง ๆ ในหัวคอลัมน์ จะไล่อาร์เรย์
+  // 17,000 × จำนวนห้อง ทุกครั้งที่ re-render (เปิด popup / hover / เลื่อน) — หน่วงบนมือถือแน่
+  const bedSwitchStateByRoomId = useMemo(() => {
+    const byRoomId = {};
+    filteredRooms.forEach((room) => {
+      byRoomId[room.id] = getBedSwitchState(roomSchedules, room.id, date);
+    });
+    return byRoomId;
+  }, [filteredRooms, roomSchedules, date]);
+
   // หา time range จากทุกห้อง
   const { minBlock, maxBlock } = useMemo(() => {
     let mn = 132, mx = 240;
@@ -168,7 +179,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                     const roomScheduleNotes = roomScheduleNotesByRoomId[room.id] || [];
                     // ป้ายจากตัวล็อกจริง — วางไว้เหนือโน้ตที่พิมพ์เอง จะได้ไม่มีวันขัดกัน
                     const lockLabel = roomLockLabel(roomProcedureIndex, room, procedures);
-                    const bed = getBedSwitchState(roomSchedules, room.id, date);
+                    const bed = bedSwitchStateByRoomId[room.id] || { state: "open" };
                     return (
                       <th key={room.id} style={{
                         padding: "6px 10px", textAlign: "center",
