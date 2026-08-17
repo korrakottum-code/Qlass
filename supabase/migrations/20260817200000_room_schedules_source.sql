@@ -20,6 +20,9 @@
 --   drop index if exists public.room_schedules_bed_switch_one_per_day;
 --   alter table public.room_schedules drop column if exists source;
 
+-- ถ้าจับล็อกไม่ได้ใน 3 วิ ให้ล้มไปเลยแล้วรันใหม่ตอนเงียบ — ดีกว่าไปต่อคิวขวางคนใช้งานจริง
+set local lock_timeout = '3s';
+
 alter table public.room_schedules
   add column if not exists source text
   check (source is null or source in ('bed_switch'));
