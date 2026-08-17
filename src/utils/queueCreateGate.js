@@ -12,15 +12,22 @@ export function parseStaffAllowlist(raw) {
     .filter(Boolean);
 }
 
-// The canary contract covers only a new pending booking made by an explicitly
-// allowlisted operator while the flag is on. Anything else stays on the
-// established writer — that is scope selection before any server call, not a
-// fallback after a rejection.
+// Goal 13b: a new queue may start 'pending' (normal) or 'confirmed' (the
+// client's own same-day auto-confirm rule — see App.jsx sameDayConfirmed).
+// create_queue_v1 independently re-derives whether 'confirmed' is valid from
+// the booking date rather than trusting this claim; this set just decides
+// whether the gate below is even worth evaluating for a given form.
+const CREATABLE_STATUSES = new Set(["pending", "confirmed"]);
+
+// The canary contract covers only a new pending-or-same-day-confirmed
+// booking made by an explicitly allowlisted operator while the flag is on.
+// Anything else stays on the established writer — that is scope selection
+// before any server call, not a fallback after a rejection.
 export function shouldUseServerQueueCreate({ enabled, allowlist, user, form }) {
   if (!enabled) return false;
   const staffId = String(user?.id || "").trim().toLowerCase();
   if (!staffId || !allowlist.includes(staffId)) return false;
-  return (form?.status ?? "pending") === "pending";
+  return CREATABLE_STATUSES.has(form?.status ?? "pending");
 }
 
 export function buildServerQueuePayload(form) {
@@ -34,7 +41,7 @@ export function buildServerQueuePayload(form) {
     price: form.price === "" || form.price == null ? null : String(form.price),
     note: form.note ?? "",
     customer_type: form.customerType || "new",
-    status: "pending",
+    status: form.status || "pending",
     date: form.date || null,
     time_block: form.timeBlock ?? null,
     duration_blocks: form.durationBlocks ?? null,
