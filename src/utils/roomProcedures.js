@@ -96,6 +96,28 @@ export function unservedProcedures(index, rooms, procedures, branchId) {
   });
 }
 
+/**
+ * ต้องตรวจกฎนี้กับการบันทึกครั้งนี้ไหม — "สกรีนเฉพาะของที่ลงใหม่"
+ *
+ * เดือน ส.ค. 2569 คือช่วงเปลี่ยนผ่านจากผังเดิม (M/T ล้วน) มาเป็นแยกเครื่องรายเตียง
+ * คิวที่จองไว้ก่อนหน้ายังวางตามผังเก่าอยู่หลายพันคิว ถ้าบังคับกฎกับทุกการบันทึก
+ * หน้าร้านจะแก้คิวเก่าไม่ได้เลย ทั้งที่แค่จะเลื่อนเวลาหรือแก้ชื่อ
+ *
+ * กติกา:
+ *   - สร้างใหม่           → ตรวจเสมอ
+ *   - แก้ของเดิม           → ตรวจเฉพาะเมื่อ "ย้ายเตียง" หรือ "เปลี่ยนหัตถการ"
+ *
+ * ไม่ปล่อยผ่านทั้งดุ้นเพราะคิวเก่าจะกลายเป็นช่องโหว่: เปิดคิวเก่าขึ้นมาแล้วย้ายไป
+ * เตียงไหนก็ได้โดยไม่โดนตรวจ การย้ายเตียง/เปลี่ยนหัตถการคือการวางคิวใหม่ในทางปฏิบัติ
+ */
+export function shouldEnforceOnSave(originalQueue, nextForm) {
+  if (!originalQueue) return true; // สร้างใหม่
+
+  const movedRoom = (originalQueue.roomId || "") !== (nextForm?.roomId || "");
+  const changedProcedure = (originalQueue.procedureId || "") !== (nextForm?.procedureId || "");
+  return movedRoom || changedProcedure;
+}
+
 /** ข้อความบอกเหตุผลตอนบล็อก — ใช้ถ้อยคำเดียวกันทุกหน้าจอ */
 export function procedureRoomBlockMessage(room, procedure) {
   const roomName = room?.name || "เตียงนี้";

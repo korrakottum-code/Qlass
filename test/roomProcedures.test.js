@@ -7,6 +7,7 @@ import {
   proceduresForRoom,
   roomsForProcedure,
   unservedProcedures,
+  shouldEnforceOnSave,
 } from "../src/utils/roomProcedures.js";
 
 // ผังจำลองตามของจริง: สาขาหนึ่งมีเตียง D/T สองเตียง + Hifu + Pico อย่างละหนึ่ง
@@ -120,6 +121,35 @@ test("เตียงที่ยังไม่ถูกแตะในสา�
 
 test("สาขาที่ยังไม่แตะเลย ไม่ต้องเตือน (ยังวิ่งกติกาเดิม ไม่มีอะไรพัง)", () => {
   assert.deepEqual(unservedProcedures(index, rooms, procedures, "b2"), []);
+});
+
+// ─── สกรีนเฉพาะของที่ลงใหม่ (ช่วงเปลี่ยนผ่าน ส.ค. 2569) ───
+
+test("สร้างคิวใหม่ ตรวจเสมอ", () => {
+  assert.equal(shouldEnforceOnSave(null, { roomId: "t1", procedureId: "pico" }), true);
+});
+
+test("แก้คิวเก่าแค่เวลา ไม่ตรวจ — คิวที่วางตามผังเดิมยังแก้ได้", () => {
+  const original = { id: "q1", roomId: "t1", procedureId: "pico", timeBlock: 150 };
+  assert.equal(shouldEnforceOnSave(original, { roomId: "t1", procedureId: "pico", timeBlock: 168 }), false);
+});
+
+test("ย้ายเตียง = วางคิวใหม่ ต้องตรวจ", () => {
+  const original = { id: "q1", roomId: "t1", procedureId: "pico" };
+  assert.equal(shouldEnforceOnSave(original, { roomId: "t2", procedureId: "pico" }), true);
+});
+
+test("เปลี่ยนหัตถการ ต้องตรวจ", () => {
+  const original = { id: "q1", roomId: "t1", procedureId: "diode" };
+  assert.equal(shouldEnforceOnSave(original, { roomId: "t1", procedureId: "pico" }), true);
+});
+
+test("คิวเก่าที่ผิดผัง ย้ายไปเตียงที่รับไม่ได้ ยังต้องโดนบล็อก", () => {
+  // คิว pico บนเตียง D/T จากผังเดิม — ย้ายไปเตียง D/T อีกใบต้องไม่ผ่าน
+  const original = { id: "q1", roomId: "t1", procedureId: "pico" };
+  const next = { roomId: "t2", procedureId: "pico" };
+  assert.equal(shouldEnforceOnSave(original, next), true);
+  assert.equal(isProcedureAllowedInRoom(index, room("t2"), byId("pico")), false);
 });
 
 test("ข้อมูลเสียไม่ทำให้ index พัง", () => {
