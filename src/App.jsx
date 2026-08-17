@@ -3,6 +3,7 @@ import { PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
 import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed, buildOverdueMoveNote } from "./utils/helpers";
 import {
   getAllStaff, getAllBranches, getAllProcedures, getAllPromos, getAllRooms, getAllRoomSchedules, getAllQueues,
+  getAllRoomProcedures, setRoomProcedures as setRoomProceduresDB,
   createBranch, updateBranch, deleteBranch as deleteBranchDB,
   createProcedure, updateProcedure, deleteProcedure as deleteProcedureDB,
   createPromo, updatePromo, deletePromo as deletePromoDB,
@@ -25,6 +26,7 @@ import { recordClientDiagnostic } from "./utils/clientDiagnostics";
 import { controlledRefreshEnabled, getControlledRefreshStatus, serverDiagnosticsEnabled, flushClientDiagnostics as flushDiagnostics } from "./utils/clientObservability";
 import { reconcileRealtimeQueue } from "./utils/realtimeQueueState";
 import { buildRescheduledQueue } from "./utils/rescheduleQueue";
+import { buildRoomProcedureIndex, isProcedureAllowedInRoom, shouldEnforceOnSave, procedureRoomBlockMessage } from "./utils/roomProcedures";
 
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
@@ -67,6 +69,9 @@ export default function App() {
   const [rooms, setRooms] = useState([]);
   const [promos, setPromos] = useState([]);
   const [roomSchedules, setRoomSchedules] = useState([]);
+  // [{ roomId, procedureId }] — เตียงไหนรับหัตถการอะไร. เตียงที่ไม่มีแถวเลย = ยังไม่ตั้งค่า
+  // ให้ใช้กติกาเดิม M/T (ดู src/utils/roomProcedures.js)
+  const [roomProcedures, setRoomProcedures] = useState([]);
   const [queues, setQueues] = useState([]);
   const [categories, setCategories] = useState(PROCEDURE_CATEGORIES);
   const [staff, setStaff] = useState([]);
@@ -148,7 +153,7 @@ export default function App() {
         since.setDate(since.getDate() - 30);
         const sinceDate = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, "0")}-${String(since.getDate()).padStart(2, "0")}`;
 
-        const [branchData, procedureData, promoData, roomData, scheduleData, recentQueues, categoryData, ticketData] = await Promise.all([
+        const [branchData, procedureData, promoData, roomData, scheduleData, recentQueues, categoryData, ticketData, roomProcedureData] = await Promise.all([
           getAllBranches(),
           getAllProcedures(),
           getAllPromos(),
@@ -157,12 +162,16 @@ export default function App() {
           getAllQueues({ sinceDate }),
           getAllCategories().catch(() => null),
           fetchTickets().catch(() => null),
+          // ล้มแล้วคืน [] = ทุกเตียงถือว่ายังไม่ตั้งค่า → กติกาเดิม M/T. ยอมให้ล็อกหลุด
+          // ดีกว่าปล่อยให้ทั้งแอปโหลดไม่ขึ้นเพราะตารางเดียว
+          getAllRoomProcedures().catch(() => []),
         ]);
         setBranches(branchData || []);
         setProcedures(procedureData || []);
         setPromos(promoData || []);
         setRooms(roomData || []);
         setRoomSchedules(scheduleData || []);
+        setRoomProcedures(roomProcedureData || []);
         setQueues(recentQueues || []);
         if (categoryData && categoryData.length > 0) {
           setCategories(categoryData);
@@ -277,6 +286,12 @@ export default function App() {
   const filteredRooms = useMemo(() => {
     return filterByUserBranch(rooms, currentUser, "branchId");
   }, [rooms, currentUser]);
+
+  // Map<roomId, Set<procedureId>> — สร้างครั้งเดียวแล้วส่งต่อให้ทุกจุดที่ต้องตัดสินใจ
+  const roomProcedureIndex = useMemo(
+    () => buildRoomProcedureIndex(roomProcedures),
+    [roomProcedures]
+  );
 
   const filteredRoomSchedules = useMemo(() => {
     const allowedRoomIds = new Set(filteredRooms.map((r) => r.id));
@@ -409,6 +424,21 @@ export default function App() {
     if (!editingQueueId && form.date < getTodayStr()) {
       showToast("error", "❌ ไม่สามารถบันทึกคิวย้อนหลังได้");
       return;
+    }
+
+    // ─── ตรวจสอบเตียงรับหัตถการนี้ไหม ───
+    // สกรีนเฉพาะการวางคิวใหม่: สร้างใหม่ตรวจเสมอ ส่วนคิวเดิมตรวจเมื่อย้ายเตียง/เปลี่ยน
+    // หัตถการเท่านั้น (ส.ค. 2569 เป็นช่วงเปลี่ยนผ่าน คิวเก่ายังวางตามผังเดิมอยู่มาก)
+    if (form.roomId && form.procedureId) {
+      const original = editingQueueId ? queues.find((q) => q.id === editingQueueId) : null;
+      if (shouldEnforceOnSave(original, form)) {
+        const roomObj = rooms.find((r) => r.id === form.roomId);
+        const procObj = procedures.find((p) => p.id === form.procedureId);
+        if (!isProcedureAllowedInRoom(roomProcedureIndex, roomObj, procObj)) {
+          showToast("error", procedureRoomBlockMessage(roomObj, procObj));
+          return;
+        }
+      }
     }
 
     // ─── ตรวจสอบห้องปิดรับคิว ───
@@ -758,8 +788,29 @@ export default function App() {
       setModal(null);
       showToast("success", `สร้าง ${data.items.length} ห้องเรียบร้อย 🚀`);
     } else if (data.id) {
+      // เขียนรายการหัตถการ "ก่อน" ข้อมูลห้อง — ถ้าตาราง room_procedures ยังไม่มี (migration
+      // ยังไม่รัน) จะล้มตั้งแต่ต้น ไม่เหลือสภาพครึ่ง ๆ กลาง ๆ ที่เวลา/หมายเหตุลงไปแล้วแต่ล็อกไม่ลง
+      // procedureIds เป็น undefined = ผู้ใช้ไม่ได้แตะรายการหัตถการ อย่าเขียนทับ
+      if (data.procedureIds !== undefined) {
+        try {
+          await setRoomProceduresDB(data.id, data.procedureIds);
+        } catch (error) {
+          // PGRST205 = PostgREST หาตารางไม่เจอ → migration ยังไม่ได้รัน บอกให้ตรงจุด
+          if (error?.code === "PGRST205") {
+            showToast("error", "ระบบล็อกเตียงยังไม่เปิดใช้ (ยังไม่ได้รัน migration room_procedures) — ยังไม่ได้บันทึกอะไร");
+            return;
+          }
+          throw error;
+        }
+        setRoomProcedures((prev) => [
+          ...prev.filter((link) => link.roomId !== data.id),
+          ...data.procedureIds.map((procedureId) => ({ roomId: data.id, procedureId })),
+        ]);
+      }
+
       const updated = await updateRoom(data.id, data);
       setRooms(prev => prev.map(r => r.id === data.id ? updated : r));
+
       setModal(null);
       showToast("success", "บันทึกห้องเรียบร้อย");
     } else {
@@ -1023,6 +1074,7 @@ export default function App() {
                 procedures={procedures}
                 promos={promos}
                 roomSchedules={filteredRoomSchedules}
+                roomProcedureIndex={roomProcedureIndex}
                 queues={filteredQueues}
                 onSubmit={handleBookingSubmit}
                 onQuickAddPromo={quickAddPromo}
@@ -1133,6 +1185,8 @@ export default function App() {
               <RoomsPage
                 branches={filteredBranches}
                 rooms={filteredRooms}
+                procedures={procedures}
+                roomProcedureIndex={roomProcedureIndex}
                 onAdd={(branchId) => setModal({ type: "room", data: null, defaultBranchId: branchId })}
                 onBulkAdd={() => setModal({ type: "room", data: null, bulkMode: true })}
                 onEdit={(r) => setModal({ type: "room", data: r })}
@@ -1149,10 +1203,20 @@ export default function App() {
                 procedures={procedures}
                 promos={promos}
                 roomSchedules={filteredRoomSchedules}
+                roomProcedureIndex={roomProcedureIndex}
                 currentUser={currentUser}
                 showToast={showToast}
                 onAbandonDraft={() => { timelineServerQueueRequestIdRef.current = null; }}
                 onSubmitBooking={async (bookingForm) => {
+                  // เตียงรับหัตถการนี้ไหม — Timeline สร้างคิวใหม่เสมอ จึงตรวจทุกครั้ง
+                  if (bookingForm.roomId && bookingForm.procedureId) {
+                    const roomObj = rooms.find((r) => r.id === bookingForm.roomId);
+                    const procObj = procedures.find((p) => p.id === bookingForm.procedureId);
+                    if (!isProcedureAllowedInRoom(roomProcedureIndex, roomObj, procObj)) {
+                      showToast("error", procedureRoomBlockMessage(roomObj, procObj));
+                      return false;
+                    }
+                  }
                   // room schedule closure check
                   if (bookingForm.roomId && bookingForm.date) {
                     const roomObj = rooms.find((r) => r.id === bookingForm.roomId);
@@ -1351,7 +1415,7 @@ export default function App() {
             <PromoModal data={modal.data} procedures={procedures} onSave={savePromo} onClose={() => setModal(null)} />
           )}
           {modal.type === "room" && (
-            <RoomModal data={modal.data} branches={filteredBranches} rooms={filteredRooms} defaultBranchId={modal.defaultBranchId} bulkMode={modal.bulkMode} onSave={saveRoom} onClose={() => setModal(null)} />
+            <RoomModal data={modal.data} branches={filteredBranches} rooms={filteredRooms} defaultBranchId={modal.defaultBranchId} bulkMode={modal.bulkMode} procedures={procedures} roomProcedureIndex={roomProcedureIndex} roomSchedules={filteredRoomSchedules} onSave={saveRoom} onClose={() => setModal(null)} />
           )}
           {modal.type === "schedule" && (
             <ScheduleModal data={modal.data} rooms={filteredRooms} branches={filteredBranches} onSave={saveRoomSchedule} onClose={() => setModal(null)} />

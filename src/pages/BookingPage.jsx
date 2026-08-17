@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { CUSTOMER_TYPES, ROOM_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
 import { WORK_BLOCKS, blockToTime, formatThaiDate, getEmptyBookingForm, getTodayStr, isActiveQueueStatus } from "../utils/helpers";
+import { proceduresForRoom, isRoomConfigured, roomLockLabel } from "../utils/roomProcedures";
 import SmartParseBox from "../components/SmartParseBox";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
@@ -23,7 +24,7 @@ function StatusBadge({ status }) {
 export default function BookingPage({
   form, setForm, editingQueueId, setEditingQueueId, onAbandonDraft,
   branches, rooms, procedures, promos,
-  roomSchedules, queues,
+  roomSchedules, queues, roomProcedureIndex,
   onSubmit, onQuickAddPromo, onSmartApply, onBulkBooking, parseHints, todayStats,
   currentUser, showToast,
 }) {
@@ -58,10 +59,14 @@ export default function BookingPage({
     return rooms.find((r) => r.id === form.roomId) || null;
   }, [form.roomId, rooms]);
 
+  // เตียงที่ตั้งค่าแล้วจะเหลือเฉพาะหัตถการที่เตียงนั้นรับ ส่วนเตียงที่ยังไม่ตั้งค่า
+  // จะได้ผลเท่ากับกติกาเดิม M/T (กติกาอยู่ใน roomProcedures.js ที่เดียว)
   const filteredProcedures = useMemo(() => {
     if (!selectedRoom) return procedures;
-    return procedures.filter((p) => p.roomType === selectedRoom.type);
-  }, [selectedRoom, procedures]);
+    return proceduresForRoom(roomProcedureIndex, selectedRoom, procedures);
+  }, [selectedRoom, procedures, roomProcedureIndex]);
+
+  const roomIsConfigured = !!selectedRoom && isRoomConfigured(roomProcedureIndex, selectedRoom.id);
 
   // Filtered promos by selected procedure
   const filteredPromos = useMemo(() => {
@@ -251,6 +256,7 @@ export default function BookingPage({
         procedures={procedures}
         promos={promos}
         hints={parseHints || { branchAliases: {}, procedureAliases: {}, promoAliases: {}, roomAliases: {}, procedureToRoom: {} }}
+        roomProcedureIndex={roomProcedureIndex}
         onApply={onSmartApply}
         onBulkApply={onBulkBooking}
       />
@@ -371,6 +377,11 @@ export default function BookingPage({
                     return <option key={r.id} value={r.id}>[{r.type}] {r.name}</option>;
                   })}
                 </select>
+                {roomIsConfigured && (
+                  <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: "var(--accent)", lineHeight: 1.5 }}>
+                    🔒 เตียงนี้รับ: {roomLockLabel(roomProcedureIndex, selectedRoom, procedures)}
+                  </div>
+                )}
                 {selectedRoom?.notes && (
                   <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: "#dc2626", lineHeight: 1.5 }}>
                     ⚠️ {selectedRoom.notes}
@@ -402,7 +413,9 @@ export default function BookingPage({
               </select>
               {selectedRoom && (
                 <span style={{ fontSize: 11, color: selectedRoom.type === "M" ? "var(--blue)" : "var(--green)", fontStyle: "italic", fontWeight: 600 }}>
-                  แสดงเฉพาะหัตถการประเภท {selectedRoom.type === "M" ? "M (ห้องหมอ)" : "T (ห้องเครื่อง/ทรีตเมนต์)"}
+                  {roomIsConfigured
+                    ? `แสดงเฉพาะหัตถการที่ ${selectedRoom.name} รับ (${filteredProcedures.length} รายการ)`
+                    : `แสดงเฉพาะหัตถการประเภท ${selectedRoom.type === "M" ? "M (ห้องหมอ)" : "T (ห้องเครื่อง/ทรีตเมนต์)"}`}
                 </span>
               )}
             </div>
@@ -455,10 +468,7 @@ export default function BookingPage({
                       style={{ flex: "2 1 150px", minWidth: 0 }}
                     >
                       <option value="">-- หัตถการที่สนใจ --</option>
-                      {(selectedRoom
-                        ? procedures.filter((p) => p.roomType === selectedRoom.type)
-                        : procedures
-                      ).map((p) => (
+                      {filteredProcedures.map((p) => (
                         <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
                     </select>

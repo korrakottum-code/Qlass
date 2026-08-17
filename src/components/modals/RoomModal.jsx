@@ -2,6 +2,17 @@ import { useState, useMemo } from "react";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
 import { ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK } from "../../utils/constants";
 import { blockToTime } from "../../utils/helpers";
+import { ALWAYS_ALLOWED_PROCEDURE_NAMES, noteMentionsOutsideSelection, roomLockLabel, buildRoomProcedureIndex } from "../../utils/roomProcedures";
+
+// index.css ตั้ง input { width:100% } กับทุก input — checkbox ที่ไม่บอกความกว้างเองจะยืดเต็ม
+// แถวแล้วดันข้อความไปชิดขวา ต้องล็อกขนาดกลับให้เท่ากล่องติ๊กจริง
+const CHECKBOX_STYLE = { accentColor: "var(--accent)", width: 16, height: 16, flexShrink: 0, margin: 0 };
+
+function sameSet(a, b) {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((id) => set.has(id));
+}
 
 // คำนวณชื่อห้องถัดไป เช่น M01, M02, T03
 function getNextRoomName(rooms, branchId, type) {
@@ -39,7 +50,10 @@ function TimeSpinner({ label, value, onChange, min, max }) {
   );
 }
 
-export default function RoomModal({ data, branches, rooms, defaultBranchId, onSave, onClose, bulkMode: initBulk }) {
+export default function RoomModal({
+  data, branches, rooms, defaultBranchId, onSave, onClose, bulkMode: initBulk,
+  procedures = [], roomProcedureIndex, roomSchedules = [],
+}) {
   const isEdit = !!data?.id;
   const [bulkMode, setBulkMode] = useState(!!initBulk);
   const [branchId, setBranchId] = useState(data?.branchId || defaultBranchId || "");
@@ -50,6 +64,65 @@ export default function RoomModal({ data, branches, rooms, defaultBranchId, onSa
   const [notes, setNotes] = useState(data?.notes || "");
   const [openBlock, setOpenBlock] = useState(data?.openBlock ?? WORK_START_BLOCK);
   const [closeBlock, setCloseBlock] = useState(data?.closeBlock ?? WORK_END_BLOCK);
+
+  // หัตถการที่เลือกได้ = ฝั่งเดียวกับประเภทเตียง (M/T) — ข้ามฝั่งไม่มีทางถูก
+  const selectableProcs = useMemo(
+    () => procedures.filter((p) => p.roomType === type),
+    [procedures, type]
+  );
+
+  // หัตถการกลาง (ปิดคิว ฯลฯ) ลงได้ทุกเตียงเสมอ — ติ๊กให้อัตโนมัติตอนบันทึก ผู้ใช้เอาออกไม่ได้
+  // ถ้าปล่อยให้เอาออกได้ เตียงเครื่องที่ลืมติ๊ก "ปิดคิว" จะปิดช่องเวลาไม่ได้อีกเลย
+  const genericIds = useMemo(
+    () => new Set(selectableProcs.filter((p) => ALWAYS_ALLOWED_PROCEDURE_NAMES.includes(p.name)).map((p) => p.id)),
+    [selectableProcs]
+  );
+
+  // หัตถการที่เตียงนี้รับ — แก้ได้เฉพาะตอนแก้ไขเตียงที่มีอยู่แล้ว (ตอนสร้างใหม่ยังไม่มี
+  // room id ให้ผูก และเตียงใหม่ที่ไม่มีแถวเลยจะวิ่งกติกาเดิมไปก่อนอยู่แล้ว)
+  const currentIds = useMemo(() => {
+    if (!isEdit || !roomProcedureIndex) return null;
+    const set = roomProcedureIndex.get(data.id);
+    return set ? [...set] : [];
+  }, [isEdit, data, roomProcedureIndex]);
+
+  // state เก็บเฉพาะตัวที่ผู้ใช้เลือกเอง — หัตถการกลางถูกเติมกลับให้ตอนบันทึก
+  const [procIds, setProcIds] = useState(() => (currentIds || []).filter((id) => !genericIds.has(id)));
+  const configuredAtOpen = (currentIds || []).length > 0;
+
+  // โน้ตรายวันของเตียงนี้ตั้งแต่วันนี้ไป — หน้าร้านเห็นอันนี้ในหัวคอลัมน์ Timeline บ่อยกว่า
+  // โน้ตประจำเตียงเสียอีก จึงต้องเช็คด้วย ไม่ใช่แค่ช่องหมายเหตุในหน้าต่างนี้
+  const futureScheduleNotes = useMemo(() => {
+    if (!isEdit) return [];
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    return (roomSchedules || [])
+      .filter((s) => s.roomId === data.id && s.note && (!s.date || s.date >= todayStr))
+      .map((s) => s.note);
+  }, [isEdit, data, roomSchedules]);
+
+  // ตัวเตือนตัวเดียว ครอบทั้งโน้ตประจำเตียงและโน้ตรายวัน (กติกาอยู่ใน roomProcedures.js)
+  const noteConflicts = useMemo(
+    () => noteMentionsOutsideSelection({
+      selectedIds: procIds,
+      roomNote: notes,
+      scheduleNotes: futureScheduleNotes,
+      procedures: selectableProcs,
+    }),
+    [procIds, notes, futureScheduleNotes, selectableProcs]
+  );
+
+  // ป้ายที่ล็อกจะสร้างจากชุดที่ติ๊กอยู่ตอนนี้ — ใช้ทั้งพรีวิวและปุ่ม "เขียนหมายเหตุใหม่จากล็อก"
+  const previewLabel = useMemo(() => {
+    if (!isEdit || procIds.length === 0) return null;
+    const idx = buildRoomProcedureIndex([...procIds, ...genericIds].map((pid) => ({ roomId: data.id, procedureId: pid })));
+    return roomLockLabel(idx, data, selectableProcs);
+  }, [isEdit, procIds, genericIds, data, selectableProcs]);
+
+  function toggleProc(id) {
+    if (genericIds.has(id)) return;
+    setProcIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
 
   function toggleBranch(id) {
     setSelectedBranchIds((prev) =>
@@ -95,6 +168,13 @@ export default function RoomModal({ data, branches, rooms, defaultBranchId, onSa
           notes: notes.trim(),
           openBlock,
           closeBlock,
+          // ส่งเฉพาะตอนแก้ไข และเฉพาะเมื่อมีการเปลี่ยนจริง — undefined = ไม่แตะของเดิม
+          // ติ๊กออกหมด = ล้างการตั้งค่า (กลับกติกาเดิม) จึงห้าม union หัตถการกลางในเคสนั้น
+          procedureIds: (() => {
+            if (!isEdit || !currentIds) return undefined;
+            const chosen = procIds.length > 0 ? [...new Set([...procIds, ...genericIds])] : [];
+            return sameSet(currentIds, chosen) ? undefined : chosen;
+          })(),
         });
       }
     }
@@ -160,7 +240,7 @@ export default function RoomModal({ data, branches, rooms, defaultBranchId, onSa
                         type="checkbox"
                         checked={checked}
                         onChange={() => toggleBranch(b.id)}
-                        style={{ accentColor: "var(--accent)" }}
+                        style={CHECKBOX_STYLE}
                       />
                       {b.name}
                       <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text3)", fontFamily: "var(--mono)" }}>
@@ -308,6 +388,142 @@ export default function RoomModal({ data, branches, rooms, defaultBranchId, onSa
               กำหนดเวลาทำการปกติของห้องนี้ — ใช้ "ตารางห้อง/เครื่อง" สำหรับวันพิเศษ
             </span>
           </div>
+
+          {/* หัตถการที่เตียงนี้รับ */}
+          {isEdit && currentIds && (
+            <div className="form-group full">
+              <label className="form-label">
+                🔒 หัตถการที่ {autoName} รับได้
+                <span style={{ fontWeight: 400, color: "var(--text3)", marginLeft: 8 }}>
+                  เลือกแล้ว {procIds.length} / {selectableProcs.length - genericIds.size}
+                </span>
+              </label>
+
+              <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                <button className="btn btn-sm btn-secondary" onClick={() => setProcIds(selectableProcs.filter((p) => !genericIds.has(p.id)).map((p) => p.id))}>
+                  เลือกทั้งหมด
+                </button>
+                <button className="btn btn-sm btn-secondary" onClick={() => setProcIds([])}>
+                  ไม่เลือกเลย
+                </button>
+                {currentIds.length > 0 && (
+                  <button className="btn btn-sm btn-secondary" onClick={() => setProcIds(currentIds.filter((id) => !genericIds.has(id)))}>
+                    คืนค่าเดิม
+                  </button>
+                )}
+              </div>
+
+              <div style={{
+                maxHeight: 220, overflowY: "auto",
+                border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                padding: 8, display: "flex", flexDirection: "column", gap: 2,
+              }}>
+                {selectableProcs.map((p) => {
+                  const isGeneric = genericIds.has(p.id);
+                  const checked = isGeneric ? procIds.length > 0 : procIds.includes(p.id);
+                  return (
+                    <label
+                      key={p.id}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "6px 10px", borderRadius: 6,
+                        cursor: isGeneric ? "default" : "pointer",
+                        background: checked ? "var(--accent-soft)" : "transparent",
+                        fontSize: 13, fontWeight: checked ? 600 : 400,
+                        opacity: isGeneric ? 0.75 : 1,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={isGeneric}
+                        onChange={() => toggleProc(p.id)}
+                        style={CHECKBOX_STYLE}
+                      />
+                      {p.name}
+                      {isGeneric && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text3)", background: "var(--surface3)", borderRadius: 4, padding: "1px 6px" }}>
+                          ทุกเตียง
+                        </span>
+                      )}
+                      <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text3)", fontFamily: "var(--mono)" }}>
+                        {p.blocks * 5} นาที
+                      </span>
+                    </label>
+                  );
+                })}
+                {selectableProcs.length === 0 && (
+                  <span style={{ fontSize: 12, color: "var(--text3)", padding: "6px 10px" }}>
+                    ยังไม่มีหัตถการประเภท {type}
+                  </span>
+                )}
+              </div>
+
+              {noteConflicts.length > 0 && (() => {
+                const inRoom = noteConflicts.filter((c) => c.sources.includes("room")).map((c) => c.name);
+                const inSched = noteConflicts.filter((c) => c.sources.includes("schedule")).map((c) => c.name);
+                const schedDays = futureScheduleNotes.length;
+                return (
+                  <div style={{
+                    marginTop: 8, padding: "9px 11px", borderRadius: 6,
+                    border: "1.5px solid var(--amber)", background: "rgba(217,119,6,0.10)",
+                    fontSize: 11.5, lineHeight: 1.6, color: "var(--amber)", fontWeight: 600,
+                  }}>
+                    ⚠️ ล็อกกับหมายเหตุพูดคนละอย่าง — หน้าร้านอ่านหมายเหตุเป็นหลัก
+                    <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontWeight: 400 }}>
+                      {inRoom.length > 0 && (
+                        <li>หมายเหตุประจำเตียง (ช่องด้านล่าง) พูดถึง <strong>{inRoom.join(", ")}</strong> แต่ไม่ได้ติ๊ก</li>
+                      )}
+                      {inSched.length > 0 && (
+                        <li>โน้ตรายวันใน "ตารางห้อง/เครื่อง" ({schedDays} วันข้างหน้า) พูดถึง <strong>{inSched.join(", ")}</strong> แต่ไม่ได้ติ๊ก</li>
+                      )}
+                    </ul>
+                    <div style={{ display: "flex", gap: 8, marginTop: 7, flexWrap: "wrap", alignItems: "center" }}>
+                      {inRoom.length > 0 && previewLabel && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => setNotes(`รับเฉพาะ ${previewLabel}`)}
+                          style={{ fontSize: 11 }}
+                        >
+                          ✍️ เขียนหมายเหตุใหม่จากล็อก
+                        </button>
+                      )}
+                      <span style={{ fontWeight: 400, fontSize: 11 }}>
+                        {inSched.length > 0
+                          ? "โน้ตรายวันแก้ที่หน้า ตารางห้อง/เครื่อง — หรือปล่อยไว้ก็ได้ ป้าย 🔒 จะโชว์เหนือโน้ตใน Timeline อยู่แล้ว"
+                          : "หรือติ๊กเพิ่มให้ตรงกับหมายเหตุ"}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {previewLabel && (
+                <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--text2)" }}>
+                  หน้าร้านจะเห็นป้าย{" "}
+                  <span style={{ fontWeight: 800, color: "var(--accent)", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: 6, padding: "1px 7px" }}>
+                    🔒 {previewLabel}
+                  </span>
+                  {" "}เหนือหมายเหตุใน Timeline และหน้าลงคิว
+                </div>
+              )}
+
+              {procIds.length === 0 ? (
+                <span style={{ fontSize: 11, fontWeight: 700, color: configuredAtOpen ? "var(--amber)" : "var(--text3)", lineHeight: 1.6, display: "block", marginTop: 5 }}>
+                  {configuredAtOpen
+                    ? "⚠️ ไม่เลือกเลย = ล้างการตั้งค่าเตียงนี้ กลับไปรับทุกหัตถการประเภท " + type + " เหมือนเดิม"
+                    : "ยังไม่ได้ตั้งค่า — เตียงนี้รับทุกหัตถการประเภท " + type + " ตามกติกาเดิม"}
+                </span>
+              ) : (
+                <span style={{ fontSize: 11, color: "var(--text3)", lineHeight: 1.6, display: "block", marginTop: 5 }}>
+                  ลงคิวได้เฉพาะที่ติ๊กไว้ — ตรวจทั้งหน้าบันทึกคิวและ Timeline
+                  <br />
+                  คิวที่จองไว้แล้วไม่ถูกแตะ ระบบตรวจเฉพาะคิวที่ลงใหม่หรือย้ายเตียง
+                </span>
+              )}
+            </div>
+          )}
 
           {/* หมายเหตุ */}
           <div className="form-group full">

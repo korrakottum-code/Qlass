@@ -298,6 +298,63 @@ export async function deleteRoom(id) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// ROOM PROCEDURES (เตียงไหนรับหัตถการอะไร)
+// ═══════════════════════════════════════════════════════════
+
+export async function fetchRoomProcedures() {
+  const { data, error } = await supabase
+    .from("room_procedures")
+    .select("room_id, procedure_id");
+
+  if (error) throw error;
+  return data.map((row) => ({
+    roomId: row.room_id,
+    procedureId: row.procedure_id,
+  }));
+}
+
+/**
+ * เขียนทับชุดหัตถการของเตียงหนึ่ง ๆ ให้เท่ากับ procedureIds ที่ส่งมา
+ *
+ * ลบเฉพาะส่วนเกินแล้วเพิ่มเฉพาะส่วนขาด ไม่ใช่ล้างทั้งเตียงแล้วใส่ใหม่ — ระหว่างที่ล้าง
+ * เตียงจะไม่มีแถวเลย ซึ่งฝั่งแอปแปลว่า "ยังไม่ตั้งค่า" (เปิดรับทุกหัตถการตามกติกาเดิม)
+ * ถ้ามีคนลงคิวแทรกจังหวะนั้นพอดีจะลงผิดเตียงได้
+ */
+export async function setRoomProcedures(roomId, procedureIds) {
+  const wanted = Array.from(new Set(procedureIds || []));
+
+  const { data: existingRows, error: readError } = await supabase
+    .from("room_procedures")
+    .select("procedure_id")
+    .eq("room_id", roomId);
+  if (readError) throw readError;
+
+  const existing = new Set((existingRows || []).map((row) => row.procedure_id));
+  const toAdd = wanted.filter((id) => !existing.has(id));
+  const toRemove = [...existing].filter((id) => !wanted.includes(id));
+
+  if (toAdd.length > 0) {
+    const { error } = await supabase
+      .from("room_procedures")
+      .insert(toAdd.map((procedureId) => ({ room_id: roomId, procedure_id: procedureId })));
+    if (error) throw error;
+  }
+
+  if (toRemove.length > 0) {
+    const { error } = await supabase
+      .from("room_procedures")
+      .delete()
+      .eq("room_id", roomId)
+      .in("procedure_id", toRemove);
+    if (error) throw error;
+  }
+
+  return wanted.map((procedureId) => ({ roomId, procedureId }));
+}
+
+export const getAllRoomProcedures = fetchRoomProcedures;
+
+// ═══════════════════════════════════════════════════════════
 // ROOM SCHEDULES
 // ═══════════════════════════════════════════════════════════
 
