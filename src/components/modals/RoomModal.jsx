@@ -3,6 +3,12 @@ import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
 import { ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK } from "../../utils/constants";
 import { blockToTime } from "../../utils/helpers";
 
+function sameSet(a, b) {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((id) => set.has(id));
+}
+
 // คำนวณชื่อห้องถัดไป เช่น M01, M02, T03
 function getNextRoomName(rooms, branchId, type) {
   if (!branchId || !type) return "";
@@ -39,7 +45,10 @@ function TimeSpinner({ label, value, onChange, min, max }) {
   );
 }
 
-export default function RoomModal({ data, branches, rooms, defaultBranchId, onSave, onClose, bulkMode: initBulk }) {
+export default function RoomModal({
+  data, branches, rooms, defaultBranchId, onSave, onClose, bulkMode: initBulk,
+  procedures = [], roomProcedureIndex,
+}) {
   const isEdit = !!data?.id;
   const [bulkMode, setBulkMode] = useState(!!initBulk);
   const [branchId, setBranchId] = useState(data?.branchId || defaultBranchId || "");
@@ -50,6 +59,27 @@ export default function RoomModal({ data, branches, rooms, defaultBranchId, onSa
   const [notes, setNotes] = useState(data?.notes || "");
   const [openBlock, setOpenBlock] = useState(data?.openBlock ?? WORK_START_BLOCK);
   const [closeBlock, setCloseBlock] = useState(data?.closeBlock ?? WORK_END_BLOCK);
+
+  // หัตถการที่เตียงนี้รับ — แก้ได้เฉพาะตอนแก้ไขเตียงที่มีอยู่แล้ว (ตอนสร้างใหม่ยังไม่มี
+  // room id ให้ผูก และเตียงใหม่ที่ไม่มีแถวเลยจะวิ่งกติกาเดิมไปก่อนอยู่แล้ว)
+  const currentIds = useMemo(() => {
+    if (!isEdit || !roomProcedureIndex) return null;
+    const set = roomProcedureIndex.get(data.id);
+    return set ? [...set] : [];
+  }, [isEdit, data, roomProcedureIndex]);
+
+  const [procIds, setProcIds] = useState(() => currentIds || []);
+  const configuredAtOpen = (currentIds || []).length > 0;
+
+  // หัตถการที่เลือกได้ = ฝั่งเดียวกับประเภทเตียง (M/T) — ข้ามฝั่งไม่มีทางถูก
+  const selectableProcs = useMemo(
+    () => procedures.filter((p) => p.roomType === type),
+    [procedures, type]
+  );
+
+  function toggleProc(id) {
+    setProcIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
 
   function toggleBranch(id) {
     setSelectedBranchIds((prev) =>
@@ -95,6 +125,8 @@ export default function RoomModal({ data, branches, rooms, defaultBranchId, onSa
           notes: notes.trim(),
           openBlock,
           closeBlock,
+          // ส่งเฉพาะตอนแก้ไข และเฉพาะเมื่อมีการเปลี่ยนจริง — undefined = ไม่แตะของเดิม
+          procedureIds: isEdit && currentIds && !sameSet(currentIds, procIds) ? procIds : undefined,
         });
       }
     }
@@ -308,6 +340,83 @@ export default function RoomModal({ data, branches, rooms, defaultBranchId, onSa
               กำหนดเวลาทำการปกติของห้องนี้ — ใช้ "ตารางห้อง/เครื่อง" สำหรับวันพิเศษ
             </span>
           </div>
+
+          {/* หัตถการที่เตียงนี้รับ */}
+          {isEdit && currentIds && (
+            <div className="form-group full">
+              <label className="form-label">
+                🔒 หัตถการที่ {autoName} รับได้
+                <span style={{ fontWeight: 400, color: "var(--text3)", marginLeft: 8 }}>
+                  เลือกแล้ว {procIds.length} / {selectableProcs.length}
+                </span>
+              </label>
+
+              <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                <button className="btn btn-sm btn-secondary" onClick={() => setProcIds(selectableProcs.map((p) => p.id))}>
+                  เลือกทั้งหมด
+                </button>
+                <button className="btn btn-sm btn-secondary" onClick={() => setProcIds([])}>
+                  ไม่เลือกเลย
+                </button>
+                {currentIds.length > 0 && (
+                  <button className="btn btn-sm btn-secondary" onClick={() => setProcIds(currentIds)}>
+                    คืนค่าเดิม
+                  </button>
+                )}
+              </div>
+
+              <div style={{
+                maxHeight: 220, overflowY: "auto",
+                border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                padding: 8, display: "flex", flexDirection: "column", gap: 2,
+              }}>
+                {selectableProcs.map((p) => {
+                  const checked = procIds.includes(p.id);
+                  return (
+                    <label
+                      key={p.id}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "6px 10px", borderRadius: 6, cursor: "pointer",
+                        background: checked ? "var(--accent-soft)" : "transparent",
+                        fontSize: 13, fontWeight: checked ? 600 : 400,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleProc(p.id)}
+                        style={{ accentColor: "var(--accent)" }}
+                      />
+                      {p.name}
+                      <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text3)", fontFamily: "var(--mono)" }}>
+                        {p.blocks * 5} นาที
+                      </span>
+                    </label>
+                  );
+                })}
+                {selectableProcs.length === 0 && (
+                  <span style={{ fontSize: 12, color: "var(--text3)", padding: "6px 10px" }}>
+                    ยังไม่มีหัตถการประเภท {type}
+                  </span>
+                )}
+              </div>
+
+              {procIds.length === 0 ? (
+                <span style={{ fontSize: 11, fontWeight: 700, color: configuredAtOpen ? "var(--amber)" : "var(--text3)", lineHeight: 1.6, display: "block", marginTop: 5 }}>
+                  {configuredAtOpen
+                    ? "⚠️ ไม่เลือกเลย = ล้างการตั้งค่าเตียงนี้ กลับไปรับทุกหัตถการประเภท " + type + " เหมือนเดิม"
+                    : "ยังไม่ได้ตั้งค่า — เตียงนี้รับทุกหัตถการประเภท " + type + " ตามกติกาเดิม"}
+                </span>
+              ) : (
+                <span style={{ fontSize: 11, color: "var(--text3)", lineHeight: 1.6, display: "block", marginTop: 5 }}>
+                  ลงคิวได้เฉพาะที่ติ๊กไว้ — ตรวจทั้งหน้าบันทึกคิวและ Timeline
+                  <br />
+                  คิวที่จองไว้แล้วไม่ถูกแตะ ระบบตรวจเฉพาะคิวที่ลงใหม่หรือย้ายเตียง
+                </span>
+              )}
+            </div>
+          )}
 
           {/* หมายเหตุ */}
           <div className="form-group full">

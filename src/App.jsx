@@ -790,6 +790,16 @@ export default function App() {
     } else if (data.id) {
       const updated = await updateRoom(data.id, data);
       setRooms(prev => prev.map(r => r.id === data.id ? updated : r));
+
+      // procedureIds เป็น undefined = ผู้ใช้ไม่ได้แตะรายการหัตถการ อย่าเขียนทับ
+      if (data.procedureIds !== undefined) {
+        await setRoomProceduresDB(data.id, data.procedureIds);
+        setRoomProcedures((prev) => [
+          ...prev.filter((link) => link.roomId !== data.id),
+          ...data.procedureIds.map((procedureId) => ({ roomId: data.id, procedureId })),
+        ]);
+      }
+
       setModal(null);
       showToast("success", "บันทึกห้องเรียบร้อย");
     } else {
@@ -1392,7 +1402,7 @@ export default function App() {
             <PromoModal data={modal.data} procedures={procedures} onSave={savePromo} onClose={() => setModal(null)} />
           )}
           {modal.type === "room" && (
-            <RoomModal data={modal.data} branches={filteredBranches} rooms={filteredRooms} defaultBranchId={modal.defaultBranchId} bulkMode={modal.bulkMode} onSave={saveRoom} onClose={() => setModal(null)} />
+            <RoomModal data={modal.data} branches={filteredBranches} rooms={filteredRooms} defaultBranchId={modal.defaultBranchId} bulkMode={modal.bulkMode} procedures={procedures} roomProcedureIndex={roomProcedureIndex} onSave={saveRoom} onClose={() => setModal(null)} />
           )}
           {modal.type === "schedule" && (
             <ScheduleModal data={modal.data} rooms={filteredRooms} branches={filteredBranches} onSave={saveRoomSchedule} onClose={() => setModal(null)} />

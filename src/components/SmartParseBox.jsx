@@ -24,13 +24,13 @@ function getEntries(parsed) {
   }).map((k) => [k, parsed.fields[k]]);
 }
 
-export default function SmartParseBox({ branches, rooms = [], procedures, promos, hints, onApply }) {
+export default function SmartParseBox({ branches, rooms = [], procedures, promos, hints, roomProcedureIndex, onApply }) {
   const [text, setText] = useState("");
   const [parsed, setParsed] = useState(null);
   const [open, setOpen] = useState(false);
   const [applying, setApplying] = useState(false);
 
-  const context = { branches, rooms, procedures, promos, hints };
+  const context = { branches, rooms, procedures, promos, hints, roomProcedureIndex };
 
   const runParse = useCallback((val) => {
     if (val.trim().length > 5) {
@@ -40,7 +40,7 @@ export default function SmartParseBox({ branches, rooms = [], procedures, promos
     } else {
       setParsed(null);
     }
-  }, [branches, rooms, procedures, promos, hints]);
+  }, [branches, rooms, procedures, promos, hints, roomProcedureIndex]);
 
   function handleChange(e) {
     setText(e.target.value);

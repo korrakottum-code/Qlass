@@ -256,6 +256,7 @@ export default function BookingPage({
         procedures={procedures}
         promos={promos}
         hints={parseHints || { branchAliases: {}, procedureAliases: {}, promoAliases: {}, roomAliases: {}, procedureToRoom: {} }}
+        roomProcedureIndex={roomProcedureIndex}
         onApply={onSmartApply}
         onBulkApply={onBulkBooking}
       />

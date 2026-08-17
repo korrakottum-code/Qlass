@@ -1,4 +1,5 @@
 // ─── Smart Text Parser + Learning Engine (v2 — เทพ edition) ───
+import { isProcedureAllowedInRoom } from "./roomProcedures";
 
 function buddhistToAD(y) {
   if (y < 100) y += 2500; // 69 → 2569
@@ -78,7 +79,7 @@ const PROCEDURE_ALIASES = {
  * - ข้อความหมายเหตุ (note)
  * - เลขไทย (๐-๙)
  */
-export function parseBookingText(rawText, { branches, procedures, promos, rooms = [], hints = {} }) {
+export function parseBookingText(rawText, { branches, procedures, promos, rooms = [], hints = {}, roomProcedureIndex = new Map() }) {
   const normalized = normalizeText(rawText);
   const lines = normalized.split(/\n/).map((l) => l.trim()).filter(Boolean);
   // จัด "บรรทัดรวม" สำหรับ single-line paste (เช่น "แนน 0921234567 Filler อุบล 5/4/69 15:00")
@@ -442,20 +443,23 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
     const key = result.branchId
       ? `${result.procedureId}_${result.branchId}`
       : result.procedureId;
+    const proc = procedures.find((p) => p.id === result.procedureId);
     const learnedRoom = procToRoom[key] || procToRoom[result.procedureId];
-    if (learnedRoom) {
+    // นามแฝงที่เคยเรียนไว้อาจชี้ไปเตียงที่ตอนนี้ไม่รับหัตถการนี้แล้ว (ผังเปลี่ยนหลังจาก
+    // ที่เรียนไป) — ต้องเช็คก่อน ไม่งั้นตัวช่วยจะกรอกเตียงที่บันทึกไม่ผ่านให้ทุกครั้ง
+    const learnedRoomObj = learnedRoom ? rooms.find((r) => r.id === learnedRoom) : null;
+    if (learnedRoomObj && isProcedureAllowedInRoom(roomProcedureIndex, learnedRoomObj, proc)) {
       result.roomId = learnedRoom;
       confidence.roomId = "high";
-    } else {
-      const proc = procedures.find((p) => p.id === result.procedureId);
-      if (proc?.roomType) {
-        const branchRooms = rooms.filter(
-          (r) => r.type === proc.roomType && (!result.branchId || r.branchId === result.branchId)
-        );
-        if (branchRooms.length >= 1) {
-          result.roomId = branchRooms[0].id;
-          confidence.roomId = branchRooms.length === 1 ? "high" : "med";
-        }
+    } else if (proc?.roomType) {
+      const branchRooms = rooms.filter(
+        (r) =>
+          (!result.branchId || r.branchId === result.branchId) &&
+          isProcedureAllowedInRoom(roomProcedureIndex, r, proc)
+      );
+      if (branchRooms.length >= 1) {
+        result.roomId = branchRooms[0].id;
+        confidence.roomId = branchRooms.length === 1 ? "high" : "med";
       }
     }
   }
