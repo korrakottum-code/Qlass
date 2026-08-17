@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { blockToTime } from "../utils/helpers";
+import { isRoomConfigured, unservedProcedures } from "../utils/roomProcedures";
 
-export default function RoomsPage({ branches, rooms, onAdd, onBulkAdd, onEdit, onDelete, onReorder }) {
+export default function RoomsPage({
+  branches, rooms, onAdd, onBulkAdd, onEdit, onDelete, onReorder,
+  procedures = [], roomProcedureIndex = new Map(),
+}) {
   // หุบทุกสาขาไว้ก่อน (default) — กดหัวข้อสาขาเพื่อขยายดูรายละเอียด
   const [expanded, setExpanded] = useState({});
   const toggleExpanded = (branchId) => setExpanded((prev) => ({ ...prev, [branchId]: !prev[branchId] }));
@@ -18,6 +22,11 @@ export default function RoomsPage({ branches, rooms, onAdd, onBulkAdd, onEdit, o
         const mCount = bRooms.filter((r) => r.type === "M").length;
         const tCount = bRooms.filter((r) => r.type === "T").length;
         const isOpen = !!expanded[branch.id];
+        // เตียงที่ล็อกหัตถการไว้แล้วกี่เตียง — ที่ยังไม่ตั้งค่าจะรับทุกอย่างตามประเภทห้องเหมือนเดิม
+        const lockedCount = bRooms.filter((r) => isRoomConfigured(roomProcedureIndex, r.id)).length;
+        // หัตถการที่ไม่มีเตียงไหนในสาขานี้รองรับเลย — กับดักหลักของการตั้งค่าเอง
+        // ติ๊กพลาดช่องเดียวแล้วหัตถการนั้นลงคิวไม่ได้ทั้งสาขาโดยไม่มีใครรู้จนลูกค้าโทรมา
+        const unserved = unservedProcedures(roomProcedureIndex, rooms, procedures, branch.id);
         return (
           <div className="card" key={branch.id} style={{ marginBottom: 14 }}>
             <div
@@ -31,6 +40,16 @@ export default function RoomsPage({ branches, rooms, onAdd, onBulkAdd, onEdit, o
                   {bRooms.length} ห้อง
                   <span style={{ color: "var(--blue)", marginLeft: 6, fontWeight: 600 }}>M:{mCount}</span>
                   <span style={{ color: "var(--green)", marginLeft: 4, fontWeight: 600 }}>T:{tCount}</span>
+                  {lockedCount > 0 && (
+                    <span style={{ color: "var(--accent)", marginLeft: 6, fontWeight: 600 }}>
+                      🔒 {lockedCount}/{bRooms.length}
+                    </span>
+                  )}
+                  {unserved.length > 0 && (
+                    <span style={{ color: "var(--red)", marginLeft: 6, fontWeight: 700 }}>
+                      ⚠️ {unserved.length}
+                    </span>
+                  )}
                 </span>
                 <button
                   className="btn btn-sm btn-primary"
@@ -40,6 +59,19 @@ export default function RoomsPage({ branches, rooms, onAdd, onBulkAdd, onEdit, o
                 </button>
               </div>
             </div>
+            {isOpen && unserved.length > 0 && (
+              <div style={{
+                margin: "0 14px 12px", padding: "10px 14px",
+                borderRadius: "var(--radius-sm)", border: "1.5px solid var(--red)",
+                background: "rgba(220,38,38,0.08)", fontSize: 12.5, lineHeight: 1.6,
+                color: "var(--red)", fontWeight: 600,
+              }}>
+                ⚠️ สาขานี้ยังไม่มีเตียงไหนรับ: {unserved.map((p) => p.name).join(", ")}
+                <div style={{ fontWeight: 400, marginTop: 3 }}>
+                  หัตถการเหล่านี้จะลงคิวที่สาขานี้ไม่ได้เลย — เปิดเตียงที่ควรรับแล้วติ๊กเพิ่ม
+                </div>
+              </div>
+            )}
             {!isOpen ? null : bRooms.length === 0 ? (
               <div className="card-body">
                 <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text3)", fontSize: 13 }}>
@@ -54,6 +86,7 @@ export default function RoomsPage({ branches, rooms, onAdd, onBulkAdd, onEdit, o
                     <th>ชื่อห้อง</th>
                     <th>ประเภท</th>
                     <th>เวลาทำการ</th>
+                    <th>หัตถการที่รับ</th>
                     <th>หมายเหตุ</th>
                     <th style={{ textAlign: "center" }}>จัดการ</th>
                   </tr>
@@ -121,6 +154,31 @@ export default function RoomsPage({ branches, rooms, onAdd, onBulkAdd, onEdit, o
                         ) : (
                           <span style={{ fontSize: 12, color: "var(--text3)" }}>—</span>
                         )}
+                      </td>
+                      <td>
+                        {(() => {
+                          const set = roomProcedureIndex.get(r.id);
+                          if (!set || set.size === 0) {
+                            return (
+                              <span style={{ fontSize: 11.5, color: "var(--text3)", fontStyle: "italic" }}>
+                                ยังไม่ตั้งค่า — รับทุกหัตถการ {r.type}
+                              </span>
+                            );
+                          }
+                          const names = procedures.filter((p) => set.has(p.id)).map((p) => p.name);
+                          return (
+                            <span
+                              title={names.join(", ")}
+                              style={{
+                                fontSize: 11.5, fontWeight: 700, color: "var(--accent)",
+                                background: "var(--accent-soft)", borderRadius: 5,
+                                padding: "2px 8px", display: "inline-block",
+                              }}
+                            >
+                              🔒 {names.length} รายการ
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td style={{ fontSize: 12, color: "var(--text2)" }}>{r.notes || "—"}</td>
                       <td>

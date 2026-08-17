@@ -1174,6 +1174,8 @@ export default function App() {
               <RoomsPage
                 branches={filteredBranches}
                 rooms={filteredRooms}
+                procedures={procedures}
+                roomProcedureIndex={roomProcedureIndex}
                 onAdd={(branchId) => setModal({ type: "room", data: null, defaultBranchId: branchId })}
                 onBulkAdd={() => setModal({ type: "room", data: null, bulkMode: true })}
                 onEdit={(r) => setModal({ type: "room", data: r })}

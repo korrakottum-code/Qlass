@@ -5,7 +5,6 @@ import { readFileSync } from "node:fs";
 const read = (name) => readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), "utf8");
 
 const schema = read("20260817103000_room_procedures.sql");
-const seed = read("20260817140000_seed_room_procedures.sql");
 const rpc = read("20260817160000_create_queue_v1_room_procedure_lock.sql");
 const previousRpc = read("20260817050038_goal13b_create_queue_v1_confirmed_status.sql");
 
@@ -23,25 +22,6 @@ test("ลบโครงเก่าที่ค้างใน production ท�
 test("เปิด RLS และให้สิทธิ์ระดับเดียวกับ rooms/procedures", () => {
   assert.match(schema, /alter table public\.room_procedures enable row level security/i);
   assert.match(schema, /grant select, insert, update, delete on table public\.room_procedures to anon, authenticated/i);
-});
-
-test("seed ครอบทั้ง 29 สาขา", () => {
-  const branches = new Set([...seed.matchAll(/\('(Class [^']+)','T\d\d','(?:DT|HIFU|PICO|HIFUPICO)'\)/g)].map((m) => m[1]));
-  assert.equal(branches.size, 29);
-});
-
-test("seed ใส่หัตถการกลางให้ทุกเตียง — ไม่งั้นหน้าร้านปิดช่องเวลาไม่ได้", () => {
-  // 'ปิดคิว' คือตัวปิดช่องเวลา ไม่ใช่หัตถการ ถ้าหลุดจากกลุ่ม ANY เตียงเครื่องจะปิดคิวไม่ได้
-  assert.match(seed, /when p\.name in \('ปิดคิว','โปรประจำเดือน \(T\)','Influencer'\) then 'ANY'/);
-  assert.match(seed, /pg\.grp = 'ANY'/);
-});
-
-test("seed ล้มทั้ง migration ถ้าตั้งค่าไม่ครบ แทนที่จะเงียบ", () => {
-  assert.match(seed, /raise exception 'ตั้งค่าไม่ครบ/);
-});
-
-test("seed แยกหัตถการชื่อซ้ำด้วย room_type — ปิดคิว/Influencer มีทั้งเวอร์ชัน M และ T", () => {
-  assert.match(seed, /where p\.room_type = 'T'/i);
 });
 
 test("ฝั่งเซิร์ฟเวอร์บล็อกหัตถการที่เตียงไม่รับ", () => {
