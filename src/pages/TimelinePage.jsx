@@ -2,11 +2,12 @@ import { useState, useMemo } from "react";
 import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed } from "../utils/helpers";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
+import { proceduresForRoom } from "../utils/roomProcedures";
 
 // สถานะที่ยังถือว่า "ยังไม่ยืนยัน" — ปุ่มย้ายเข้าคิวรอใน popover ใช้ได้เฉพาะกลุ่มนี้
 const UNCONFIRMED_STATUSES = ["pending", "follow1", "follow2", "follow3"];
 
-export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], currentUser, onSubmitBooking, onAbandonDraft, onEditQueue, onMoveToWaitingQueue, showToast }) {
+export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], roomProcedureIndex, currentUser, onSubmitBooking, onAbandonDraft, onEditQueue, onMoveToWaitingQueue, showToast }) {
   const [date, setDate] = useState(getTodayStr());
   // เลือกได้ทีละสาขา (ไม่มี "ทุกสาขา" — เรนเดอร์ทุกห้องทุกสาขาพร้อมกันทำให้หน้าช้ามาก)
   // ถ้ายังไม่เคยเลือก หรือสาขาที่เลือกไว้หายไป (branches โหลดเสร็จ/เปลี่ยน) ใช้สาขาแรกแทน
@@ -411,7 +412,10 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
       {bookingForm && (() => {
         const room = rooms.find((r) => r.id === bookingForm.roomId);
         const branch = branches.find((b) => b.id === bookingForm.branchId);
-        const roomProcs = procedures.filter((p) => !p.roomType || p.roomType === room?.type);
+        // เตียงที่ตั้งค่าแล้วเหลือเฉพาะที่เตียงรับ ที่ยังไม่ตั้งค่าได้ผลเท่ากติกาเดิม M/T
+        const roomProcs = room
+          ? proceduresForRoom(roomProcedureIndex, room, procedures)
+          : procedures;
         const selectedProc = procedures.find((p) => p.id === bookingForm.procedureId);
         const availablePromos = promos.filter((p) => !p.procedureId || p.procedureId === bookingForm.procedureId);
         return (
