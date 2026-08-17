@@ -32,9 +32,12 @@ test("gate requires flag, allowlisted operator, and a pending booking", () => {
   assert.equal(shouldUseServerQueueCreate({ enabled: true, allowlist, user: null, form }), false);
   // Operator ID comparison is case-insensitive.
   assert.equal(shouldUseServerQueueCreate({ enabled: true, allowlist, user: { id: OPERATOR.toUpperCase() }, form }), true);
-  // create_queue_v1 only accepts a new pending booking; anything else is
-  // out of canary scope before any server call happens.
-  assert.equal(shouldUseServerQueueCreate({ enabled: true, allowlist, user, form: { status: "confirmed" } }), false);
+  // Goal 13b: create_queue_v1 accepts a new pending OR same-day-confirmed
+  // booking (the client's own auto-confirm rule); anything else is out of
+  // canary scope before any server call happens.
+  assert.equal(shouldUseServerQueueCreate({ enabled: true, allowlist, user, form: { status: "confirmed" } }), true);
+  assert.equal(shouldUseServerQueueCreate({ enabled: true, allowlist, user, form: { status: "cancelled" } }), false);
+  assert.equal(shouldUseServerQueueCreate({ enabled: true, allowlist, user, form: { status: "waiting_queue" } }), false);
   assert.equal(shouldUseServerQueueCreate({ enabled: true, allowlist, user, form: {} }), true);
 });
 
@@ -73,7 +76,11 @@ test("payload maps the booking form to the create_queue_v1 contract", () => {
   // and the PR #119 regression both depend on optional fields staying null).
   assert.equal(buildServerQueuePayload({ price: "" }).price, null);
   assert.equal(buildServerQueuePayload({}).customer_type, "new");
-  assert.equal(buildServerQueuePayload({ status: "confirmed" }).status, "pending");
+  // Goal 13b: status passes through as-is (the gate above already restricted
+  // it to 'pending' or 'confirmed' before this is ever called) instead of
+  // being silently forced to 'pending' regardless of the caller's intent.
+  assert.equal(buildServerQueuePayload({ status: "confirmed" }).status, "confirmed");
+  assert.equal(buildServerQueuePayload({}).status, "pending");
 });
 
 test("server rejection codes map to actionable Thai messages", () => {
