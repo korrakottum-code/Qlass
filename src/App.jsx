@@ -788,17 +788,28 @@ export default function App() {
       setModal(null);
       showToast("success", `สร้าง ${data.items.length} ห้องเรียบร้อย 🚀`);
     } else if (data.id) {
-      const updated = await updateRoom(data.id, data);
-      setRooms(prev => prev.map(r => r.id === data.id ? updated : r));
-
+      // เขียนรายการหัตถการ "ก่อน" ข้อมูลห้อง — ถ้าตาราง room_procedures ยังไม่มี (migration
+      // ยังไม่รัน) จะล้มตั้งแต่ต้น ไม่เหลือสภาพครึ่ง ๆ กลาง ๆ ที่เวลา/หมายเหตุลงไปแล้วแต่ล็อกไม่ลง
       // procedureIds เป็น undefined = ผู้ใช้ไม่ได้แตะรายการหัตถการ อย่าเขียนทับ
       if (data.procedureIds !== undefined) {
-        await setRoomProceduresDB(data.id, data.procedureIds);
+        try {
+          await setRoomProceduresDB(data.id, data.procedureIds);
+        } catch (error) {
+          // PGRST205 = PostgREST หาตารางไม่เจอ → migration ยังไม่ได้รัน บอกให้ตรงจุด
+          if (error?.code === "PGRST205") {
+            showToast("error", "ระบบล็อกเตียงยังไม่เปิดใช้ (ยังไม่ได้รัน migration room_procedures) — ยังไม่ได้บันทึกอะไร");
+            return;
+          }
+          throw error;
+        }
         setRoomProcedures((prev) => [
           ...prev.filter((link) => link.roomId !== data.id),
           ...data.procedureIds.map((procedureId) => ({ roomId: data.id, procedureId })),
         ]);
       }
+
+      const updated = await updateRoom(data.id, data);
+      setRooms(prev => prev.map(r => r.id === data.id ? updated : r));
 
       setModal(null);
       showToast("success", "บันทึกห้องเรียบร้อย");
@@ -1404,7 +1415,7 @@ export default function App() {
             <PromoModal data={modal.data} procedures={procedures} onSave={savePromo} onClose={() => setModal(null)} />
           )}
           {modal.type === "room" && (
-            <RoomModal data={modal.data} branches={filteredBranches} rooms={filteredRooms} defaultBranchId={modal.defaultBranchId} bulkMode={modal.bulkMode} procedures={procedures} roomProcedureIndex={roomProcedureIndex} onSave={saveRoom} onClose={() => setModal(null)} />
+            <RoomModal data={modal.data} branches={filteredBranches} rooms={filteredRooms} defaultBranchId={modal.defaultBranchId} bulkMode={modal.bulkMode} procedures={procedures} roomProcedureIndex={roomProcedureIndex} roomSchedules={filteredRoomSchedules} onSave={saveRoom} onClose={() => setModal(null)} />
           )}
           {modal.type === "schedule" && (
             <ScheduleModal data={modal.data} rooms={filteredRooms} branches={filteredBranches} onSave={saveRoomSchedule} onClose={() => setModal(null)} />

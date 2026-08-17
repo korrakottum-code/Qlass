@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
 import { ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK } from "../../utils/constants";
 import { blockToTime } from "../../utils/helpers";
-import { ALWAYS_ALLOWED_PROCEDURE_NAMES } from "../../utils/roomProcedures";
+import { ALWAYS_ALLOWED_PROCEDURE_NAMES, noteMentionsOutsideSelection, roomLockLabel, buildRoomProcedureIndex } from "../../utils/roomProcedures";
 
 // index.css ตั้ง input { width:100% } กับทุก input — checkbox ที่ไม่บอกความกว้างเองจะยืดเต็ม
 // แถวแล้วดันข้อความไปชิดขวา ต้องล็อกขนาดกลับให้เท่ากล่องติ๊กจริง
@@ -52,7 +52,7 @@ function TimeSpinner({ label, value, onChange, min, max }) {
 
 export default function RoomModal({
   data, branches, rooms, defaultBranchId, onSave, onClose, bulkMode: initBulk,
-  procedures = [], roomProcedureIndex,
+  procedures = [], roomProcedureIndex, roomSchedules = [],
 }) {
   const isEdit = !!data?.id;
   const [bulkMode, setBulkMode] = useState(!!initBulk);
@@ -90,17 +90,34 @@ export default function RoomModal({
   const [procIds, setProcIds] = useState(() => (currentIds || []).filter((id) => !genericIds.has(id)));
   const configuredAtOpen = (currentIds || []).length > 0;
 
-  // หมายเหตุของเตียง (ช่องข้อความอิสระด้านล่าง) เอ่ยถึงเครื่องที่ยังไม่ได้ติ๊กไหม
-  // ตรวจแบบหยาบด้วยชื่อหัตถการที่โผล่ในข้อความ — จับได้เฉพาะเคสตรงตัว ("รับ Pico") ไม่ใช่
-  // ทุกวิธีเขียน แต่พอเตือนเคสที่เจอบ่อยสุด: โน้ตเก่าค้างจากผังก่อน
-  const noteConflicts = useMemo(() => {
-    if (procIds.length === 0) return [];
-    const text = notes.toLowerCase();
-    return selectableProcs
-      .filter((p) => !genericIds.has(p.id) && !procIds.includes(p.id))
-      .filter((p) => p.name.length >= 3 && text.includes(p.name.toLowerCase()))
-      .map((p) => p.name);
-  }, [notes, procIds, selectableProcs, genericIds]);
+  // โน้ตรายวันของเตียงนี้ตั้งแต่วันนี้ไป — หน้าร้านเห็นอันนี้ในหัวคอลัมน์ Timeline บ่อยกว่า
+  // โน้ตประจำเตียงเสียอีก จึงต้องเช็คด้วย ไม่ใช่แค่ช่องหมายเหตุในหน้าต่างนี้
+  const futureScheduleNotes = useMemo(() => {
+    if (!isEdit) return [];
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    return (roomSchedules || [])
+      .filter((s) => s.roomId === data.id && s.note && (!s.date || s.date >= todayStr))
+      .map((s) => s.note);
+  }, [isEdit, data, roomSchedules]);
+
+  // ตัวเตือนตัวเดียว ครอบทั้งโน้ตประจำเตียงและโน้ตรายวัน (กติกาอยู่ใน roomProcedures.js)
+  const noteConflicts = useMemo(
+    () => noteMentionsOutsideSelection({
+      selectedIds: procIds,
+      roomNote: notes,
+      scheduleNotes: futureScheduleNotes,
+      procedures: selectableProcs,
+    }),
+    [procIds, notes, futureScheduleNotes, selectableProcs]
+  );
+
+  // ป้ายที่ล็อกจะสร้างจากชุดที่ติ๊กอยู่ตอนนี้ — ใช้ทั้งพรีวิวและปุ่ม "เขียนหมายเหตุใหม่จากล็อก"
+  const previewLabel = useMemo(() => {
+    if (!isEdit || procIds.length === 0) return null;
+    const idx = buildRoomProcedureIndex([...procIds, ...genericIds].map((pid) => ({ roomId: data.id, procedureId: pid })));
+    return roomLockLabel(idx, data, selectableProcs);
+  }, [isEdit, procIds, genericIds, data, selectableProcs]);
 
   function toggleProc(id) {
     if (genericIds.has(id)) return;
@@ -442,16 +459,53 @@ export default function RoomModal({
                 )}
               </div>
 
-              {noteConflicts.length > 0 && (
-                <div style={{
-                  marginTop: 8, padding: "8px 11px", borderRadius: 6,
-                  border: "1.5px solid var(--amber)", background: "rgba(217,119,6,0.10)",
-                  fontSize: 11.5, lineHeight: 1.55, color: "var(--amber)", fontWeight: 600,
-                }}>
-                  ⚠️ หมายเหตุของเตียงนี้พูดถึง <strong>{noteConflicts.join(", ")}</strong> แต่ยังไม่ได้ติ๊ก
-                  <div style={{ fontWeight: 400, marginTop: 2 }}>
-                    หน้าร้านอ่านหมายเหตุเป็นหลัก ถ้าล็อกกับหมายเหตุพูดคนละอย่างจะสับสน — ติ๊กเพิ่ม หรือแก้หมายเหตุด้านล่างให้ตรงกัน
+              {noteConflicts.length > 0 && (() => {
+                const inRoom = noteConflicts.filter((c) => c.sources.includes("room")).map((c) => c.name);
+                const inSched = noteConflicts.filter((c) => c.sources.includes("schedule")).map((c) => c.name);
+                const schedDays = futureScheduleNotes.length;
+                return (
+                  <div style={{
+                    marginTop: 8, padding: "9px 11px", borderRadius: 6,
+                    border: "1.5px solid var(--amber)", background: "rgba(217,119,6,0.10)",
+                    fontSize: 11.5, lineHeight: 1.6, color: "var(--amber)", fontWeight: 600,
+                  }}>
+                    ⚠️ ล็อกกับหมายเหตุพูดคนละอย่าง — หน้าร้านอ่านหมายเหตุเป็นหลัก
+                    <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontWeight: 400 }}>
+                      {inRoom.length > 0 && (
+                        <li>หมายเหตุประจำเตียง (ช่องด้านล่าง) พูดถึง <strong>{inRoom.join(", ")}</strong> แต่ไม่ได้ติ๊ก</li>
+                      )}
+                      {inSched.length > 0 && (
+                        <li>โน้ตรายวันใน "ตารางห้อง/เครื่อง" ({schedDays} วันข้างหน้า) พูดถึง <strong>{inSched.join(", ")}</strong> แต่ไม่ได้ติ๊ก</li>
+                      )}
+                    </ul>
+                    <div style={{ display: "flex", gap: 8, marginTop: 7, flexWrap: "wrap", alignItems: "center" }}>
+                      {inRoom.length > 0 && previewLabel && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => setNotes(`รับเฉพาะ ${previewLabel}`)}
+                          style={{ fontSize: 11 }}
+                        >
+                          ✍️ เขียนหมายเหตุใหม่จากล็อก
+                        </button>
+                      )}
+                      <span style={{ fontWeight: 400, fontSize: 11 }}>
+                        {inSched.length > 0
+                          ? "โน้ตรายวันแก้ที่หน้า ตารางห้อง/เครื่อง — หรือปล่อยไว้ก็ได้ ป้าย 🔒 จะโชว์เหนือโน้ตใน Timeline อยู่แล้ว"
+                          : "หรือติ๊กเพิ่มให้ตรงกับหมายเหตุ"}
+                      </span>
+                    </div>
                   </div>
+                );
+              })()}
+
+              {previewLabel && (
+                <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--text2)" }}>
+                  หน้าร้านจะเห็นป้าย{" "}
+                  <span style={{ fontWeight: 800, color: "var(--accent)", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: 6, padding: "1px 7px" }}>
+                    🔒 {previewLabel}
+                  </span>
+                  {" "}เหนือหมายเหตุใน Timeline และหน้าลงคิว
                 </div>
               )}
 

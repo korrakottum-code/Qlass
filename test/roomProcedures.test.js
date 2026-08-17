@@ -10,6 +10,7 @@ import {
   shouldEnforceOnSave,
   ALWAYS_ALLOWED_PROCEDURE_NAMES,
   roomLockLabel,
+  noteMentionsOutsideSelection,
 } from "../src/utils/roomProcedures.js";
 
 // ผังจำลองตามของจริง: สาขาหนึ่งมีเตียง D/T สองเตียง + Hifu + Pico อย่างละหนึ่ง
@@ -210,4 +211,58 @@ test("ป้ายยาวเกิน 3 ตัวถูกย่อ — หั
   const many = ["a", "b", "c", "d", "e"].map((id) => ({ id, name: id.toUpperCase(), roomType: "T" }));
   const idx = buildRoomProcedureIndex(many.map((p) => ({ roomId: "t1", procedureId: p.id })));
   assert.equal(roomLockLabel(idx, room("t1"), many), "A, B, C +2");
+});
+
+// ─── ตัวเตือนตัวเดียว ครอบโน้ตทั้งสองแหล่ง ───
+
+test("โน้ตประจำเตียงพูดถึงหัตถการที่ไม่ได้ติ๊ก → เตือน แหล่ง room", () => {
+  const out = noteMentionsOutsideSelection({
+    selectedIds: ["hifu"], roomNote: "รับ Pico ทุกวัน คิวสุดท้าย 18:30", scheduleNotes: [], procedures,
+  });
+  assert.deepEqual(out, [{ name: "Pico", sources: ["room"] }]);
+});
+
+test("โน้ตรายวันพูดถึงหัตถการที่ไม่ได้ติ๊ก → เตือน แหล่ง schedule", () => {
+  const out = noteMentionsOutsideSelection({
+    selectedIds: ["hifu"], roomNote: "", scheduleNotes: ["📅 รับเฉพาะคิว pico", "หมอบอล 12:00-20:00"], procedures,
+  });
+  assert.deepEqual(out, [{ name: "Pico", sources: ["schedule"] }]);
+});
+
+test("ขัดทั้งสองแหล่ง → รายงานทั้งคู่ในรายการเดียว พร้อมระบุแหล่งของแต่ละตัว", () => {
+  const out = noteMentionsOutsideSelection({
+    selectedIds: ["hifu"], roomNote: "รับ pico", scheduleNotes: ["Diode/Treatment", "รับ Pico"], procedures,
+  });
+  assert.deepEqual(out.map((c) => c.name), ["Diode", "Pico", "Treatment"]);
+  assert.deepEqual(out.find((c) => c.name === "Pico").sources, ["room", "schedule"]);
+  assert.deepEqual(out.find((c) => c.name === "Diode").sources, ["schedule"]);
+});
+
+test("โน้ตพูดถึงหัตถการที่ติ๊กแล้ว → ไม่เตือน (ตรงกันดี)", () => {
+  const out = noteMentionsOutsideSelection({
+    selectedIds: ["pico"], roomNote: "รับ Pico", scheduleNotes: ["Pico"], procedures,
+  });
+  assert.deepEqual(out, []);
+});
+
+test("ยังไม่ติ๊กอะไรเลย → ไม่เตือน (เตียงยังไม่ตั้งค่า ไม่มีล็อกให้ขัด)", () => {
+  const out = noteMentionsOutsideSelection({
+    selectedIds: [], roomNote: "รับ Pico", scheduleNotes: ["Hifu"], procedures,
+  });
+  assert.deepEqual(out, []);
+});
+
+test("หัตถการกลางในโน้ตไม่นับเป็นความขัดแย้ง — ทุกเตียงมีอยู่แล้ว", () => {
+  const withGeneric = [...procedures, { id: "close", name: "ปิดคิว", roomType: "T" }];
+  const out = noteMentionsOutsideSelection({
+    selectedIds: ["hifu"], roomNote: "ปิดคิว 12:00", scheduleNotes: [], procedures: withGeneric,
+  });
+  assert.deepEqual(out, []);
+});
+
+test("ตัวย่ออย่าง D/T ไม่ถูกจับ — ข้อจำกัดที่รู้ไว้ ไม่ใช่บั๊ก", () => {
+  const out = noteMentionsOutsideSelection({
+    selectedIds: ["hifu"], roomNote: "D/T อื่นๆ", scheduleNotes: [], procedures,
+  });
+  assert.deepEqual(out, []);
 });

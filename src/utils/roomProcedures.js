@@ -161,3 +161,35 @@ export function roomLockLabel(index, room, procedures) {
   const shown = names.slice(0, 3).join(", ");
   return names.length > 3 ? `${shown} +${names.length - 3}` : shown;
 }
+
+/**
+ * โน้ตพูดถึงหัตถการที่ "ไม่ได้อยู่ในชุดที่เลือก" ตัวไหนบ้าง — ใช้เตือนตอนตั้งค่า
+ *
+ * โน้ตหัตถการมีสองแหล่ง: ประจำเตียง (rooms.notes) และรายวัน (room_schedules.note)
+ * หน้าร้านอ่านทั้งคู่เป็นความจริง ถ้าล็อกบอก Hifu แต่โน้ตยังเขียน "รับ Pico" คนจะเชื่อโน้ต
+ * ตัวเตือนตัวเดียวจึงต้องครอบทั้งสองแหล่ง ไม่ใช่แค่ช่องหมายเหตุในหน้าต่างเดียวกัน
+ *
+ * ตรวจแบบหยาบด้วยชื่อหัตถการที่โผล่ในข้อความ (ตัวพิมพ์เล็กใหญ่ไม่สน) — จับ "รับ Pico"
+ * ได้ แต่ไม่จับตัวย่ออย่าง "D/T" ตั้งใจให้จับเคสที่เจอบ่อยสุด (โน้ตค้างจากผังเก่า)
+ * ไม่ได้อ้างว่าจับทุกวิธีเขียน ส่วนที่ครอบทุกเคสจริงคือ chip 🔒 ที่ไม่ขึ้นกับโน้ตเลย
+ *
+ * คืน [{ name, sources: ["room" | "schedule"] }] เรียงตามชื่อ
+ */
+export function noteMentionsOutsideSelection({ selectedIds, roomNote, scheduleNotes, procedures }) {
+  const chosen = new Set(selectedIds || []);
+  if (chosen.size === 0) return [];
+  const roomText = String(roomNote || "").toLowerCase();
+  const schedText = (scheduleNotes || []).map((n) => String(n || "").toLowerCase());
+
+  return (procedures || [])
+    .filter((p) => !chosen.has(p.id) && !ALWAYS_ALLOWED_PROCEDURE_NAMES.includes(p.name) && p.name.length >= 3)
+    .map((p) => {
+      const key = p.name.toLowerCase();
+      const sources = [];
+      if (roomText.includes(key)) sources.push("room");
+      if (schedText.some((t) => t.includes(key))) sources.push("schedule");
+      return sources.length ? { name: p.name, sources } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
