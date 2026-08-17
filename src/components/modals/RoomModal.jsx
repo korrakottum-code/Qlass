@@ -4,6 +4,10 @@ import { ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK } from "../../utils/consta
 import { blockToTime } from "../../utils/helpers";
 import { ALWAYS_ALLOWED_PROCEDURE_NAMES } from "../../utils/roomProcedures";
 
+// index.css ตั้ง input { width:100% } กับทุก input — checkbox ที่ไม่บอกความกว้างเองจะยืดเต็ม
+// แถวแล้วดันข้อความไปชิดขวา ต้องล็อกขนาดกลับให้เท่ากล่องติ๊กจริง
+const CHECKBOX_STYLE = { accentColor: "var(--accent)", width: 16, height: 16, flexShrink: 0, margin: 0 };
+
 function sameSet(a, b) {
   if (a.length !== b.length) return false;
   const set = new Set(a);
@@ -207,7 +211,7 @@ export default function RoomModal({
                         type="checkbox"
                         checked={checked}
                         onChange={() => toggleBranch(b.id)}
-                        style={{ accentColor: "var(--accent)" }}
+                        style={CHECKBOX_STYLE}
                       />
                       {b.name}
                       <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text3)", fontFamily: "var(--mono)" }}>
@@ -405,7 +409,7 @@ export default function RoomModal({
                         checked={checked}
                         disabled={isGeneric}
                         onChange={() => toggleProc(p.id)}
-                        style={{ accentColor: "var(--accent)" }}
+                        style={CHECKBOX_STYLE}
                       />
                       {p.name}
                       {isGeneric && (
