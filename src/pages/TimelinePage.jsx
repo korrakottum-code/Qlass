@@ -6,7 +6,7 @@ import { useSubmissionLock } from "../hooks/useSubmissionLock";
 // สถานะที่ยังถือว่า "ยังไม่ยืนยัน" — ปุ่มย้ายเข้าคิวรอใน popover ใช้ได้เฉพาะกลุ่มนี้
 const UNCONFIRMED_STATUSES = ["pending", "follow1", "follow2", "follow3"];
 
-export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], currentUser, onSubmitBooking, onEditQueue, onMoveToWaitingQueue, showToast }) {
+export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], currentUser, onSubmitBooking, onAbandonDraft, onEditQueue, onMoveToWaitingQueue, showToast }) {
   const [date, setDate] = useState(getTodayStr());
   // เลือกได้ทีละสาขา (ไม่มี "ทุกสาขา" — เรนเดอร์ทุกห้องทุกสาขาพร้อมกันทำให้หน้าช้ามาก)
   // ถ้ายังไม่เคยเลือก หรือสาขาที่เลือกไว้หายไป (branches โหลดเสร็จ/เปลี่ยน) ใช้สาขาแรกแทน
@@ -17,6 +17,14 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   const [popup, setPopup] = useState(null); // { q, room, block, x, y }
   const [bookingForm, setBookingForm] = useState(null); // mini booking popup form
   const { isSaving: saving, run: runBookingSubmit } = useSubmissionLock();
+
+  // Goal 13: closing the popup without a successful save abandons this draft —
+  // a stale request ID left over from a failed attempt must not be reused for
+  // the next customer's booking (see fix/goal13-request-id-reset-on-cancel).
+  function closeBookingForm() {
+    onAbandonDraft?.();
+    setBookingForm(null);
+  }
 
   function navigate(dir) {
     const d = new Date(date);
@@ -408,14 +416,14 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
         const availablePromos = promos.filter((p) => !p.procedureId || p.procedureId === bookingForm.procedureId);
         return (
           <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
-            onClick={() => setBookingForm(null)}>
+            onClick={closeBookingForm}>
             <div style={{ background: "var(--surface)", borderRadius: 16, padding: "22px 26px", minWidth: "min(340px, calc(100vw - 24px))", maxWidth: 440, width: "94%", maxHeight: "92dvh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.22)" }}
               onClick={(e) => e.stopPropagation()}>
 
               {/* Header */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <div style={{ fontWeight: 800, fontSize: 15, color: "var(--accent)" }}>📝 บันทึกคิว</div>
-                <button onClick={() => setBookingForm(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--text3)" }}>✕</button>
+                <button onClick={closeBookingForm} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--text3)" }}>✕</button>
               </div>
 
               {/* Room + Time info */}
@@ -509,7 +517,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
 
               {/* Actions */}
               <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
-                <button className="btn btn-secondary" onClick={() => setBookingForm(null)}>ยกเลิก</button>
+                <button className="btn btn-secondary" onClick={closeBookingForm}>ยกเลิก</button>
                 <button
                   className="btn btn-primary"
                   disabled={saving || !bookingForm.name.trim() || !bookingForm.phone.trim()}

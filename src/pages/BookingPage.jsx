@@ -21,7 +21,7 @@ function StatusBadge({ status }) {
 }
 
 export default function BookingPage({
-  form, setForm, editingQueueId, setEditingQueueId,
+  form, setForm, editingQueueId, setEditingQueueId, onAbandonDraft,
   branches, rooms, procedures, promos,
   roomSchedules, queues,
   onSubmit, onQuickAddPromo, onSmartApply, onBulkBooking, parseHints, todayStats,
@@ -225,6 +225,10 @@ export default function BookingPage({
   }
 
   function handleClear() {
+    // Goal 13: a cleared draft is abandoned, not retried — a stale request ID
+    // left over from a failed attempt must not be reused for whatever the
+    // operator types next (see fix/goal13-request-id-reset-on-cancel).
+    onAbandonDraft?.();
     setForm(getEmptyBookingForm());
     setEditingQueueId(null);
   }

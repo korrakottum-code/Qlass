@@ -1017,6 +1017,7 @@ export default function App() {
                 setForm={setForm}
                 editingQueueId={editingQueueId}
                 setEditingQueueId={setEditingQueueId}
+                onAbandonDraft={() => { serverQueueRequestIdRef.current = null; }}
                 branches={filteredBranches}
                 rooms={filteredRooms}
                 procedures={procedures}
@@ -1150,6 +1151,7 @@ export default function App() {
                 roomSchedules={filteredRoomSchedules}
                 currentUser={currentUser}
                 showToast={showToast}
+                onAbandonDraft={() => { timelineServerQueueRequestIdRef.current = null; }}
                 onSubmitBooking={async (bookingForm) => {
                   // room schedule closure check
                   if (bookingForm.roomId && bookingForm.date) {
