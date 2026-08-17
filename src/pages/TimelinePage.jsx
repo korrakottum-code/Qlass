@@ -200,7 +200,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                         </div>
                         {lockLabel && (
                           <div style={{ marginTop: 3, display: "flex", justifyContent: "center" }}>
-                            <span title="เตียงนี้ลงได้เฉพาะหัตถการเหล่านี้ (ตั้งค่าที่หน้าจัดการห้อง)" style={{ fontSize: 10.5, fontWeight: 800, color: "var(--accent)", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: 6, padding: "1px 7px", lineHeight: 1.5, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <span title="เตียงนี้ลงได้เฉพาะหัตถการเหล่านี้ (ตั้งค่าที่หน้าจัดการห้อง)" style={{ fontSize: 10.5, fontWeight: 800, color: "var(--accent)", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: 6, padding: "1px 7px", lineHeight: 1.45, maxWidth: "100%", wordBreak: "break-word" }}>
                               🔒 {lockLabel}
                             </span>
                           </div>
@@ -217,6 +217,18 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                               ⛔ ปิดรับคิววันนี้
                             </span>
                           </div>
+                        )}
+                        {roomScheduleNotes.length > 0 && (
+                          <div style={{ marginTop: 3, display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 6 }}>
+                            {roomScheduleNotes.map((note, idx) => (
+                              <span key={`${note}_${idx}`} style={{ fontSize: 11, fontWeight: 800, color: "#ffffff", lineHeight: 1.5, background: "#dc2626", border: "1px solid #b91c1c", borderRadius: 6, padding: "2px 8px" }}>
+                                📅 {note}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {cnt > 0 && (
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", marginTop: 2 }}>{cnt} คิว</div>
                         )}
                         {/* ปุ่มสั่งการ — ขึ้นต้นด้วยคำกริยา "กด" และทำหน้าตาให้เป็นปุ่มจริง
                             ไม่ใช่ป้ายแบน ๆ แบบ chip อื่นในหัวคอลัมน์ */}
@@ -244,18 +256,6 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                           <div style={{ marginTop: 2, fontSize: 9.5, color: "var(--text3)", lineHeight: 1.4 }}>
                             เปิดคืนที่หน้าตารางห้อง/เครื่อง
                           </div>
-                        )}
-                        {roomScheduleNotes.length > 0 && (
-                          <div style={{ marginTop: 3, display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 6 }}>
-                            {roomScheduleNotes.map((note, idx) => (
-                              <span key={`${note}_${idx}`} style={{ fontSize: 11, fontWeight: 800, color: "#ffffff", lineHeight: 1.5, background: "#dc2626", border: "1px solid #b91c1c", borderRadius: 6, padding: "2px 8px" }}>
-                                📅 {note}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {cnt > 0 && (
-                          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", marginTop: 2 }}>{cnt} คิว</div>
                         )}
                       </th>
                     );
