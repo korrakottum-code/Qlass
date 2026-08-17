@@ -26,7 +26,7 @@ import { fetchAuthenticatedStaff, fetchLoginDirectory, getReleaseStatus, getServ
 import { recordClientDiagnostic } from "./utils/clientDiagnostics";
 import { controlledRefreshEnabled, getControlledRefreshStatus, serverDiagnosticsEnabled, flushClientDiagnostics as flushDiagnostics } from "./utils/clientObservability";
 import { reconcileRealtimeQueue, reconcileRealtimeById, reconcileRealtimeRoomProcedure } from "./utils/realtimeQueueState";
-import { getBedSwitchState, buildBedSwitchClosure, listQueuesOnBed } from "./utils/bedSwitch";
+import { getBedSwitchState, buildBedSwitchClosure, listQueuesOnBed, isSamePlacement } from "./utils/bedSwitch";
 import { buildRescheduledQueue } from "./utils/rescheduleQueue";
 import { buildRoomProcedureIndex, isProcedureAllowedInRoom, shouldEnforceOnSave, procedureRoomBlockMessage } from "./utils/roomProcedures";
 
@@ -474,7 +474,12 @@ export default function App() {
     }
 
     // ─── ตรวจสอบห้องปิดรับคิว ───
-    if (form.roomId && form.date) {
+    // ข้ามเมื่อกำลังแก้คิวเดิมที่ยังอยู่ตำแหน่งเดิมทุกมิติ (เตียง/วัน/เวลา/ความยาว/หัตถการ)
+    // ไม่งั้นปิดเตียงแล้วคิวที่จองไว้ก่อนหน้าจะแก้แม้แต่ชื่อหรือเบอร์ไม่ได้เลย
+    // ถ้าย้ายเตียง เลื่อนเวลา หรือเปลี่ยนหัตถการ = วางคิวใหม่ ต้องตรวจตามปกติ
+    const editingSamePlacement = editingQueueId
+      && isSamePlacement(queues.find((q) => q.id === editingQueueId), form);
+    if (form.roomId && form.date && !editingSamePlacement) {
       const roomObj = rooms.find((r) => r.id === form.roomId);
       const proc = procedures.find((p) => p.id === form.procedureId);
       const dur = form.durationBlocks ?? proc?.blocks ?? 1;
