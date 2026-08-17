@@ -28,3 +28,11 @@ hn_sync/.env
 hn_sync/cookies.json
 hn_sync/sync_state.json
 supabase/.temp/
+.vercel
+
+# ไฟล์ env จริงทุกตัว (.env, .env.local, .env.production ฯลฯ) — ห้ามเข้า git
+.env*
+# ยกเว้น template ที่ต้องอยู่ในรีโป: ถ้าไม่ยกเว้น วันหน้าใครเพิ่ม .env.example ใหม่
+# หรือเอาออกจาก index แล้ว add กลับ จะถูกกลืนเงียบ ๆ โดยกฎบรรทัดบน
+!.env.example
+!**/.env.example
