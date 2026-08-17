@@ -8,6 +8,7 @@ import {
   getBedSwitchState,
   listQueuesOnBed,
   summarizeQueueList,
+  isSamePlacement,
 } from "../src/utils/bedSwitch.js";
 import { roleAtLeastForRoles } from "../src/utils/accessControl.js";
 import { readFileSync } from "node:fs";
@@ -164,4 +165,35 @@ test("roleAtLeast ตอบ false เมื่อไม่มี user / role แ
 test("role ต่ำกว่าไม่นับว่าอย่างน้อยเท่ากับ role สูงกว่า", () => {
   assert.equal(roleAtLeast({ role: "branch_manager" }, "admin"), false);
   assert.equal(roleAtLeast({ role: "admin" }, "admin"), true);
+});
+
+// ─── isSamePlacement: กันปิดเตียงแล้วคิวเดิมแก้ชื่อ/เบอร์ไม่ได้ ───
+
+const q0 = { id: "q1", roomId: "r1", date: D, timeBlock: 144, durationBlocks: 3, procedureId: "diode", name: "เดิม", phone: "0800000000" };
+
+test("แก้ชื่อ/เบอร์/ราคา แต่ตำแหน่งเดิม → ถือว่าอยู่ที่เดิม (ข้ามด่านห้องปิด)", () => {
+  assert.equal(isSamePlacement(q0, { ...q0, name: "ใหม่", phone: "0899999999", price: 500 }), true);
+});
+
+test("ย้ายเตียง / เลื่อนเวลา / เปลี่ยนวัน / เปลี่ยนความยาว / เปลี่ยนหัตถการ → ไม่ใช่ที่เดิม", () => {
+  assert.equal(isSamePlacement(q0, { ...q0, roomId: "r2" }), false);
+  assert.equal(isSamePlacement(q0, { ...q0, timeBlock: 150 }), false);
+  assert.equal(isSamePlacement(q0, { ...q0, date: "2026-08-21" }), false);
+  assert.equal(isSamePlacement(q0, { ...q0, durationBlocks: 6 }), false);
+  assert.equal(isSamePlacement(q0, { ...q0, procedureId: "pico" }), false);
+});
+
+test("สร้างคิวใหม่ (ไม่มีของเดิม) → ไม่ใช่ที่เดิม ต้องตรวจเสมอ", () => {
+  assert.equal(isSamePlacement(null, q0), false);
+  assert.equal(isSamePlacement(q0, null), false);
+});
+
+test("null กับ undefined ในฟิลด์เดียวกันถือว่าเท่ากัน — ฟอร์มกับแถว DB เก็บต่างชนิดกัน", () => {
+  assert.equal(isSamePlacement({ ...q0, durationBlocks: null }, { ...q0, durationBlocks: undefined }), true);
+  assert.equal(isSamePlacement({ ...q0, timeBlock: null }, { ...q0, timeBlock: undefined }), true);
+});
+
+test("ตำแหน่งเดิมแต่คนละคิว → ยังถือว่าที่เดิม (ผู้เรียกต้องส่งคิวที่กำลังแก้มาเอง)", () => {
+  // เอกสารพฤติกรรม: ฟังก์ชันเทียบตำแหน่งเท่านั้น ไม่เทียบ id — App.jsx หาคิวจาก editingQueueId แล้วส่งมา
+  assert.equal(isSamePlacement(q0, { ...q0, id: "อื่น" }), true);
 });

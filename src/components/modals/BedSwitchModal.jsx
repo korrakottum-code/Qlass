@@ -64,6 +64,8 @@ export default function BedSwitchModal({ room, date, bedState, queuesOnBed = [],
                 </div>
                 <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 6 }}>
                   จะยังปิดเตียงได้ แต่คิวเหล่านี้<strong>ไม่ถูกย้ายหรือยกเลิก</strong> — กรุณาโทรแจ้ง/ย้ายเอง
+                  <br />
+                  แก้ชื่อ/เบอร์/ราคาของคิวเหล่านี้ได้ปกติ แต่ถ้าจะ<strong>ย้ายเตียงหรือเลื่อนเวลา</strong> ต้องเปิดเตียงคืนก่อน
                 </div>
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5 }}>
                   {shown.map((q) => (

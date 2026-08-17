@@ -87,3 +87,24 @@ export function summarizeQueueList(list, cap = 8) {
   const all = list || [];
   return { shown: all.slice(0, cap), hiddenCount: Math.max(0, all.length - cap) };
 }
+
+/**
+ * คิวนี้ยังอยู่ "ที่เดิม เวลาเดิม" ไหม — ใช้ตัดสินว่าต้องตรวจกฎเรื่องเตียงปิดหรือไม่
+ *
+ * ปัญหาที่แก้: ด่าน "ห้องปิดรับคิว" เดิมบังคับกับทุกการบันทึก ไม่เว้นแม้แต่การแก้ชื่อหรือเบอร์
+ * ของคิวที่จองไว้ก่อนเตียงจะถูกปิด ทำให้ปิดเตียงแล้วคิวเดิมบนเตียงนั้นแก้อะไรไม่ได้เลย
+ * (ก่อนมีปุ่มปิดเตียงรายวันแทบไม่มีใครเจอ เพราะปิดเตียงต้องผ่าน 5 ขั้น — ปุ่มทำให้เจอง่ายขึ้นมาก)
+ *
+ * กติกาที่เจ้าของเคาะ: แก้เบอร์/ชื่อ/ราคาได้ แต่ถ้าย้ายเตียงหรือเปลี่ยนหัตถการต้องไปตามผัง
+ * ตอนนั้นว่าเตียงไหนรับได้ — เทียบ "ตำแหน่ง" ครบทุกมิติ (เตียง วัน เวลา ความยาว) ไม่ใช่แค่เตียง
+ * เพราะการเลื่อนเวลาเข้าไปในช่วงที่ปิดบางช่วง ก็คือการวางคิวใหม่ในที่ที่ปิด
+ */
+export function isSamePlacement(originalQueue, nextForm) {
+  if (!originalQueue || !nextForm) return false;
+  const same = (a, b) => (a ?? null) === (b ?? null);
+  return same(originalQueue.roomId, nextForm.roomId)
+    && same(originalQueue.date, nextForm.date)
+    && same(originalQueue.timeBlock, nextForm.timeBlock)
+    && same(originalQueue.durationBlocks, nextForm.durationBlocks)
+    && same(originalQueue.procedureId, nextForm.procedureId);
+}
