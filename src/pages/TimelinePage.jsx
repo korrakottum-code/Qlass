@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
-import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed } from "../utils/helpers";
+import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed, roleAtLeast } from "../utils/helpers";
+import { getBedSwitchState } from "../utils/bedSwitch";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
 import { proceduresForRoom, roomLockLabel } from "../utils/roomProcedures";
@@ -7,7 +8,7 @@ import { proceduresForRoom, roomLockLabel } from "../utils/roomProcedures";
 // สถานะที่ยังถือว่า "ยังไม่ยืนยัน" — ปุ่มย้ายเข้าคิวรอใน popover ใช้ได้เฉพาะกลุ่มนี้
 const UNCONFIRMED_STATUSES = ["pending", "follow1", "follow2", "follow3"];
 
-export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], roomProcedureIndex, currentUser, onSubmitBooking, onAbandonDraft, onEditQueue, onMoveToWaitingQueue, showToast }) {
+export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], roomProcedureIndex, currentUser, onSubmitBooking, onAbandonDraft, onEditQueue, onMoveToWaitingQueue, onToggleBedSwitch, showToast }) {
   const [date, setDate] = useState(getTodayStr());
   // เลือกได้ทีละสาขา (ไม่มี "ทุกสาขา" — เรนเดอร์ทุกห้องทุกสาขาพร้อมกันทำให้หน้าช้ามาก)
   // ถ้ายังไม่เคยเลือก หรือสาขาที่เลือกไว้หายไป (branches โหลดเสร็จ/เปลี่ยน) ใช้สาขาแรกแทน
@@ -100,6 +101,11 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
     if (date !== getTodayStr()) return 0;
     return dayQueues.filter((q) => q.branchId === filterBranch && q.roomId && q.timeBlock !== null && isOverdueUnconfirmed(q)).length;
   }, [dayQueues, date, filterBranch]);
+  // ปุ่มปิด/เปิดเตียงรายวัน — เฉพาะผู้จัดการสาขาขึ้นไป (แคชเชียร์เห็นสถานะ กดไม่ได้)
+  // และไม่โชว์สำหรับวันที่ผ่านไปแล้ว: ปิดเตียงย้อนหลังไม่มีความหมาย ลดโอกาสกดพลาด
+  const canToggleBed = roleAtLeast(currentUser, "branch_manager");
+  const isPastDay = date < getTodayStr();
+
   const ROW_H = 30;  // ความสูงแต่ละ block 5 นาที (ลดจาก 40 ให้เห็นช่วงเวลาได้มากขึ้นโดยไม่ต้องเลื่อน)
   const TIME_COL = 72; // คอลัมน์เวลาซ้าย
   // ความกว้างขั้นต่ำต่อห้อง — บนมือถือคอลัมน์จะไม่ถูกบีบจนอ่านชื่อไม่ออก
@@ -162,6 +168,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                     const roomScheduleNotes = roomScheduleNotesByRoomId[room.id] || [];
                     // ป้ายจากตัวล็อกจริง — วางไว้เหนือโน้ตที่พิมพ์เอง จะได้ไม่มีวันขัดกัน
                     const lockLabel = roomLockLabel(roomProcedureIndex, room, procedures);
+                    const bed = getBedSwitchState(roomSchedules, room.id, date);
                     return (
                       <th key={room.id} style={{
                         padding: "6px 10px", textAlign: "center",
@@ -181,6 +188,36 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                             <span title="เตียงนี้ลงได้เฉพาะหัตถการเหล่านี้ (ตั้งค่าที่หน้าจัดการห้อง)" style={{ fontSize: 10.5, fontWeight: 800, color: "var(--accent)", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: 6, padding: "1px 7px", lineHeight: 1.5, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               🔒 {lockLabel}
                             </span>
+                          </div>
+                        )}
+                        {/* ปุ่ม/ป้ายปิดเตียงรายวัน — เตียงที่ปิดจากหน้าตารางห้อง (hand) โชว์ป้ายอย่างเดียว */}
+                        {(bed.state !== "open" || (canToggleBed && !isPastDay)) && (
+                          <div style={{ marginTop: 3, display: "flex", justifyContent: "center" }}>
+                            {bed.state === "closed_by_hand" || !canToggleBed ? (
+                              bed.state !== "open" && (
+                                <span
+                                  title={bed.state === "closed_by_hand" ? "ปิดไว้จากหน้าตารางห้อง/เครื่อง — เปิดคืนที่นั่น" : "เตียงปิดวันนี้"}
+                                  style={{ fontSize: 10.5, fontWeight: 800, color: "#b91c1c", background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 6, padding: "1px 7px", lineHeight: 1.5 }}
+                                >
+                                  ⛔ ปิดเตียง
+                                </span>
+                              )
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); onToggleBedSwitch?.(room, date); }}
+                                title={bed.state === "open" ? "ปิดเตียงนี้ทั้งวัน (เฉพาะวันที่ดูอยู่)" : "เปิดเตียงคืน (ลบเฉพาะรายการที่ปุ่มนี้สร้าง)"}
+                                style={{
+                                  fontSize: 10.5, fontWeight: 800, lineHeight: 1.5, cursor: "pointer",
+                                  padding: "1px 8px", borderRadius: 6,
+                                  border: bed.state === "open" ? "1px solid var(--border2)" : "1px solid #b91c1c",
+                                  background: bed.state === "open" ? "var(--surface)" : "#fee2e2",
+                                  color: bed.state === "open" ? "var(--text2)" : "#b91c1c",
+                                }}
+                              >
+                                {bed.state === "open" ? "🛏 ปิดเตียง" : "🔓 เปิดคืน"}
+                              </button>
+                            )}
                           </div>
                         )}
                         {roomScheduleNotes.length > 0 && (

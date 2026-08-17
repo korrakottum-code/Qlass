@@ -1,5 +1,6 @@
 import { DAY_START_BLOCK, DAY_END_BLOCK, ROLES } from "./constants";
-import { canViewAllBranchesForRoles, filterItemsByBranch } from "./accessControl";
+import { canViewAllBranchesForRoles, filterItemsByBranch, roleAtLeastForRoles } from "./accessControl";
+import { isFullDayClosure } from "./bedSwitch";
 
 // สถานะที่ไม่ควรนับว่า "ครองเวลา" อีกต่อไป — ยกเลิก/ไม่มาตามนัด/เลื่อนออกไปที่อื่นแล้ว
 // (คิวที่เลื่อนออก ยัง "ค้าง" อยู่ในระบบที่ช่องเวลาเดิมด้วยสถานะ "rescheduled"
@@ -123,6 +124,13 @@ export function calcCommission(doneQueues, staff) {
 }
 
 // Branch filtering based on user role
+// role ของ user อยู่ระดับ minRole หรือสูงกว่าไหม — ใช้ลำดับใน ROLES (ceo สูงสุด → cashier ต่ำสุด)
+export function roleAtLeast(user, minRole) {
+  return roleAtLeastForRoles(user, minRole, ROLES);
+}
+
+export { isFullDayClosure };
+
 export function canViewAllBranches(user) {
   return canViewAllBranchesForRoles(user, ROLES);
 }
@@ -141,10 +149,8 @@ export function isRoomBlockClosed(roomSchedules = [], roomId, date, block, room 
     (s) => s.roomId === roomId && (s.date === date || s.date === "")
   );
 
-  // 1. ปิดทั้งวัน (available = false, noteOnly = false, startBlock = null)
-  const isClosedAllDay = schedules.some(
-    (s) => !s.available && !s.noteOnly && (s.startBlock === null || s.startBlock === undefined)
-  );
+  // 1. ปิดทั้งวัน — คำนิยามเดียวอยู่ใน bedSwitch.isFullDayClosure (ปุ่มปิดเตียงใช้ตัวเดียวกัน)
+  const isClosedAllDay = schedules.some(isFullDayClosure);
   if (isClosedAllDay) return true;
 
   // 2. ปิดเฉพาะช่วงเวลา (available = false, noteOnly = false, startBlock <= block < endBlock)
