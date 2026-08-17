@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
-import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed, buildOverdueMoveNote } from "./utils/helpers";
+import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed, buildOverdueMoveNote, roleAtLeast, isActiveQueueStatus } from "./utils/helpers";
 import {
   getAllStaff, getAllBranches, getAllProcedures, getAllPromos, getAllRooms, getAllRoomSchedules, getAllQueues,
   getAllRoomProcedures, setRoomProcedures as setRoomProceduresDB,
+  mapRoomScheduleRow, mapRoomProcedureRow, deleteBedSwitchClosures,
   createBranch, updateBranch, deleteBranch as deleteBranchDB,
   createProcedure, updateProcedure, deleteProcedure as deleteProcedureDB,
   createPromo, updatePromo, deletePromo as deletePromoDB,
@@ -24,7 +25,8 @@ import { extractQueueCreateErrorCode, queueCreateErrorMessage } from "./utils/qu
 import { fetchAuthenticatedStaff, fetchLoginDirectory, getReleaseStatus, getServerSessionToken, loginWithPin, restoreServerSession, revokeServerSession, useServerSession, flushClientDiagnostics, createStaffServer, updateStaffServer, deleteStaffServer } from "./utils/sessionAuth";
 import { recordClientDiagnostic } from "./utils/clientDiagnostics";
 import { controlledRefreshEnabled, getControlledRefreshStatus, serverDiagnosticsEnabled, flushClientDiagnostics as flushDiagnostics } from "./utils/clientObservability";
-import { reconcileRealtimeQueue } from "./utils/realtimeQueueState";
+import { reconcileRealtimeQueue, reconcileRealtimeById, reconcileRealtimeRoomProcedure } from "./utils/realtimeQueueState";
+import { getBedSwitchState, buildBedSwitchClosure, listQueuesOnBed } from "./utils/bedSwitch";
 import { buildRescheduledQueue } from "./utils/rescheduleQueue";
 import { buildRoomProcedureIndex, isProcedureAllowedInRoom, shouldEnforceOnSave, procedureRoomBlockMessage } from "./utils/roomProcedures";
 
@@ -42,6 +44,7 @@ import RoomModal from "./components/modals/RoomModal";
 import ScheduleModal from "./components/modals/ScheduleModal";
 import StatusModal from "./components/modals/StatusModal";
 import StaffModal from "./components/modals/StaffModal";
+import BedSwitchModal from "./components/modals/BedSwitchModal";
 
 import BookingPage from "./pages/BookingPage";
 import QueueTablePage from "./pages/QueueTablePage";
@@ -258,6 +261,35 @@ export default function App() {
         try {
           setQueues((prev) => reconcileRealtimeQueue(prev, "DELETE", payload.old));
         } catch (e) { console.error("realtime DELETE error", e); }
+      })
+      // ─── ล็อกเตียง↔หัตถการ: ตั้งค่าบนเครื่องหนึ่ง เครื่องอื่นต้องเห็นทันที ไม่งั้นยังลงผิดเตียง
+      // ที่หน้าจอได้แล้วโดนเซิร์ฟเวอร์ปฏิเสธ (ตาราง PK ล้วน มีแค่ INSERT/DELETE)
+      // ถ้า publication ยังไม่ได้เพิ่มตารางนี้ handler จะเงียบ = เหมือนไม่มี realtime เดิม
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "room_procedures" }, (payload) => {
+        try {
+          setRoomProcedures((prev) => reconcileRealtimeRoomProcedure(prev, "INSERT", mapRoomProcedureRow(payload.new)));
+        } catch (e) { console.error("realtime room_procedures INSERT error", e); }
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "room_procedures" }, (payload) => {
+        try {
+          setRoomProcedures((prev) => reconcileRealtimeRoomProcedure(prev, "DELETE", mapRoomProcedureRow(payload.old)));
+        } catch (e) { console.error("realtime room_procedures DELETE error", e); }
+      })
+      // ─── ปิด/เปิดเตียงรายวัน: เตียงที่ปิดบนเครื่องหนึ่ง เครื่องอื่นต้องเห็นเป็นเทาภายในวินาที
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "room_schedules" }, (payload) => {
+        try {
+          setRoomSchedules((prev) => reconcileRealtimeById(prev, "INSERT", mapRoomScheduleRow(payload.new)));
+        } catch (e) { console.error("realtime room_schedules INSERT error", e); }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "room_schedules" }, (payload) => {
+        try {
+          setRoomSchedules((prev) => reconcileRealtimeById(prev, "UPDATE", mapRoomScheduleRow(payload.new)));
+        } catch (e) { console.error("realtime room_schedules UPDATE error", e); }
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "room_schedules" }, (payload) => {
+        try {
+          setRoomSchedules((prev) => reconcileRealtimeById(prev, "DELETE", { id: payload.old?.id }));
+        } catch (e) { console.error("realtime room_schedules DELETE error", e); }
       })
       .subscribe((status) => {
         console.log("[Realtime] status:", status);
@@ -831,7 +863,9 @@ export default function App() {
       for (const roomId of roomIds.slice(1)) {
         newItems.push(await createRoomSchedule({ ...rest, roomId, date: sharedDate }));
       }
-      if (newItems.length > 0) setRoomSchedules(prev => [...prev, ...newItems]);
+      // merge ตาม id ไม่ใช่ต่อท้ายตรง ๆ — พอ room_schedules มี realtime, echo อาจมาถึงก่อน
+      // HTTP กลับ ต่อท้ายตรง ๆ จะได้แถวซ้ำ (โน้ตแดงโผล่ 2 อัน) ผลเท่าเดิมเมื่อไม่มี echo
+      if (newItems.length > 0) setRoomSchedules(prev => newItems.reduce((acc, it) => reconcileRealtimeById(acc, "INSERT", it), prev));
       showToast("success", newItems.length > 0 ? `แก้ไขตารางเรียบร้อย (+${newItems.length} ห้องใหม่)` : "แก้ไขตารางเรียบร้อย");
     } else {
       const { roomIds, dates, ...rest } = data;
@@ -841,7 +875,7 @@ export default function App() {
           newItems.push(await createRoomSchedule({ ...rest, roomId, date }));
         }
       }
-      setRoomSchedules(prev => [...prev, ...newItems]);
+      setRoomSchedules(prev => newItems.reduce((acc, it) => reconcileRealtimeById(acc, "INSERT", it), prev));
       showToast("success", `เพิ่มตาราง ${newItems.length} รายการเรียบร้อย 🗓️`);
     }
     setModal(null);
@@ -922,6 +956,53 @@ export default function App() {
     setRooms(prev => prev.filter(r => r.id !== id));
     showToast("success", "ลบห้องแล้ว");
   }, [showToast]);
+
+  // ─── ปุ่มปิด/เปิดเตียงรายวัน (หัวคอลัมน์ Timeline) ───
+  // สิทธิ์เช็คซ้ำที่นี่แม้ UI จะซ่อนปุ่มให้แคชเชียร์แล้ว — defence in depth
+  const closeBedForDay = useCallback(async ({ roomId, date, note }) => {
+    if (!roleAtLeast(currentUser, "branch_manager")) {
+      showToast("error", "เฉพาะผู้จัดการสาขาขึ้นไปที่ปิดเตียงได้");
+      return false;
+    }
+    const st = getBedSwitchState(roomSchedules, roomId, date);
+    if (st.state !== "open") {
+      showToast("error", st.state === "closed_by_hand"
+        ? "เตียงนี้ถูกปิดไว้จากหน้าตารางห้อง/เครื่อง — เปิดคืนที่นั่น"
+        : "เตียงนี้ปิดอยู่แล้ว");
+      setModal(null);
+      return false;
+    }
+    let created;
+    try {
+      created = await createRoomSchedule(buildBedSwitchClosure({ roomId, date, note }));
+    } catch (error) {
+      // unique index บางส่วนใน migration 20260817200000: อีกคนกดปิดเตียงเดียวกันไปเสี้ยววินาทีก่อน
+      if (error?.code === "23505") {
+        showToast("error", "มีคนปิดเตียงนี้ไปแล้วเมื่อสักครู่");
+        setModal(null);
+        return false;
+      }
+      throw error; // ModalFooter จับแล้วโชว์ "บันทึกไม่สำเร็จ ข้อมูลยังอยู่ครบ"
+    }
+    setRoomSchedules((prev) => reconcileRealtimeById(prev, "INSERT", created));
+    setModal(null);
+    showToast("success", "ปิดเตียงวันนี้แล้ว");
+    return true;
+  }, [currentUser, roomSchedules, showToast]);
+
+  const openBedForDay = useCallback(async ({ roomId, date }) => {
+    if (!roleAtLeast(currentUser, "branch_manager")) {
+      showToast("error", "เฉพาะผู้จัดการสาขาขึ้นไปที่เปิดเตียงคืนได้");
+      return false;
+    }
+    // ลบที่ DB ด้วยเงื่อนไขครบ (source = bed_switch เท่านั้น) — ไม่พึ่ง id ใน local state
+    // เผื่อมีสองแถวจาก race จะได้ลบครบ และไม่มีทางแตะแถวที่คนกรอกเอง
+    const ids = await deleteBedSwitchClosures(roomId, date);
+    setRoomSchedules((prev) => ids.reduce((acc, id) => reconcileRealtimeById(acc, "DELETE", { id }), prev));
+    setModal(null);
+    showToast("success", ids.length > 0 ? "เปิดเตียงคืนแล้ว" : "เตียงเปิดอยู่แล้ว");
+    return true;
+  }, [currentUser, showToast]);
 
   const deleteRoomSchedule = useCallback(async (id) => {
     await deleteRoomScheduleDB(id);
@@ -1205,6 +1286,7 @@ export default function App() {
                 roomSchedules={filteredRoomSchedules}
                 roomProcedureIndex={roomProcedureIndex}
                 currentUser={currentUser}
+                onToggleBedSwitch={(room, date) => setModal({ type: "bed-switch", data: { room, date } })}
                 showToast={showToast}
                 onAbandonDraft={() => { timelineServerQueueRequestIdRef.current = null; }}
                 onSubmitBooking={async (bookingForm) => {
@@ -1420,6 +1502,24 @@ export default function App() {
           {modal.type === "schedule" && (
             <ScheduleModal data={modal.data} rooms={filteredRooms} branches={filteredBranches} onSave={saveRoomSchedule} onClose={() => setModal(null)} />
           )}
+          {modal.type === "bed-switch" && (() => {
+            // คำนวณสถานะ/รายชื่อคิวจาก state สด ตอน render — ถ้า realtime เปลี่ยนตอน modal เปิดอยู่จะเห็นทันที
+            const { room, date } = modal.data;
+            const bed = getBedSwitchState(roomSchedules, room.id, date);
+            const queuesOnBed = listQueuesOnBed({ queues, roomId: room.id, date, isActiveQueueStatus });
+            return (
+              <BedSwitchModal
+                room={room}
+                date={date}
+                bedState={bed.state}
+                queuesOnBed={queuesOnBed}
+                onClose={() => setModal(null)}
+                onSave={(payload) => bed.state === "closed_by_switch"
+                  ? openBedForDay({ roomId: room.id, date })
+                  : closeBedForDay({ roomId: room.id, date, note: payload?.note })}
+              />
+            );
+          })()}
           {modal.type === "status" && (
             <StatusModal data={modal.data} queue={modal.data} procedures={procedures} queues={queues} onSave={updateQueueStatus} onClose={() => setModal(null)} />
           )}

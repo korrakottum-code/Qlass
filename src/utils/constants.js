@@ -127,6 +127,7 @@ export const NAV_ITEMS = [
 ];
 
 // ─── ROLES & PERMISSIONS ───
+// ลำดับในอาร์เรย์นี้ = ระดับสิทธิ์ (บนสุดสูงสุด) — helpers.roleAtLeast อาศัยลำดับนี้ ห้ามสลับ
 export const ROLES = [
   {
     value: "ceo",

@@ -301,16 +301,17 @@ export async function deleteRoom(id) {
 // ROOM PROCEDURES (เตียงไหนรับหัตถการอะไร)
 // ═══════════════════════════════════════════════════════════
 
+export function mapRoomProcedureRow(row) {
+  return { roomId: row.room_id, procedureId: row.procedure_id };
+}
+
 export async function fetchRoomProcedures() {
   const { data, error } = await supabase
     .from("room_procedures")
     .select("room_id, procedure_id");
 
   if (error) throw error;
-  return data.map((row) => ({
-    roomId: row.room_id,
-    procedureId: row.procedure_id,
-  }));
+  return data.map(mapRoomProcedureRow);
 }
 
 /**
@@ -358,6 +359,23 @@ export const getAllRoomProcedures = fetchRoomProcedures;
 // ROOM SCHEDULES
 // ═══════════════════════════════════════════════════════════
 
+// mapper เดียวสำหรับทุกทางที่อ่านแถว room_schedules (fetch / create / update / realtime)
+// noteOnly ไม่ใช่คอลัมน์ — คำนวณจากค่าอื่นตอนอ่าน / source เป็นคอลัมน์ใหม่ (nullable) จาก
+// migration 20260817200000: null = แถวเดิม/กรอกเอง, 'bed_switch' = ปุ่มปิดเตียงบน Timeline
+export function mapRoomScheduleRow(s) {
+  return {
+    id: s.id,
+    roomId: s.room_id,
+    date: s.date || "",
+    available: s.available,
+    startBlock: s.start_block,
+    endBlock: s.end_block,
+    noteOnly: s.start_block === null && s.end_block === null && s.available === true,
+    note: s.note || "",
+    source: s.source ?? null,
+  };
+}
+
 export async function fetchRoomSchedules() {
   const PAGE_SIZE = 1000;
 
@@ -389,16 +407,7 @@ export async function fetchRoomSchedules() {
 
   const unique = Array.from(new Map(allData.map((s) => [s.id, s])).values());
 
-  return unique.map(s => ({
-    id: s.id,
-    roomId: s.room_id,
-    date: s.date || "",
-    available: s.available,
-    startBlock: s.start_block,
-    endBlock: s.end_block,
-    noteOnly: s.start_block === null && s.end_block === null && s.available === true,
-    note: s.note || "",
-  }));
+  return unique.map(mapRoomScheduleRow);
 }
 
 export async function createRoomSchedule(schedule) {
@@ -412,21 +421,15 @@ export async function createRoomSchedule(schedule) {
       start_block: isNoteOnly ? null : schedule.startBlock,
       end_block: isNoteOnly ? null : schedule.endBlock,
       note: schedule.note,
+      // ส่ง source เฉพาะเมื่อมีค่า — payload ของ ScheduleModal เดิมต้องเหมือนเดิมทุกไบต์
+      // ไม่งั้นถ้า migration คอลัมน์ source ยังไม่ลง การบันทึกตารางเดิมทั้งหมดจะพัง (PGRST204)
+      ...(schedule.source ? { source: schedule.source } : {}),
     }])
     .select()
     .single();
   
   if (error) throw error;
-  return {
-    id: data.id,
-    roomId: data.room_id,
-    date: data.date || "",
-    available: data.available,
-    startBlock: data.start_block,
-    endBlock: data.end_block,
-    noteOnly: data.start_block === null && data.end_block === null && data.available === true,
-    note: data.note || "",
-  };
+  return mapRoomScheduleRow(data);
 }
 
 export async function updateRoomSchedule(id, schedule) {
@@ -446,16 +449,7 @@ export async function updateRoomSchedule(id, schedule) {
     .single();
   
   if (error) throw error;
-  return {
-    id: data.id,
-    roomId: data.room_id,
-    date: data.date || "",
-    available: data.available,
-    startBlock: data.start_block,
-    endBlock: data.end_block,
-    noteOnly: data.start_block === null && data.end_block === null && data.available === true,
-    note: data.note || "",
-  };
+  return mapRoomScheduleRow(data);
 }
 
 export async function deleteRoomSchedule(id) {
@@ -465,6 +459,28 @@ export async function deleteRoomSchedule(id) {
     .eq("id", id);
   
   if (error) throw error;
+}
+
+/**
+ * เปิดเตียงคืน: ลบเฉพาะแถว "ปิดทั้งวัน" ที่ปุ่มปิดเตียงสร้าง (source = 'bed_switch') ของเตียง+วันนั้น
+ * กรองที่ DB ไม่ใช่ local state — ถ้าสองคนกดปิดพร้อมกันจนมีสองแถว จะลบครบ
+ * แถวที่คนกรอกเองผ่าน ScheduleModal (source ว่าง) ไม่ถูกแตะเด็ดขาด
+ * คืน id[] ที่ลบไป เพื่อให้ผู้เรียกเอาออกจาก state ได้ตรงตัว
+ */
+export async function deleteBedSwitchClosures(roomId, date) {
+  const { data, error } = await supabase
+    .from("room_schedules")
+    .delete()
+    .eq("room_id", roomId)
+    .eq("date", date)
+    .eq("source", "bed_switch")
+    .eq("available", false)
+    .is("start_block", null)
+    .is("end_block", null)
+    .select("id");
+
+  if (error) throw error;
+  return (data || []).map((row) => row.id);
 }
 
 // ═══════════════════════════════════════════════════════════
