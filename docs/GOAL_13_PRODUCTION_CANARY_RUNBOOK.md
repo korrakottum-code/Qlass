@@ -1,5 +1,19 @@
 # Goal 13 — Queue-create production canary runbook (preparation only)
 
+## Status as of 2026-08-17 (supersedes "Current position" below)
+
+`create_queue_v1` is deployed to production and the client flag is on for
+three allowlisted operators: QA ทดสอบ, ทีมกทม., and the นครพนม branch
+manager. Both the Booking page **and Timeline's mini-popup** now route a new
+pending booking from these operators through the server path (PR #137
+wired Timeline in — item 7 below is out of date on that point, kept as
+historical record). A same-day booking is never routed through this path on
+either surface, on either page — it is always auto-confirmed before the gate
+check, so the canary so far only covers bookings made ahead of the same day.
+
+The rest of this document is the original pre-deployment plan, kept for
+historical reference and for its still-valid rollback procedure.
+
 ## Current position
 
 This is **not** permission to change production. It records what must be true
@@ -77,11 +91,13 @@ and leave the current booking path unchanged.
      allowlist; an empty list enables nobody)
 
    Only a new pending booking made from the Booking page by an allowlisted
-   operator uses the server path. Edits, reschedules, bulk booking, and
-   Timeline booking stay on the established writer. After a server business
-   rejection the client shows the reason and never falls back to direct
-   insert; a transport failure retries with the same request ID so a retry
-   cannot create a duplicate queue.
+   operator uses the server path. Edits, reschedules, and bulk booking stay
+   on the established writer. **(Out of date: Timeline booking was wired
+   into the same server path by PR #137 on 2026-08-16 — see the status note
+   at the top of this document.)** After a server business rejection the
+   client shows the reason and never falls back to direct insert; a
+   transport failure retries with the same request ID so a retry cannot
+   create a duplicate queue.
 8. Enable the flag for one pre-agreed authorized operator and one normal real
    booking. Do not make a fake customer booking in production. Verify the same
    request ID returns the same queue ID, a cross-branch attempt is denied, and
