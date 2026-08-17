@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
 import { ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK } from "../../utils/constants";
 import { blockToTime } from "../../utils/helpers";
+import { ALWAYS_ALLOWED_PROCEDURE_NAMES } from "../../utils/roomProcedures";
 
 function sameSet(a, b) {
   if (a.length !== b.length) return false;
@@ -60,6 +61,19 @@ export default function RoomModal({
   const [openBlock, setOpenBlock] = useState(data?.openBlock ?? WORK_START_BLOCK);
   const [closeBlock, setCloseBlock] = useState(data?.closeBlock ?? WORK_END_BLOCK);
 
+  // หัตถการที่เลือกได้ = ฝั่งเดียวกับประเภทเตียง (M/T) — ข้ามฝั่งไม่มีทางถูก
+  const selectableProcs = useMemo(
+    () => procedures.filter((p) => p.roomType === type),
+    [procedures, type]
+  );
+
+  // หัตถการกลาง (ปิดคิว ฯลฯ) ลงได้ทุกเตียงเสมอ — ติ๊กให้อัตโนมัติตอนบันทึก ผู้ใช้เอาออกไม่ได้
+  // ถ้าปล่อยให้เอาออกได้ เตียงเครื่องที่ลืมติ๊ก "ปิดคิว" จะปิดช่องเวลาไม่ได้อีกเลย
+  const genericIds = useMemo(
+    () => new Set(selectableProcs.filter((p) => ALWAYS_ALLOWED_PROCEDURE_NAMES.includes(p.name)).map((p) => p.id)),
+    [selectableProcs]
+  );
+
   // หัตถการที่เตียงนี้รับ — แก้ได้เฉพาะตอนแก้ไขเตียงที่มีอยู่แล้ว (ตอนสร้างใหม่ยังไม่มี
   // room id ให้ผูก และเตียงใหม่ที่ไม่มีแถวเลยจะวิ่งกติกาเดิมไปก่อนอยู่แล้ว)
   const currentIds = useMemo(() => {
@@ -68,16 +82,12 @@ export default function RoomModal({
     return set ? [...set] : [];
   }, [isEdit, data, roomProcedureIndex]);
 
-  const [procIds, setProcIds] = useState(() => currentIds || []);
+  // state เก็บเฉพาะตัวที่ผู้ใช้เลือกเอง — หัตถการกลางถูกเติมกลับให้ตอนบันทึก
+  const [procIds, setProcIds] = useState(() => (currentIds || []).filter((id) => !genericIds.has(id)));
   const configuredAtOpen = (currentIds || []).length > 0;
 
-  // หัตถการที่เลือกได้ = ฝั่งเดียวกับประเภทเตียง (M/T) — ข้ามฝั่งไม่มีทางถูก
-  const selectableProcs = useMemo(
-    () => procedures.filter((p) => p.roomType === type),
-    [procedures, type]
-  );
-
   function toggleProc(id) {
+    if (genericIds.has(id)) return;
     setProcIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
@@ -126,7 +136,12 @@ export default function RoomModal({
           openBlock,
           closeBlock,
           // ส่งเฉพาะตอนแก้ไข และเฉพาะเมื่อมีการเปลี่ยนจริง — undefined = ไม่แตะของเดิม
-          procedureIds: isEdit && currentIds && !sameSet(currentIds, procIds) ? procIds : undefined,
+          // ติ๊กออกหมด = ล้างการตั้งค่า (กลับกติกาเดิม) จึงห้าม union หัตถการกลางในเคสนั้น
+          procedureIds: (() => {
+            if (!isEdit || !currentIds) return undefined;
+            const chosen = procIds.length > 0 ? [...new Set([...procIds, ...genericIds])] : [];
+            return sameSet(currentIds, chosen) ? undefined : chosen;
+          })(),
         });
       }
     }
@@ -347,19 +362,19 @@ export default function RoomModal({
               <label className="form-label">
                 🔒 หัตถการที่ {autoName} รับได้
                 <span style={{ fontWeight: 400, color: "var(--text3)", marginLeft: 8 }}>
-                  เลือกแล้ว {procIds.length} / {selectableProcs.length}
+                  เลือกแล้ว {procIds.length} / {selectableProcs.length - genericIds.size}
                 </span>
               </label>
 
               <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-                <button className="btn btn-sm btn-secondary" onClick={() => setProcIds(selectableProcs.map((p) => p.id))}>
+                <button className="btn btn-sm btn-secondary" onClick={() => setProcIds(selectableProcs.filter((p) => !genericIds.has(p.id)).map((p) => p.id))}>
                   เลือกทั้งหมด
                 </button>
                 <button className="btn btn-sm btn-secondary" onClick={() => setProcIds([])}>
                   ไม่เลือกเลย
                 </button>
                 {currentIds.length > 0 && (
-                  <button className="btn btn-sm btn-secondary" onClick={() => setProcIds(currentIds)}>
+                  <button className="btn btn-sm btn-secondary" onClick={() => setProcIds(currentIds.filter((id) => !genericIds.has(id)))}>
                     คืนค่าเดิม
                   </button>
                 )}
@@ -371,24 +386,33 @@ export default function RoomModal({
                 padding: 8, display: "flex", flexDirection: "column", gap: 2,
               }}>
                 {selectableProcs.map((p) => {
-                  const checked = procIds.includes(p.id);
+                  const isGeneric = genericIds.has(p.id);
+                  const checked = isGeneric ? procIds.length > 0 : procIds.includes(p.id);
                   return (
                     <label
                       key={p.id}
                       style={{
                         display: "flex", alignItems: "center", gap: 8,
-                        padding: "6px 10px", borderRadius: 6, cursor: "pointer",
+                        padding: "6px 10px", borderRadius: 6,
+                        cursor: isGeneric ? "default" : "pointer",
                         background: checked ? "var(--accent-soft)" : "transparent",
                         fontSize: 13, fontWeight: checked ? 600 : 400,
+                        opacity: isGeneric ? 0.75 : 1,
                       }}
                     >
                       <input
                         type="checkbox"
                         checked={checked}
+                        disabled={isGeneric}
                         onChange={() => toggleProc(p.id)}
                         style={{ accentColor: "var(--accent)" }}
                       />
                       {p.name}
+                      {isGeneric && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text3)", background: "var(--surface3)", borderRadius: 4, padding: "1px 6px" }}>
+                          ทุกเตียง
+                        </span>
+                      )}
                       <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text3)", fontFamily: "var(--mono)" }}>
                         {p.blocks * 5} นาที
                       </span>

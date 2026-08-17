@@ -8,6 +8,7 @@ import {
   roomsForProcedure,
   unservedProcedures,
   shouldEnforceOnSave,
+  ALWAYS_ALLOWED_PROCEDURE_NAMES,
 } from "../src/utils/roomProcedures.js";
 
 // ผังจำลองตามของจริง: สาขาหนึ่งมีเตียง D/T สองเตียง + Hifu + Pico อย่างละหนึ่ง
@@ -161,4 +162,13 @@ test("ข้อมูลเสียไม่ทำให้ index พัง", (
   ]);
   assert.equal(dirty.size, 1);
   assert.equal(dirty.get("t1").size, 1);
+});
+
+test("รายชื่อหัตถการกลางคงที่ — หน้าตั้งค่าใช้บังคับติ๊กให้ทุกเตียง", () => {
+  // จับด้วยชื่อเพราะ ปิดคิว/Influencer มีทั้งเวอร์ชัน M และ T (คนละ id)
+  // ถ้าเทสต์นี้พัง แปลว่ามีคนแก้รายชื่อ — ต้องแน่ใจว่าตั้งใจ และหน้าตั้งค่ายังครอบ ปิดคิว อยู่
+  assert.deepEqual(
+    [...ALWAYS_ALLOWED_PROCEDURE_NAMES].sort(),
+    ["Influencer", "ปรึกษาทั่วไป", "ปิดคิว", "โปรประจำเดือน (T)"].sort()
+  );
 });
