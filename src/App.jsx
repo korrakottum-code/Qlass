@@ -695,9 +695,16 @@ export default function App() {
   }, [rooms, showToast]);
 
   const deleteQueue = useCallback(async (id, queueSnapshot) => {
-    // บันทึกก่อนยิงลบ — ถ้า Phase 2b จบระหว่างรอ id นี้ก็ยังถูกกันไว้ (บันทึกเกินไม่มีผลเสีย เพราะ prev ทับ snapshot อยู่แล้ว)
-    deletedDuringHistoryLoadRef.current?.add(id);
-    await deleteQueueDB(id);
+    // บันทึกก่อนยิงลบ (กัน Phase 2b จบระหว่างรอ) แต่ถ้าลบล้ม ต้องถอนออก — แถวยังอยู่ใน DB จริง
+    // ไม่งั้น merge จะข้ามแถวนี้จาก snapshot แล้วมันหายจากหน้าจอทั้งที่ยังมีอยู่
+    const deletedSet = deletedDuringHistoryLoadRef.current;
+    deletedSet?.add(id);
+    try {
+      await deleteQueueDB(id);
+    } catch (error) {
+      deletedSet?.delete(id);
+      throw error;
+    }
     if (queueSnapshot) {
       await createActivityLog({
         action: "delete_queue",
@@ -1177,6 +1184,21 @@ export default function App() {
           <TopBar page={page} isEditing={!!editingQueueId} supabaseError={supabaseError} />
 
           <div className="content">
+            {/* เตือนเมื่อประวัติคิวทั้งหมดยังโหลดไม่ครบ — ทุกหน้าที่อาจอ่านข้อมูลเก่ากว่า 30 วัน */}
+            {HISTORY_DEPENDENT_PAGES.includes(page) && historyLoadStatus !== "complete" && (
+              <div role="status" style={{
+                display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
+                padding: "8px 14px", borderRadius: "var(--radius-sm)", fontSize: 13, fontWeight: 700,
+                border: `1.5px solid ${historyLoadStatus === "loading" ? "var(--border2)" : "#d97706"}`,
+                background: historyLoadStatus === "loading" ? "var(--surface2)" : "rgba(217,119,6,0.12)",
+                color: historyLoadStatus === "loading" ? "var(--text2)" : "#b45309",
+              }}>
+                {historyLoadStatus === "loading"
+                  ? "⏳ กำลังโหลดประวัติคิวย้อนหลัง… ตัวเลขช่วงเก่ากว่า 30 วันอาจยังไม่ครบ"
+                  : "⚠️ โหลดประวัติคิวย้อนหลังไม่ครบ — ตัวเลขช่วงเก่ากว่า 30 วันอาจขาดหาย กรุณารีเฟรชหน้าก่อนใช้ตัวเลขนี้"}
+              </div>
+            )}
+
             {page === "ceo-dashboard" && (
               <CeoDashboardPage
                 queues={filteredQueues}
@@ -1485,21 +1507,6 @@ export default function App() {
                 onToggleActive={toggleStaffActive}
                 onDelete={deleteStaff}
               />
-            )}
-
-            {/* เตือนเมื่อประวัติคิวทั้งหมดยังโหลดไม่ครบ — ทุกหน้าที่อาจอ่านข้อมูลเก่ากว่า 30 วัน */}
-            {HISTORY_DEPENDENT_PAGES.includes(page) && historyLoadStatus !== "complete" && (
-              <div style={{
-                display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
-                padding: "8px 14px", borderRadius: "var(--radius-sm)", fontSize: 13, fontWeight: 700,
-                border: `1.5px solid ${historyLoadStatus === "loading" ? "var(--border2)" : "#d97706"}`,
-                background: historyLoadStatus === "loading" ? "var(--surface2)" : "rgba(217,119,6,0.12)",
-                color: historyLoadStatus === "loading" ? "var(--text2)" : "#b45309",
-              }}>
-                {historyLoadStatus === "loading"
-                  ? "⏳ กำลังโหลดประวัติคิวย้อนหลัง… ตัวเลขช่วงเก่ากว่า 30 วันอาจยังไม่ครบ"
-                  : "⚠️ โหลดประวัติคิวย้อนหลังไม่ครบ — ตัวเลขช่วงเก่ากว่า 30 วันอาจขาดหาย กรุณารีเฟรชหน้าก่อนใช้ตัวเลขนี้"}
-              </div>
             )}
 
             {page === "commission" && (

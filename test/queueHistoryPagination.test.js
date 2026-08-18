@@ -108,8 +108,16 @@ test("a few rows more or fewer than count(*) (concurrent writes during load) sti
 test("allowedShortfall: absolute floor for small tables, ratio in the middle, absolute cap for large tables", () => {
   assert.equal(allowedShortfall(10), 5, "floor: small table tolerates a few concurrent deletes");
   assert.equal(allowedShortfall(1000), 20, "ratio: 2% of 1000");
-  assert.equal(allowedShortfall(146000), 500, "cap: never silently accept thousands missing");
+  assert.equal(allowedShortfall(146000), 100, "cap: never silently accept hundreds missing");
   // ตารางเล็ก 10 แถว ลบไป 1 ระหว่างโหลด → ครบ; แต่ตารางใหญ่หาย 600 → ไม่ครบ
   assert.ok(10 - 9 <= allowedShortfall(10));
-  assert.ok(146000 - 145400 > allowedShortfall(146000));
+  assert.ok(146000 - 145850 > allowedShortfall(146000));
+});
+
+test("walkRange passes its pageSize to fetchPage so limit and termination stay coupled", async () => {
+  const seen = [];
+  const ids = makeIds(1500);
+  const fetchPage = async (after, upper, pageSize) => { seen.push(pageSize); return makeFetchPage(ids, pageSize)(after, upper); };
+  await walkRange(fetchPage, buildUuidRanges(1)[0], 700);
+  assert.ok(seen.length >= 2 && seen.every((p) => p === 700));
 });

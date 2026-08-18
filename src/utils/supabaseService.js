@@ -666,14 +666,17 @@ export async function fetchQueues(opts = {}) {
     const { count, error: countError } = await supabase
       .from("queues").select("*", { count: "exact", head: true });
     if (countError) console.error("fetchQueues: count(*) failed, completeness unverified:", countError);
-    const fetchPage = async (afterId, upperInclusive) => {
+    // limit ต้องเท่ากับ pageSize ที่ walkRange ใช้ตัดสินว่า "หมดช่วง" — รับมาจาก walkRange เสมอ
+    const fetchPage = async (afterId, upperInclusive, pageSize) => {
       const { data, error } = await supabase.from("queues").select("*")
         .gt("id", afterId).lte("id", upperInclusive)
-        .order("id", { ascending: true }).limit(HISTORY_PAGE_SIZE);
+        .order("id", { ascending: true }).limit(pageSize);
       if (error) throw error;
       return data || [];
     };
-    ({ rows, complete, errors } = await fetchAllByUuidRanges(fetchPage, { expectedCount: countError ? null : (count ?? null) }));
+    ({ rows, complete, errors } = await fetchAllByUuidRanges(fetchPage, { pageSize: HISTORY_PAGE_SIZE, expectedCount: countError ? null : (count ?? null) }));
+    // count(*) ล้ม = ยืนยันความครบไม่ได้ → ต้องรายงานว่า "ไม่ครบ" ให้ banner ขึ้น ไม่ใช่ปล่อยผ่านเป็น complete
+    if (countError && complete) { complete = false; errors = [countError]; }
     if (!complete && !allowPartial) {
       report({ complete, errors, rowCount: rows.length });
       throw errors[0];

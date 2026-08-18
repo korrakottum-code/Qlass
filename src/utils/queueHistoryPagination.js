@@ -35,7 +35,8 @@ export function buildUuidRanges(n = HISTORY_PARALLEL_RANGES) {
   return ranges;
 }
 
-// เดิน keyset ทีละหน้าในช่วงเดียว: fetchPage(afterId, upperInclusive) → rows (เรียง id asc)
+// เดิน keyset ทีละหน้าในช่วงเดียว: fetchPage(afterId, upperInclusive, pageSize) → rows (เรียง id asc)
+// fetchPage ต้องใช้ pageSize ที่ส่งให้เป็น limit — เพราะ walkRange ตัดสิน "หมดช่วง" จากค่านี้
 // คืน { rows, error } เสมอ — ถ้าหน้าไหนล้ม จะเก็บ rows ที่ได้ก่อนหน้าไว้ + ใส่ error (ไม่ throw)
 // เพื่อให้ผู้เรียกไม่ต้องทิ้งของทั้งช่วงเพราะพลาดหน้าเดียว
 export async function walkRange(fetchPage, { lowerExclusive, upperInclusive }, pageSize = HISTORY_PAGE_SIZE) {
@@ -44,7 +45,7 @@ export async function walkRange(fetchPage, { lowerExclusive, upperInclusive }, p
   for (;;) {
     let page;
     try {
-      page = await fetchPage(cursor, upperInclusive);
+      page = await fetchPage(cursor, upperInclusive, pageSize);
     } catch (error) {
       return { rows, error };
     }
@@ -62,11 +63,12 @@ export async function walkRange(fetchPage, { lowerExclusive, upperInclusive }, p
 // ยอมให้ได้น้อยกว่า count(*) ได้เท่ากับ max(ABS_MIN, 2%) แต่ไม่เกิน ABS_MAX แถว
 // - พื้น ABS_MIN กันตารางเล็ก (10 แถว ลบ 1 = 10% ไม่ใช่ความผิดพลาด)
 // - เพดาน ABS_MAX กันตารางใหญ่ (146k × 2% = 2,920 แถวหายเงียบ ๆ ไม่ควรถือว่าครบ) — การเขียนพร้อมกัน
-//   ระหว่างโหลด ~10 วิ ขึ้นกับ write rate ไม่ใช่ขนาดตาราง (วัดจริงบน production: ต่างกัน 1 แถว)
+//   ระหว่างโหลด ~10 วิ ขึ้นกับ write rate ไม่ใช่ขนาดตาราง (วัดจริงบน production: ต่างกัน 1 แถว
+//   จึงตั้ง 100 = เผื่อ write rate สูงกว่าที่วัด 100 เท่า แต่ยังจับการตัดหน้าระดับหลายร้อยแถวได้)
 // - กรณี max-rows ถูกตัดจะขาดเป็นสิบ ๆ % ไม่ใช่หลักสิบแถว จึงจับได้แน่
 export const HISTORY_SHORTFALL_RATIO = 0.02;
 export const HISTORY_SHORTFALL_ABS_MIN = 5;
-export const HISTORY_SHORTFALL_ABS_MAX = 500;
+export const HISTORY_SHORTFALL_ABS_MAX = 100;
 export function allowedShortfall(expectedCount) {
   return Math.min(HISTORY_SHORTFALL_ABS_MAX, Math.max(HISTORY_SHORTFALL_ABS_MIN, Math.floor(expectedCount * HISTORY_SHORTFALL_RATIO)));
 }
