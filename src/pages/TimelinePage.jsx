@@ -19,6 +19,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   const [popup, setPopup] = useState(null); // { q, room, block, x, y }
   const [bookingForm, setBookingForm] = useState(null); // mini booking popup form
   const { isSaving: saving, run: runBookingSubmit } = useSubmissionLock();
+  const [filterOpen, setFilterOpen] = useState(true);
+  const isMobile = typeof window !== "undefined" && window.innerWidth <= 640;
 
   // Goal 13: closing the popup without a successful save abandons this draft —
   // a stale request ID left over from a failed attempt must not be reused for
@@ -125,29 +127,47 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
 
   return (
     <>
-      {/* Controls */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end", marginBottom: 16 }}>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label className="form-label">วันที่</label>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <button onClick={() => navigate(-1)} style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16 }}>‹</button>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: 140 }} />
-            <button onClick={() => navigate(1)} style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16 }}>›</button>
-            <button onClick={() => setDate(getTodayStr())} style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>วันนี้</button>
+      {/* Controls — มือถือ: ยุบเป็นแถวบางๆ ประหยัดพื้นที่ตาราง */}
+      {isMobile && !filterOpen ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "nowrap" }}>
+          <button onClick={() => navigate(-1)} style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16, flexShrink: 0 }}>‹</button>
+          <button onClick={() => setDate(getTodayStr())} style={{ flex: 1, textAlign: "center", padding: "5px 4px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--accent)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {formatThaiDate(date)}
+          </button>
+          <button onClick={() => navigate(1)} style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16, flexShrink: 0 }}>›</button>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text2)", whiteSpace: "nowrap", flexShrink: 0 }}>
+            {branches.find((b) => b.id === filterBranch)?.name?.replace(/^Class\s*/i, "") || ""}
+          </span>
+          <span style={{ background: "var(--surface3)", borderRadius: 20, padding: "3px 8px", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{totalQueues} คิว</span>
+          <button onClick={() => setFilterOpen(true)} title="ขยายตัวเลือก" style={{ padding: "5px 8px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 13, flexShrink: 0 }}>⚙︎</button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end", marginBottom: 16 }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">วันที่</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <button onClick={() => navigate(-1)} style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16 }}>‹</button>
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: 140 }} />
+              <button onClick={() => navigate(1)} style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16 }}>›</button>
+              <button onClick={() => setDate(getTodayStr())} style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>วันนี้</button>
+            </div>
           </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">สาขา</label>
+            <select value={filterBranch} onChange={(e) => setFilterBranchOverride(e.target.value)}>
+              {branches.length === 0 && <option value="">-- ไม่มีสาขา --</option>}
+              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}>{formatThaiDate(date)}</span>
+            <span style={{ background: "var(--surface3)", borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 700 }}>{totalQueues} คิว</span>
+          </div>
+          {isMobile && (
+            <button onClick={() => setFilterOpen(false)} title="ย่อตัวเลือก" style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 12, color: "var(--text2)" }}>ย่อ ↑</button>
+          )}
         </div>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label className="form-label">สาขา</label>
-          <select value={filterBranch} onChange={(e) => setFilterBranchOverride(e.target.value)}>
-            {branches.length === 0 && <option value="">-- ไม่มีสาขา --</option>}
-            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}>{formatThaiDate(date)}</span>
-          <span style={{ background: "var(--surface3)", borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 700 }}>{totalQueues} คิว</span>
-        </div>
-      </div>
+      )}
 
       {overdueCount > 0 && (
         <div style={{
@@ -164,7 +184,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
         <div className="card"><div className="empty"><div className="e-icon">🚪</div><p>ไม่พบห้อง</p></div></div>
       ) : (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100dvh - 230px)" }}>
+          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: isMobile && !filterOpen ? "calc(100dvh - 115px)" : "calc(100dvh - 230px)" }}>
             <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed", minWidth: TIME_COL + filteredRooms.length * ROOM_COL_MIN }}>
               {/* Header: ชื่อห้องเป็น column */}
               <thead>
@@ -194,7 +214,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                         <div style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>
                           [{room.type}]{branch ? ` • ${branch.name}` : ""}
                         </div>
-                        {lockLabel && (
+                        {lockLabel && !isMobile && (
                           <div style={{ marginTop: 3, display: "flex", justifyContent: "center" }}>
                             <span title="เตียงนี้ลงได้เฉพาะหัตถการเหล่านี้ (ตั้งค่าที่หน้าจัดการห้อง)" style={{ fontSize: 10.5, fontWeight: 800, color: "var(--accent)", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: 6, padding: "1px 7px", lineHeight: 1.5, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               🔒 {lockLabel}
@@ -232,12 +252,15 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                           </div>
                         )}
                         {roomScheduleNotes.length > 0 && (
-                          <div style={{ marginTop: 3, display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 6 }}>
-                            {roomScheduleNotes.map((note, idx) => (
-                              <span key={`${note}_${idx}`} style={{ fontSize: 11, fontWeight: 800, color: "#ffffff", lineHeight: 1.5, background: "#dc2626", border: "1px solid #b91c1c", borderRadius: 6, padding: "2px 8px" }}>
+                          <div style={{ marginTop: 3, display: "flex", justifyContent: "center", flexWrap: isMobile ? "nowrap" : "wrap", gap: 4, overflow: isMobile ? "hidden" : undefined }}>
+                            {(isMobile ? roomScheduleNotes.slice(0, 1) : roomScheduleNotes).map((note, idx) => (
+                              <span key={`${note}_${idx}`} title={note} style={{ fontSize: isMobile ? 9.5 : 11, fontWeight: 800, color: "#ffffff", lineHeight: 1.4, background: "#dc2626", border: "1px solid #b91c1c", borderRadius: 6, padding: isMobile ? "1px 5px" : "2px 8px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: isMobile ? "100%" : undefined }}>
                                 📅 {note}
                               </span>
                             ))}
+                            {isMobile && roomScheduleNotes.length > 1 && (
+                              <span style={{ fontSize: 9.5, fontWeight: 700, color: "#dc2626", lineHeight: 1.4, padding: "1px 2px", flexShrink: 0 }}>+{roomScheduleNotes.length - 1}</span>
+                            )}
                           </div>
                         )}
                         {cnt > 0 && (
