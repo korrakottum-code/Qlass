@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { CUSTOMER_TYPES, ROLES } from "../utils/constants";
 import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass, canViewAllBranches, isoToLocalDateStr } from "../utils/helpers";
 import { buildPromoPriceIndex, queueBookedValue } from "../utils/promoValue";
@@ -375,7 +375,7 @@ function TopPromoRanking({ title, queues, promos, procedures }) {
   );
 }
 
-export default function SummaryPage({ queues, allQueues, branches, allBranches, rooms, procedures, promos, staff, currentUser }) {
+export default function SummaryPage({ queues, allQueues, branches, allBranches, rooms, procedures, promos, staff, currentUser, onRangeNeeded }) {
   const [viewMode, setViewMode] = useState("day"); // day | week | month
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
   const [filterCategory, setFilterCategory] = useState("all");
@@ -433,6 +433,14 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
       return { start, end };
     }
   }, [selectedDate, viewMode, customStart, customEnd]);
+  // ส่วน "คิวที่บันทึก"/โฆษณา นับตาม createdAt แต่ DB กรองตาม date (วันนัด) — คิวที่บันทึกในช่วงนี้อาจนัดวันหลัง end
+  // จึงขอถึง "วันนี้" เสมอ (หลังจากนั้นอยู่ในช่วงเริ่มต้นที่โหลดตอนเปิดแอปแล้ว)
+  // และเริ่มจากต้นเดือนของ selectedDate เพราะการ์ดโฆษณา (AdSpendCard) นับคิวแอดมิน "ทั้งเดือน" ไม่ใช่แค่ช่วงที่เลือก
+  const todayStr = getTodayStr();
+  const monthStart = `${selectedDate.slice(0, 7)}-01`;
+  const rangeFrom = dateRange.start < monthStart ? dateRange.start : monthStart;
+  const rangeTo = dateRange.end > todayStr ? dateRange.end : todayStr;
+  useEffect(() => { onRangeNeeded?.(rangeFrom, rangeTo); }, [rangeFrom, rangeTo, onRangeNeeded]);
 
   function navigate(dir) {
     const d = new Date(selectedDate);

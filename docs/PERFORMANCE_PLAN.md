@@ -2,11 +2,11 @@
 
 ข้อมูลขึ้นช้ามาก + บางครั้ง timeout จนขึ้น "ไม่พบข้อมูลพนักงาน". แผนนี้แก้ที่ root cause โดย**ไม่ให้กระทบผู้ใช้ ~100 คนที่ใช้งานอยู่**.
 
-> สถานะ: **✅ เฟส 1 + 2 เสร็จแล้ว — ระบบกลับมาใช้งานได้ปกติ**
+> สถานะ: **✅ เฟส 1 + 2 + 3 เสร็จแล้ว**
 >
 > - ✅ เฟส 1: เพิ่ม index 5 ตัว — **เสร็จ 11 มิ.ย. 2026** (query เร็วขึ้น 20-30 เท่า)
 > - ✅ เฟส 2: แยก staff load + progressive queue (2-phase) — **ทำไว้แล้วใน App.jsx**
-> - ⏳ เฟส 3: Lazy-load queues เก่า — ยังไม่ทำ (ไม่จำเป็นแล้วเพราะ index เร็วพอ)
+> - ✅ เฟส 3: On-demand queue ranges — **เสร็จ 18 ส.ค. 2026** (เปิดแอปโหลด 30 วัน; หน้าอื่นขอช่วงที่ต้องใช้ผ่าน `onRangeNeeded`; Backup โหลดทั้งหมดตอนกด)
 
 ---
 
@@ -75,7 +75,7 @@
 |---|---|---|---|
 | 1 | **เพิ่ม index บน `queues` + `room_schedules`** | เร็วขึ้น 20-30 เท่า (แก้ root cause) | ✅ **เสร็จ 11 มิ.ย. 2026** |
 | 2 | แยก staff load + progressive queue (2-phase) | login ขึ้นเร็ว, ไม่ค้าง | ✅ **เสร็จ (อยู่ใน App.jsx)** |
-| 3 | ลด sinceDate window เหลือ ~7 วัน (หลังมี index) | โหลดแรกเบาลงอีก | ⏳ ยังไม่ทำ (ไม่จำเป็นแล้ว) |
+| 3 | เลิกโหลดประวัติทั้งหมดใน background — โหลดเฉพาะช่วงที่หน้าขอ (on-demand) | เปิดแอปเบาลง ~146k แถว, ไม่มี timeout | ✅ **เสร็จ 18 ส.ค. 2026** |
 
 ---
 
@@ -123,18 +123,16 @@ DROP INDEX CONCURRENTLY idx_room_schedules_room_id;
 
 ---
 
-### เฟส 3 (ทางเลือก) — Lazy-Load Queues เก่า
+### เฟส 3 — On-Demand Queue Ranges ✅ เสร็จแล้ว (18 ส.ค. 2026)
 
-**เป้า:** เปิดแอปโหลดแค่ 90 วันล่าสุด (เบามาก) แต่ Export/Backup/Commission ย้อนหลังยังใช้ได้
+**เป้า:** เปิดแอปโหลดแค่ 30 วันล่าสุด แต่ Export/Backup/Commission/CEO/Summary/Capacity ย้อนหลังยังใช้ได้
 
-แนวทาง (ทำเมื่อเฟส 1-2 ยังไม่พอ):
-1. ตอน mount: `fetchQueues({ sinceDate: <90 วันก่อน> })` → state `queues`
-2. เพิ่ม flag `hasLoadedAll` (false)
-3. เมื่อผู้ใช้เข้า Export/Commission **แล้วเลือกช่วงวันที่เก่ากว่า 90 วัน** → trigger `fetchQueues()` เต็ม → merge เข้า state → set `hasLoadedAll = true`
-4. ปุ่ม Backup → ถ้า `!hasLoadedAll` ให้โหลดเต็มก่อน export
-
-**ความเสี่ยง:** ปานกลาง — ต้องระวัง logic หน้า Export/Commission/Summary ให้ครบ ไม่งั้นข้อมูลย้อนหลังขาด
-**ทดสอบเพิ่ม:** Export "ปีนี้", Backup ทั้งหมด, Commission เดือนก่อนๆ ต้องได้ข้อมูลครบ
+สิ่งที่ทำจริง:
+1. ตอน mount: `fetchQueues({ sinceDate: <30 วันก่อน> })` → `queues` + `loadedRanges = [{from, to}]` (Phase 2b ที่โหลดทั้งตารางถูกลบ)
+2. `ensureQueueRange(from, to)` ใน App.jsx — คำนวณช่องว่างด้วย `findUncoveredRanges` (`src/utils/queueRanges.js`) แล้วดึงเฉพาะช่องว่างด้วย `fetchQueues({ sinceDate, untilDate })` → merge (ข้าม id ที่ถูกลบระหว่างโหลด) → รวมช่วงด้วย `mergeRanges`
+3. หน้าที่ใช้ข้อมูลเก่า เรียก prop `onRangeNeeded(from, to)` ใน `useEffect` เมื่อช่วงเปลี่ยน (Commission, Export, CEO Dashboard = prevStart→endDate, Summary, Capacity = 56 วัน, ตารางคิว/Timeline/คิวรอ = วันที่เลือก)
+4. ปุ่ม Backup → `onLoadAll()` (keyset ทั้งตาราง จาก `queueHistoryPagination.js`) แล้วค่อย export
+5. Banner บนสุดของ `.content` ขึ้นเฉพาะตอนกำลังโหลด/โหลดช่วงไม่สำเร็จ (มีปุ่มลองใหม่)
 
 ---
 
@@ -152,7 +150,6 @@ DROP INDEX CONCURRENTLY idx_room_schedules_room_id;
 
 ## ⏳ สิ่งที่ยังไม่ได้ทำ (ไม่จำเป็นเร่งด่วน)
 
-- เฟส 3: ลด sinceDate window จาก 30 → 7 วัน (ทำได้ แต่ไม่จำเป็นแล้วเพราะ index เร็วพอ)
 - fix Marketing/PR (`helpers.js` — branchId null) — ทำแยกทีหลังถ้าต้องการ
 
 ## วิธีทดสอบก่อน deploy (กันพังกับ 100 คน)

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed, roleAtLeast } from "../utils/helpers";
 import { getBedSwitchState } from "../utils/bedSwitch";
 import HnLookup from "../components/HnLookup";
@@ -8,8 +8,10 @@ import { proceduresForRoom, roomLockLabel } from "../utils/roomProcedures";
 // สถานะที่ยังถือว่า "ยังไม่ยืนยัน" — ปุ่มย้ายเข้าคิวรอใน popover ใช้ได้เฉพาะกลุ่มนี้
 const UNCONFIRMED_STATUSES = ["pending", "follow1", "follow2", "follow3"];
 
-export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], roomProcedureIndex, currentUser, onSubmitBooking, onAbandonDraft, onEditQueue, onMoveToWaitingQueue, onToggleBedSwitch, showToast }) {
+export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], roomProcedureIndex, currentUser, onSubmitBooking, onAbandonDraft, onEditQueue, onMoveToWaitingQueue, onToggleBedSwitch, showToast, onRangeNeeded }) {
   const [date, setDate] = useState(getTodayStr());
+  // เลื่อนไปวันเก่ากว่า 30 วัน → ขอให้ App โหลดวันนั้น
+  useEffect(() => { if (date) onRangeNeeded?.(date, date); }, [date, onRangeNeeded]);
   // เลือกได้ทีละสาขา (ไม่มี "ทุกสาขา" — เรนเดอร์ทุกห้องทุกสาขาพร้อมกันทำให้หน้าช้ามาก)
   // ถ้ายังไม่เคยเลือก หรือสาขาที่เลือกไว้หายไป (branches โหลดเสร็จ/เปลี่ยน) ใช้สาขาแรกแทน
   const [filterBranchOverride, setFilterBranchOverride] = useState(null);
