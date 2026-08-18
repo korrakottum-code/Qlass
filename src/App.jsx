@@ -102,6 +102,9 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isDataReady, setIsDataReady] = useState(false);
   const [supabaseError, setSupabaseError] = useState(null);
+  // สถานะการโหลด "ประวัติคิวทั้งหมด" (Phase 2b) — หน้า Export/ค่าคอมต้องรู้ว่าข้อมูลเก่าครบหรือไม่
+  // "loading" | "complete" | "partial" | "failed"
+  const [historyLoadStatus, setHistoryLoadStatus] = useState("loading");
   const [refreshRequired, setRefreshRequired] = useState(false);
 
   // ─── Booking form ───
@@ -193,16 +196,27 @@ export default function App() {
       // Phase 2b: Load FULL queue history in background, merge in (Export/Commission need old data)
       const historyLoadStartedAt = performance.now();
       try {
-        const allQueues = await getAllQueues();
+        // allowPartial: ถ้าบางช่วงล้ม ยังเก็บของที่ได้ไว้ (ดีกว่าทิ้งทั้งชุด) แต่ต้อง "รู้" ว่าไม่ครบ
+        // เพื่อให้หน้า Export/ค่าคอมเตือนผู้ใช้ แทนที่จะแสดงตัวเลขขาดเงียบ ๆ
+        let historyComplete = true;
+        const allQueues = await getAllQueues({
+          allowPartial: true,
+          onResult: ({ complete, errors }) => {
+            historyComplete = complete;
+            if (!complete) console.error('Queue history loaded partially:', errors);
+          },
+        });
         setQueues((prev) => {
           const byId = new Map(allQueues.map((q) => [q.id, q]));
           // keep any realtime updates that arrived for recent queues
           for (const q of prev) byId.set(q.id, q);
           return Array.from(byId.values());
         });
-        recordClientDiagnostic("initial_load", { stage: "history", outcome: "succeeded", durationMs: performance.now() - historyLoadStartedAt });
+        setHistoryLoadStatus(historyComplete ? "complete" : "partial");
+        recordClientDiagnostic("initial_load", { stage: "history", outcome: historyComplete ? "succeeded" : "failed", durationMs: performance.now() - historyLoadStartedAt });
       } catch (error) {
         console.error('Error loading full queue history from Supabase:', error);
+        setHistoryLoadStatus("failed");
         recordClientDiagnostic("initial_load", { stage: "history", outcome: "failed", durationMs: performance.now() - historyLoadStartedAt, error });
       }
     }
@@ -1443,6 +1457,21 @@ export default function App() {
                 onToggleActive={toggleStaffActive}
                 onDelete={deleteStaff}
               />
+            )}
+
+            {/* เตือนเมื่อประวัติคิวทั้งหมดยังโหลดไม่ครบ — เฉพาะหน้าที่ต้องใช้ข้อมูลเก่ากว่า 30 วัน */}
+            {(page === "commission" || page === "export") && historyLoadStatus !== "complete" && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
+                padding: "8px 14px", borderRadius: "var(--radius-sm)", fontSize: 13, fontWeight: 700,
+                border: `1.5px solid ${historyLoadStatus === "loading" ? "var(--border2)" : "#d97706"}`,
+                background: historyLoadStatus === "loading" ? "var(--surface2)" : "rgba(217,119,6,0.12)",
+                color: historyLoadStatus === "loading" ? "var(--text2)" : "#b45309",
+              }}>
+                {historyLoadStatus === "loading"
+                  ? "⏳ กำลังโหลดประวัติคิวย้อนหลัง… ตัวเลขช่วงเก่ากว่า 30 วันอาจยังไม่ครบ"
+                  : "⚠️ โหลดประวัติคิวย้อนหลังไม่ครบ — ตัวเลขช่วงเก่ากว่า 30 วันอาจขาดหาย กรุณารีเฟรชหน้าก่อนใช้ตัวเลขนี้"}
+              </div>
             )}
 
             {page === "commission" && (

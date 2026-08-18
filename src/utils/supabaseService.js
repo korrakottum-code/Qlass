@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient";
+import { fetchAllByUuidRanges, HISTORY_PAGE_SIZE } from "./queueHistoryPagination";
 import { getServerSessionToken } from "./sessionAuth";
 import { buildQueueStatusUpdate } from "./queueStatusUpdate";
 import { lookupHnCustomers } from "./hnLookup";
@@ -623,36 +624,28 @@ export function mapQueueRow(q) {
 }
 
 export async function fetchQueues(opts = {}) {
-  const { sinceDate = null } = opts; // "YYYY-MM-DD" — include queues with date >= sinceDate (optional)
-  const PAGE_SIZE = 1000;
+  // sinceDate: "YYYY-MM-DD" — โหลดเฉพาะคิวที่ date >= sinceDate (Phase 2a: 30 วันล่าสุด)
+  // allowPartial: ถ้า true และบางช่วงล้ม จะคืนของที่ได้ + แจ้ง onResult({ complete:false })
+  //               แทนที่จะ throw ทั้งชุด (Phase 2b: ประวัติทั้งหมดใน background)
+  // onResult({ complete, errors, rowCount }): callback รายงานความครบถ้วน (optional)
+  const { sinceDate = null, allowPartial = false, onResult = null } = opts;
 
-  // Get total count first, then fetch all pages in parallel
-  let countQuery = supabase.from("queues").select("*", { count: "exact", head: true });
-  if (sinceDate) countQuery = countQuery.gte("date", sinceDate);
-  const { count, error: countError } = await countQuery;
-  if (countError) throw countError;
-
-  if (!count || count === 0) return [];
-
-  const numPages = Math.ceil(count / PAGE_SIZE);
-  const promises = [];
-  for (let i = 0; i < numPages; i++) {
+  // Keyset บน id (uuid unique/not-null) แบ่ง 4 ช่วงเดินขนาน แทน OFFSET 146 หน้าพร้อมกัน —
+  // เหตุผลและตัวเลขวัดจริงดูที่ queueHistoryPagination.js
+  const fetchPage = async (afterId, upperInclusive) => {
     let q = supabase.from("queues").select("*");
     if (sinceDate) q = q.gte("date", sinceDate);
-    q = q
-      .order("date", { ascending: false })
-      .order("time_block", { ascending: true })
-      .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1);
-    promises.push(q);
-  }
-  const results = await Promise.all(promises);
-  const allData = [];
-  for (const { data, error } of results) {
+    q = q.gt("id", afterId).lte("id", upperInclusive).order("id", { ascending: true }).limit(HISTORY_PAGE_SIZE);
+    const { data, error } = await q;
     if (error) throw error;
-    if (data) allData.push(...data);
-  }
+    return data || [];
+  };
 
-  const unique = Array.from(new Map(allData.map((q) => [q.id, q])).values());
+  const { rows, complete, errors } = await fetchAllByUuidRanges(fetchPage);
+  if (!complete && !allowPartial) throw errors[0] || new Error("fetchQueues: incomplete");
+  if (typeof onResult === "function") onResult({ complete, errors, rowCount: rows.length });
+
+  const unique = Array.from(new Map(rows.map((q) => [q.id, q])).values());
   return unique.map(mapQueueRow);
 }
 
