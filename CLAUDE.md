@@ -11,7 +11,7 @@ npm run preview    # serve the dist/ build locally
 npm run lint       # ESLint check
 ```
 
-No test suite is configured.
+`npm test` runs `node --test` over `test/` and `tests/` (unit tests for pure utils + text-regex guards over App.jsx/migrations). Run it before proposing changes.
 
 ## Architecture
 

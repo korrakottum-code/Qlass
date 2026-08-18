@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildUuidRanges, walkRange, fetchAllByUuidRanges } from "../src/utils/queueHistoryPagination.js";
+import { buildUuidRanges, walkRange, fetchAllByUuidRanges, allowedShortfall } from "../src/utils/queueHistoryPagination.js";
 
 // สร้าง "ตาราง" จำลอง: ids เรียงลำดับ string ตาม uuid ต่างหลักแรก
 // เริ่มที่ i+1 ให้ไม่มี id ใดเท่ากับ uuid ศูนย์ล้วน (ขอบล่าง exclusive) — เหมือน gen_random_uuid() จริง
@@ -103,4 +103,13 @@ test("a few rows more or fewer than count(*) (concurrent writes during load) sti
   // count(*) ได้ 8990 แต่มีคนเพิ่ม 10 แถวระหว่างโหลด → ได้มากกว่า count → ครบ
   const b = await fetchAllByUuidRanges(makeFetchPage(ids, 1000), { pageSize: 1000, expectedCount: 8990 });
   assert.equal(b.complete, true);
+});
+
+test("allowedShortfall: absolute floor for small tables, ratio in the middle, absolute cap for large tables", () => {
+  assert.equal(allowedShortfall(10), 5, "floor: small table tolerates a few concurrent deletes");
+  assert.equal(allowedShortfall(1000), 20, "ratio: 2% of 1000");
+  assert.equal(allowedShortfall(146000), 500, "cap: never silently accept thousands missing");
+  // ตารางเล็ก 10 แถว ลบไป 1 ระหว่างโหลด → ครบ; แต่ตารางใหญ่หาย 600 → ไม่ครบ
+  assert.ok(10 - 9 <= allowedShortfall(10));
+  assert.ok(146000 - 145400 > allowedShortfall(146000));
 });

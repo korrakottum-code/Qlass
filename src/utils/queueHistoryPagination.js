@@ -58,15 +58,19 @@ export async function walkRange(fetchPage, { lowerExclusive, upperInclusive }, p
   return { rows, error: null };
 }
 
-// ถ้าได้น้อยกว่า count(*) เกินสัดส่วนนี้ ถือว่า "ถูกตัด" (เช่น server max-rows ถูกลดต่ำกว่า pageSize
-// ทำให้ walkRange เข้าใจผิดว่าหมดช่วง) — ตั้งไว้กว้างเพราะตารางมีคนเขียนตลอด: ระหว่างโหลด 10 วิ
-// อาจมีแถวเพิ่ม/ลบไม่กี่แถว ซึ่งไม่ใช่ความผิดพลาด (วัดจริงบน production: ต่างกัน 1 แถว)
-// ส่วนกรณี max-rows ถูกตัดจะขาดเป็นสิบ ๆ % ไม่ใช่หลักหน่วย
-export const HISTORY_SHORTFALL_TOLERANCE = 0.02;
+// เกณฑ์ตัดสินว่า "ถูกตัด" (เช่น server max-rows ถูกลดต่ำกว่า pageSize ทำให้ walkRange เข้าใจผิดว่าหมดช่วง):
+// ยอมให้ได้น้อยกว่า count(*) ได้เท่ากับ max(ABS_MIN, 2%) แต่ไม่เกิน ABS_MAX แถว
+// - พื้น ABS_MIN กันตารางเล็ก (10 แถว ลบ 1 = 10% ไม่ใช่ความผิดพลาด)
+// - เพดาน ABS_MAX กันตารางใหญ่ (146k × 2% = 2,920 แถวหายเงียบ ๆ ไม่ควรถือว่าครบ) — การเขียนพร้อมกัน
+//   ระหว่างโหลด ~10 วิ ขึ้นกับ write rate ไม่ใช่ขนาดตาราง (วัดจริงบน production: ต่างกัน 1 แถว)
+// - กรณี max-rows ถูกตัดจะขาดเป็นสิบ ๆ % ไม่ใช่หลักสิบแถว จึงจับได้แน่
+export const HISTORY_SHORTFALL_RATIO = 0.02;
+export const HISTORY_SHORTFALL_ABS_MIN = 5;
+export const HISTORY_SHORTFALL_ABS_MAX = 500;
+export function allowedShortfall(expectedCount) {
+  return Math.min(HISTORY_SHORTFALL_ABS_MAX, Math.max(HISTORY_SHORTFALL_ABS_MIN, Math.floor(expectedCount * HISTORY_SHORTFALL_RATIO)));
+}
 
-// รวมผลจากทุกช่วง: คืน { rows, complete, errors }
-// complete=false ถ้าช่วงไหน error หรือถ้าได้น้อยกว่า expectedCount เกิน tolerance
-// (rows ≥ expectedCount ถือว่าครบ — แถวใหม่ที่เข้ามาระหว่างโหลดเป็นเรื่องปกติ)
 export async function fetchAllByUuidRanges(fetchPage, { ranges = buildUuidRanges(), pageSize = HISTORY_PAGE_SIZE, expectedCount = null } = {}) {
   const results = await Promise.all(ranges.map((r) => walkRange(fetchPage, r, pageSize)));
   const rows = [];
@@ -77,8 +81,7 @@ export async function fetchAllByUuidRanges(fetchPage, { ranges = buildUuidRanges
   }
   let complete = errors.length === 0;
   if (complete && Number.isInteger(expectedCount) && expectedCount > 0) {
-    const shortfall = (expectedCount - rows.length) / expectedCount;
-    if (shortfall > HISTORY_SHORTFALL_TOLERANCE) {
+    if (expectedCount - rows.length > allowedShortfall(expectedCount)) {
       complete = false;
       errors.push(new Error(`fetchAllByUuidRanges: expected ~${expectedCount} rows, got ${rows.length} (server page cap below pageSize?)`));
     }

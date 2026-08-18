@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
 
 // หน้าที่คำนวณจากประวัติคิวเกิน 30 วัน (Phase 2b) — ต้องเห็น banner เมื่อประวัติยังโหลดไม่ครบ
-const HISTORY_DEPENDENT_PAGES = ["commission", "export", "ceo-dashboard", "summary", "capacity"];
+// (capacity ไม่รวม — มองเฉพาะวันนี้ไปข้างหน้า; queue-table/timeline รวม — มี date picker ย้อนหลังได้)
+const HISTORY_DEPENDENT_PAGES = ["commission", "export", "ceo-dashboard", "summary", "queue-table", "timeline"];
 import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed, buildOverdueMoveNote, roleAtLeast, isActiveQueueStatus } from "./utils/helpers";
 import {
   getAllStaff, getAllBranches, getAllProcedures, getAllPromos, getAllRooms, getAllRoomSchedules, getAllQueues,
@@ -110,8 +111,9 @@ export default function App() {
   const [historyLoadStatus, setHistoryLoadStatus] = useState("loading");
   // id ของคิวที่ถูกลบ (local หรือ realtime) ระหว่างที่ Phase 2b กำลังโหลด — ตอน merge ต้องไม่ให้
   // snapshot เก่าจาก DB ดึงคิวที่เพิ่งลบไปแล้วเด้งกลับมา
-  const deletedDuringHistoryLoadRef = useRef(new Set());
-  const historyLoadInFlightRef = useRef(false);
+  // ใช้เลขลำดับ (ไม่ใช่ boolean) ให้ปลอดภัยเมื่อ effect รันซ้อน (StrictMode double-mount / re-fetch ในอนาคต)
+  const deletedDuringHistoryLoadRef = useRef(null); // Set ขณะโหลดอยู่, null เมื่อไม่ได้โหลด
+  const historyLoadSeqRef = useRef(0);
   const [refreshRequired, setRefreshRequired] = useState(false);
 
   // ─── Booking form ───
@@ -207,8 +209,9 @@ export default function App() {
         // เพื่อให้หน้าที่ใช้ข้อมูลเก่ากว่า 30 วันเตือนผู้ใช้ แทนที่จะแสดงตัวเลขขาดเงียบ ๆ
         let historyComplete = true;
         let historyErrors = [];
-        historyLoadInFlightRef.current = true;
-        deletedDuringHistoryLoadRef.current = new Set();
+        const myLoad = ++historyLoadSeqRef.current;
+        const deletedIds = new Set();
+        deletedDuringHistoryLoadRef.current = deletedIds;
         const allQueues = await getAllQueues({
           allowPartial: true,
           onResult: ({ complete, errors }) => {
@@ -217,8 +220,9 @@ export default function App() {
             if (!complete) console.error('Queue history loaded partially:', errors);
           },
         });
-        historyLoadInFlightRef.current = false;
-        const deletedIds = deletedDuringHistoryLoadRef.current;
+        // ถ้ามี load รอบใหม่กว่าเริ่มไปแล้ว (StrictMode) รอบนี้ไม่ต้อง merge/เซ็ตสถานะทับ
+        if (myLoad !== historyLoadSeqRef.current) return;
+        deletedDuringHistoryLoadRef.current = null;
         setQueues((prev) => {
           const byId = new Map();
           // snapshot จาก DB — ข้ามคิวที่ถูกลบไประหว่างโหลด ไม่งั้นมันจะเด้งกลับ
@@ -235,7 +239,7 @@ export default function App() {
           ...(historyComplete ? {} : { error: historyErrors[0] }),
         });
       } catch (error) {
-        historyLoadInFlightRef.current = false;
+        deletedDuringHistoryLoadRef.current = null;
         console.error('Error loading full queue history from Supabase:', error);
         setHistoryLoadStatus("failed");
         recordClientDiagnostic("initial_load", { stage: "history", outcome: "failed", durationMs: performance.now() - historyLoadStartedAt, error });
@@ -294,7 +298,7 @@ export default function App() {
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "queues" }, (payload) => {
         try {
-          if (historyLoadInFlightRef.current && payload.old?.id) deletedDuringHistoryLoadRef.current.add(payload.old.id);
+          if (payload.old?.id) deletedDuringHistoryLoadRef.current?.add(payload.old.id);
           setQueues((prev) => reconcileRealtimeQueue(prev, "DELETE", payload.old));
         } catch (e) { console.error("realtime DELETE error", e); }
       })
@@ -691,8 +695,9 @@ export default function App() {
   }, [rooms, showToast]);
 
   const deleteQueue = useCallback(async (id, queueSnapshot) => {
+    // บันทึกก่อนยิงลบ — ถ้า Phase 2b จบระหว่างรอ id นี้ก็ยังถูกกันไว้ (บันทึกเกินไม่มีผลเสีย เพราะ prev ทับ snapshot อยู่แล้ว)
+    deletedDuringHistoryLoadRef.current?.add(id);
     await deleteQueueDB(id);
-    if (historyLoadInFlightRef.current) deletedDuringHistoryLoadRef.current.add(id);
     if (queueSnapshot) {
       await createActivityLog({
         action: "delete_queue",
