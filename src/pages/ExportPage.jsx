@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { getTodayStr } from "../utils/helpers";
 import {
   exportCommissionData,
@@ -70,9 +70,19 @@ function getPresets() {
 
 // ── Main Component ──────────────────────────────────────────
 
-export default function ExportPage({ queues, branches, rooms, procedures, promos, staff, roomSchedules }) {
+export default function ExportPage({ queues, branches, rooms, procedures, promos, staff, roomSchedules, onRangeNeeded, onLoadAll }) {
   const [startDate, setStartDate] = useState(getTodayStr());
   const [endDate, setEndDate] = useState(getTodayStr());
+  const [backupLoading, setBackupLoading] = useState(false);
+  // ขอให้ App โหลดคิวช่วงที่เลือก ถ้ายังไม่มีใน state (เกิน 30 วันล่าสุด) — ระหว่างโหลดปิดปุ่ม export
+  // ไม่งั้นกดเร็ว ๆ หลังเลือก "เดือนที่แล้ว" จะได้ไฟล์ที่ข้อมูลยังไม่ครบ
+  const [rangeLoading, setRangeLoading] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setRangeLoading(true);
+    Promise.resolve(onRangeNeeded?.(startDate, endDate)).finally(() => { if (alive) setRangeLoading(false); });
+    return () => { alive = false; };
+  }, [startDate, endDate, onRangeNeeded]);
   const [filterBranch, setFilterBranch] = useState("all");
 
   const presets = getPresets();
@@ -179,11 +189,11 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
           color="#059669"
           buttons={[
             {
-              label: "📥 รายละเอียดค่าคอม",
+              label: rangeLoading ? "⏳ กำลังโหลดช่วงที่เลือก…" : "📥 รายละเอียดค่าคอม", disabled: rangeLoading,
               onClick: () => exportCommissionData(queues, staff, branches, procedures, promos, startDate, endDate, filterBranch),
             },
             {
-              label: "📥 สรุปค่าคอมพนักงาน",
+              label: rangeLoading ? "⏳ กำลังโหลดช่วงที่เลือก…" : "📥 สรุปค่าคอมพนักงาน", disabled: rangeLoading,
               onClick: () => exportCommissionSummary(queues, staff, branches, startDate, endDate, filterBranch),
             },
           ]}
@@ -196,7 +206,7 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
           color="#2563eb"
           buttons={[
             {
-              label: "📥 ข้อมูลคิว",
+              label: rangeLoading ? "⏳ กำลังโหลดช่วงที่เลือก…" : "📥 ข้อมูลคิว", disabled: rangeLoading,
               onClick: () => exportQueueData(queues, branches, rooms, procedures, promos, staff, startDate, endDate, filterBranch),
             },
           ]}
@@ -209,7 +219,7 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
           color="#be185d"
           buttons={[
             {
-              label: "📥 รายงานประเภทลูกค้า",
+              label: rangeLoading ? "⏳ กำลังโหลดช่วงที่เลือก…" : "📥 รายงานประเภทลูกค้า", disabled: rangeLoading,
               onClick: () => exportCustomerTypeReport(queues, branches, procedures, startDate, endDate, filterBranch),
             },
           ]}
@@ -222,8 +232,21 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
           color="#6b21a8"
           buttons={[
             {
-              label: "⬇️ Download Backup (.json)",
-              onClick: () => backupAllData({ queues, branches, rooms, procedures, promos, staff, roomSchedules }),
+              label: backupLoading ? "⏳ กำลังโหลดประวัติทั้งหมด…" : "⬇️ Download Backup (.json)",
+              // Backup ต้องใช้ประวัติทั้งหมด — โหลดตอนกดเท่านั้น (ไม่โหลดล่วงหน้าทุกครั้งที่เปิดแอป)
+              onClick: async () => {
+                if (backupLoading) return;
+                let all = queues;
+                if (onLoadAll) {
+                  setBackupLoading(true);
+                  try {
+                    const r = await onLoadAll();
+                    if (r?.queues) all = r.queues;
+                    if (r && !r.complete && !window.confirm("โหลดประวัติได้ไม่ครบ ต้องการ Backup ต่อด้วยข้อมูลเท่าที่มีหรือไม่?")) return;
+                  } finally { setBackupLoading(false); }
+                }
+                backupAllData({ queues: all, branches, rooms, procedures, promos, staff, roomSchedules });
+              },
             },
           ]}
         />

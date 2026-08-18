@@ -624,11 +624,12 @@ export function mapQueueRow(q) {
 }
 
 export async function fetchQueues(opts = {}) {
-  // sinceDate: "YYYY-MM-DD" — โหลดเฉพาะคิวที่ date >= sinceDate (Phase 2a: 30 วันล่าสุด)
+  // sinceDate / untilDate: "YYYY-MM-DD" — โหลดเฉพาะคิวที่ sinceDate <= date <= untilDate
+  //   (ตอนเปิดแอป: 30 วันล่าสุด; หน้าที่ต้องการข้อมูลเก่ากว่านั้นเรียกเพิ่มเฉพาะช่วงที่ยังไม่มี)
+  //   ถ้าไม่ส่ง sinceDate = โหลดทั้งตาราง (ใช้เฉพาะปุ่ม Backup)
   // allowPartial: ถ้า true และบางส่วนล้ม จะคืนของที่ได้ + แจ้ง onResult({ complete:false })
-  //               แทนที่จะ throw ทั้งชุด (Phase 2b: ประวัติทั้งหมดใน background)
   // onResult({ complete, errors, rowCount }): callback รายงานความครบถ้วน — ถูกเรียกทุก path
-  const { sinceDate = null, allowPartial = false, onResult = null } = opts;
+  const { sinceDate = null, untilDate = null, allowPartial = false, onResult = null } = opts;
   const report = (r) => { if (typeof onResult === "function") onResult(r); };
 
   let rows;
@@ -639,18 +640,21 @@ export async function fetchQueues(opts = {}) {
     // ─── Phase 2a: กรองตามวันที่ → ใช้ index date เดิม (ไม่เคย timeout; keyset-by-id ทำช้าลง 5 เท่า) ───
     // เพิ่ม tiebreaker id ให้ลำดับคงที่ข้ามหน้า (เดิมไม่มี → OFFSET ทำแถวซ้ำ/หายได้)
     const PAGE_SIZE = 1000;
-    const { count, error: countError } = await supabase
-      .from("queues").select("*", { count: "exact", head: true }).gte("date", sinceDate);
+    let countQ = supabase.from("queues").select("*", { count: "exact", head: true }).gte("date", sinceDate);
+    if (untilDate) countQ = countQ.lte("date", untilDate);
+    const { count, error: countError } = await countQ;
     if (countError) throw countError;
     if (!count) { report({ complete: true, errors: [], rowCount: 0 }); return []; }
     const numPages = Math.ceil(count / PAGE_SIZE);
-    const results = await Promise.all(Array.from({ length: numPages }, (_, i) =>
-      supabase.from("queues").select("*").gte("date", sinceDate)
+    const results = await Promise.all(Array.from({ length: numPages }, (_, i) => {
+      let q = supabase.from("queues").select("*").gte("date", sinceDate);
+      if (untilDate) q = q.lte("date", untilDate);
+      return q
         .order("date", { ascending: false })
         .order("time_block", { ascending: true, nullsFirst: false })
         .order("id", { ascending: true })
-        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
-    ));
+        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1);
+    }));
     // แต่ละหน้าเป็นคนละ snapshot — ถ้ามีคน INSERT ระหว่างยิง แถวอาจเลื่อนไปโผล่ 2 หน้า → dedupe ด้วย id
     // (keyset ใน Phase 2b ไม่มีปัญหานี้เพราะช่วง id ไม่ทับกัน)
     const byId = new Map();

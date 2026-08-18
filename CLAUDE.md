@@ -62,6 +62,7 @@ Branch filtering is applied in `App.jsx` via `filterByUserBranch()`: admin-level
 | `src/utils/smartParser.js` | Natural-language booking text → structured fields; learns aliases from corrections |
 | `src/utils/exportService.js` | CSV export with Thai character support (xlsx library) |
 | `src/utils/queueHistoryPagination.js` | Pure keyset-pagination helpers (uuid ranges, partial-safe walk, count check) used by `fetchQueues` for the full-history load |
+| `src/utils/queueRanges.js` | Pure date-range helpers (`findUncoveredRanges`, `mergeRanges`, `addDays`) backing on-demand queue loading in App.jsx |
 
 ### Conflict detection
 
@@ -69,7 +70,7 @@ Before saving a queue, `App.jsx` fetches **fresh data from DB** (`fetchQueuesFor
 
 ### Large table pagination
 
-`fetchRoomSchedules` paginates in chunks of 1 000 rows via parallel OFFSET queries to work around Supabase's default row limit. `fetchQueues` has two paths: with `sinceDate` (Phase 2a, ~30 days) it uses the same date-indexed OFFSET pagination plus an `id` tiebreaker; without `sinceDate` (Phase 2b, full history in background) it uses keyset pagination on `id` across 4 parallel uuid ranges (`src/utils/queueHistoryPagination.js`) — deep OFFSET + 146 concurrent requests previously hit the anon role's 3 s `statement_timeout`. Phase 2b cross-checks row count against `count(*)` and reports `complete` via `onResult`; App.jsx shows a banner on history-dependent pages while it loads or if it is incomplete.
+`fetchRoomSchedules` paginates in chunks of 1 000 rows via parallel OFFSET queries to work around Supabase's default row limit. Queues are **not** loaded in full on app open: Phase 2a loads only the last 30 days (`fetchQueues({ sinceDate })`, date-indexed OFFSET pages + `id` tiebreaker + dedupe), and `App.jsx` tracks `loadedRanges`. Pages that read older data (Commission, Export, CEO Dashboard, Summary, Capacity, or a date picker set to an old day) call the `onRangeNeeded(from, to)` prop; `ensureQueueRange` in App.jsx fetches only the uncovered gap via `fetchQueues({ sinceDate, untilDate })` and merges it (skipping ids deleted mid-load). Only the Export "Backup" button loads the whole table, on click, via keyset pagination (`src/utils/queueHistoryPagination.js`). Range helpers live in `src/utils/queueRanges.js`. A banner at the top of `.content` shows only while a range is loading or after one failed (with retry).
 
 ### Environment variables
 

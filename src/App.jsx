@@ -1,12 +1,15 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
 
-// หน้าที่คำนวณจากประวัติคิวเกิน 30 วัน (Phase 2b) — ต้องเห็น banner เมื่อประวัติยังโหลดไม่ครบ
-// capacity รวมด้วย — computeWeeklyPace ใช้ baseline ย้อนหลัง 8 สัปดาห์ (> 30 วันของ Phase 2a)
-// queue-table/timeline ไม่รวม — default เป็นวันนี้ (อยู่ในช่วง 30 วันเสมอ) การขึ้นแบนเนอร์ทุกครั้งที่เปิด
-// หน้าหลักทั้งที่ข้อมูลครบ จะทำให้คนเมินแบนเนอร์ในหน้าที่มันสำคัญจริง
-const HISTORY_DEPENDENT_PAGES = ["commission", "export", "ceo-dashboard", "summary", "capacity"];
 import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed, buildOverdueMoveNote, roleAtLeast, isActiveQueueStatus } from "./utils/helpers";
+import { findUncoveredRanges, mergeRanges } from "./utils/queueRanges";
+
+// ขอบบนของช่วงที่ "ไม่มีวันหมด" — การโหลดที่ไม่ใส่ untilDate จะได้คิวล่วงหน้าทุกวันมาด้วย
+const FUTURE_DATE = "9999-12-31";
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// <input type="date"> ยิง onChange ทุกตัวอักษรที่พิมพ์ในช่องปี ("0002-…", "0020-…", "0202-…") — ถ้าไม่กัน
+// จะกลายเป็นขอ "ตั้งแต่ปี 2 ถึงวันนี้" = ทั้งตาราง คำขอที่ from เก่ากว่านี้จึงถูกข้าม (ข้อมูลจริงไม่มีก่อนปีนี้)
+const MIN_RANGE_DATE = "2000-01-01";
 import {
   getAllStaff, getAllBranches, getAllProcedures, getAllPromos, getAllRooms, getAllRoomSchedules, getAllQueues,
   getAllRoomProcedures, setRoomProcedures as setRoomProceduresDB,
@@ -108,14 +111,16 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isDataReady, setIsDataReady] = useState(false);
   const [supabaseError, setSupabaseError] = useState(null);
-  // สถานะการโหลด "ประวัติคิวทั้งหมด" (Phase 2b) — หน้า Export/ค่าคอมต้องรู้ว่าข้อมูลเก่าครบหรือไม่
-  // "loading" | "complete" | "partial" | "failed"
-  const [historyLoadStatus, setHistoryLoadStatus] = useState("loading");
-  // id ของคิวที่ถูกลบ (local หรือ realtime) ระหว่างที่ Phase 2b กำลังโหลด — ตอน merge ต้องไม่ให้
-  // snapshot เก่าจาก DB ดึงคิวที่เพิ่งลบไปแล้วเด้งกลับมา
-  // ใช้เลขลำดับ (ไม่ใช่ boolean) ให้ปลอดภัยเมื่อ effect รันซ้อน (StrictMode double-mount / re-fetch ในอนาคต)
-  const deletedDuringHistoryLoadRef = useRef(null); // Set ขณะโหลดอยู่, null เมื่อไม่ได้โหลด
-  const historyLoadSeqRef = useRef(0);
+  // ช่วงวันที่ของ queues ที่อยู่ใน state แล้ว — เปิดแอปโหลด 30 วันล่าสุด หน้าที่ต้องการเก่ากว่านั้น
+  // (ค่าคอม/Export/CEO/สรุป/Capacity หรือเลือกวันเก่าในตารางคิว) เรียก ensureQueueRange → ดึงเฉพาะช่องว่าง
+  // สถานะการดึงช่วงเพิ่ม: { loading: {from,to}|null, failed: {from,to}|null } — banner บนสุดของ .content
+  const [rangeLoadStatus, setRangeLoadStatus] = useState({ loading: null, failed: null });
+  // id ของคิวที่ถูกลบ (local/realtime) ระหว่างที่มีการดึงช่วงอยู่ — ตอน merge ต้องไม่ให้ snapshot จาก DB
+  // ดึงคิวที่เพิ่งลบไปแล้วเด้งกลับมา (Set ขณะมี load ค้าง, null เมื่อไม่มี)
+  const deletedDuringHistoryLoadRef = useRef(null);
+  // กัน in-flight ซ้ำ: key "from|to" → Promise
+  const rangeInFlightRef = useRef(new Map());
+  const loadedRangesRef = useRef([]); // [{from,to}] เรียงแล้ว ไม่ซ้อน — เก็บใน ref เพราะไม่มี UI อ่านโดยตรง
   const [refreshRequired, setRefreshRequired] = useState(false);
 
   // ─── Booking form ───
@@ -190,6 +195,9 @@ export default function App() {
         setRoomSchedules(scheduleData || []);
         setRoomProcedures(roomProcedureData || []);
         setQueues(recentQueues || []);
+        // Phase 2a ดึง sinceDate เป็นต้นไปโดยไม่จำกัดขอบบน → ครอบคลุมคิวล่วงหน้าทุกวันแล้ว
+        const initialRange = [{ from: sinceDate, to: FUTURE_DATE }];
+        loadedRangesRef.current = initialRange;
         if (categoryData && categoryData.length > 0) {
           setCategories(categoryData);
         }
@@ -204,49 +212,6 @@ export default function App() {
         recordClientDiagnostic("initial_load", { stage: "core", outcome: "failed", durationMs: performance.now() - coreLoadStartedAt, error });
       }
 
-      // Phase 2b: Load FULL queue history in background, merge in (Export/Commission need old data)
-      const historyLoadStartedAt = performance.now();
-      const myLoad = ++historyLoadSeqRef.current;
-      try {
-        // allowPartial: ถ้าบางส่วนล้ม ยังเก็บของที่ได้ไว้ (ดีกว่าทิ้งทั้งชุด) แต่ต้อง "รู้" ว่าไม่ครบ
-        // เพื่อให้หน้าที่ใช้ข้อมูลเก่ากว่า 30 วันเตือนผู้ใช้ แทนที่จะแสดงตัวเลขขาดเงียบ ๆ
-        let historyComplete = true;
-        let historyErrors = [];
-        const deletedIds = new Set();
-        deletedDuringHistoryLoadRef.current = deletedIds;
-        const allQueues = await getAllQueues({
-          allowPartial: true,
-          onResult: ({ complete, errors }) => {
-            historyComplete = complete;
-            historyErrors = errors;
-            if (!complete) console.error('Queue history loaded partially:', errors);
-          },
-        });
-        // ถ้ามี load รอบใหม่กว่าเริ่มไปแล้ว (StrictMode) รอบนี้ไม่ต้อง merge/เซ็ตสถานะทับ
-        if (myLoad !== historyLoadSeqRef.current) return;
-        deletedDuringHistoryLoadRef.current = null;
-        setQueues((prev) => {
-          const byId = new Map();
-          // snapshot จาก DB — ข้ามคิวที่ถูกลบไประหว่างโหลด ไม่งั้นมันจะเด้งกลับ
-          for (const q of allQueues) if (!deletedIds.has(q.id)) byId.set(q.id, q);
-          // state ปัจจุบัน (รวม realtime/optimistic ที่เข้ามาระหว่างโหลด) ทับ snapshot เสมอ
-          for (const q of prev) byId.set(q.id, q);
-          return Array.from(byId.values());
-        });
-        setHistoryLoadStatus(historyComplete ? "complete" : "partial");
-        recordClientDiagnostic("initial_load", {
-          stage: "history",
-          outcome: historyComplete ? "succeeded" : "failed",
-          durationMs: performance.now() - historyLoadStartedAt,
-          ...(historyComplete ? {} : { error: historyErrors[0] }),
-        });
-      } catch (error) {
-        if (myLoad !== historyLoadSeqRef.current) return; // มี load ใหม่กว่าแล้ว ไม่ต้องแตะ state/ref
-        deletedDuringHistoryLoadRef.current = null;
-        console.error('Error loading full queue history from Supabase:', error);
-        setHistoryLoadStatus("failed");
-        recordClientDiagnostic("initial_load", { stage: "history", outcome: "failed", durationMs: performance.now() - historyLoadStartedAt, error });
-      }
     }
     loadFromSupabase();
   }, []);
@@ -696,6 +661,86 @@ export default function App() {
       showToast("error", "ย้ายเข้าคิวรอไม่สำเร็จ กรุณาลองอีกครั้ง");
     }
   }, [rooms, showToast]);
+
+  // ─── โหลดช่วงวันที่ที่ยังไม่มีใน state (เรียกจากหน้าที่ต้องการข้อมูลเก่ากว่า 30 วัน) ───
+  // ดึงเฉพาะ "ช่องว่าง" ที่ยังไม่เคยโหลด, merge เข้า state โดยไม่ทับ realtime/optimistic ที่เข้ามาระหว่างนั้น
+  // และไม่ดึงคิวที่ถูกลบระหว่างโหลดกลับมา (กลไกเดียวกับที่ใช้ตอนโหลดประวัติใน #148)
+  const mergeFetchedQueues = useCallback((fetched, deletedIds) => {
+    setQueues((prev) => {
+      const byId = new Map();
+      for (const q of fetched) if (!deletedIds.has(q.id)) byId.set(q.id, q);
+      for (const q of prev) byId.set(q.id, q); // state ปัจจุบันทับ snapshot เสมอ
+      return Array.from(byId.values());
+    });
+  }, []);
+
+  const ensureQueueRange = useCallback(async (from, to) => {
+    // date input ที่ถูกล้างจะส่ง "" หรือ "Invalid Da" มาได้ — กันที่จุดเดียว ไม่ยิง query พัง
+    if (!DATE_RE.test(from || "") || !DATE_RE.test(to || "")) return;
+    if (from < MIN_RANGE_DATE) return;
+    const gaps = findUncoveredRanges(loadedRangesRef.current, from, to);
+    if (gaps.length === 0) return;
+    for (const gap of gaps) {
+      const key = `${gap.from}|${gap.to}`;
+      if (rangeInFlightRef.current.has(key)) { await rangeInFlightRef.current.get(key); continue; }
+      const job = (async () => {
+        const deletedIds = deletedDuringHistoryLoadRef.current ?? new Set();
+        deletedDuringHistoryLoadRef.current = deletedIds;
+        setRangeLoadStatus((s) => ({ ...s, loading: gap }));
+        try {
+          const rows = await getAllQueues({ sinceDate: gap.from, untilDate: gap.to });
+          mergeFetchedQueues(rows, deletedIds);
+          loadedRangesRef.current = mergeRanges([...loadedRangesRef.current, gap]);
+          // ล้างสถานะ "ไม่สำเร็จ" เฉพาะเมื่อช่วงที่เคย fail ถูกครอบแล้วจริง (job อื่นที่ทับกันบางส่วนสำเร็จ ไม่ควรลบคำเตือน)
+          setRangeLoadStatus((s) => ({
+            loading: s.loading === gap ? null : s.loading,
+            failed: s.failed && findUncoveredRanges(loadedRangesRef.current, s.failed.from, s.failed.to).length > 0 ? s.failed : null,
+          }));
+        } catch (error) {
+          console.error(`ensureQueueRange ${key} failed:`, error);
+          setRangeLoadStatus({ loading: null, failed: gap });
+        } finally {
+          rangeInFlightRef.current.delete(key);
+          if (rangeInFlightRef.current.size === 0) deletedDuringHistoryLoadRef.current = null;
+        }
+      })();
+      rangeInFlightRef.current.set(key, job);
+      await job;
+    }
+  }, [mergeFetchedQueues]);
+
+  // ปุ่ม Backup: โหลดทั้งตาราง (keyset) ตอนกดเท่านั้น แล้ว mark ว่ามีครบทุกช่วง
+  const loadAllQueues = useCallback(async () => {
+    const key = "ALL";
+    if (rangeInFlightRef.current.has(key)) return rangeInFlightRef.current.get(key);
+    const job = (async () => {
+      const deletedIds = deletedDuringHistoryLoadRef.current ?? new Set();
+      deletedDuringHistoryLoadRef.current = deletedIds;
+      const gap = { from: "0000-01-01", to: FUTURE_DATE };
+      setRangeLoadStatus((s) => ({ ...s, loading: gap }));
+      try {
+        let complete = true;
+        const rows = await getAllQueues({ allowPartial: true, onResult: (r) => { complete = r.complete; } });
+        mergeFetchedQueues(rows, deletedIds);
+        if (complete) {
+          loadedRangesRef.current = mergeRanges([...loadedRangesRef.current, gap]);
+        }
+        setRangeLoadStatus({ loading: null, failed: complete ? null : gap });
+        // คืน rows ให้ผู้เรียก (Backup ต้องใช้ทันที ไม่รอ state อัปเดต)
+        // กรองตามสาขาของผู้ใช้เหมือน filteredQueues — branch_manager/cashier ต้องไม่ได้ข้อมูลสาขาอื่นติดไป
+        return { complete, queues: filterByUserBranch(rows.filter((q) => !deletedIds.has(q.id)), currentUser) };
+      } catch (error) {
+        console.error("loadAllQueues failed:", error);
+        setRangeLoadStatus({ loading: null, failed: gap });
+        return { complete: false, queues: null };
+      } finally {
+        rangeInFlightRef.current.delete(key);
+        if (rangeInFlightRef.current.size === 0) deletedDuringHistoryLoadRef.current = null;
+      }
+    })();
+    rangeInFlightRef.current.set(key, job);
+    return job;
+  }, [mergeFetchedQueues, currentUser]);
 
   const deleteQueue = useCallback(async (id, queueSnapshot) => {
     // บันทึกก่อนยิงลบ (กัน Phase 2b จบระหว่างรอ) แต่ถ้าลบล้ม ต้องถอนออก — แถวยังอยู่ใน DB จริง
@@ -1189,20 +1234,29 @@ export default function App() {
           <TopBar page={page} isEditing={!!editingQueueId} supabaseError={supabaseError} />
 
           <div className="content">
-            {/* เตือนเมื่อประวัติคิวทั้งหมดยังโหลดไม่ครบ — ทุกหน้าที่อาจอ่านข้อมูลเก่ากว่า 30 วัน */}
-            {HISTORY_DEPENDENT_PAGES.includes(page) && historyLoadStatus !== "complete" && (
-              <div role="status" style={{
-                display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
-                padding: "8px 14px", borderRadius: "var(--radius-sm)", fontSize: 13, fontWeight: 700,
-                border: `1.5px solid ${historyLoadStatus === "loading" ? "var(--border2)" : "#d97706"}`,
-                background: historyLoadStatus === "loading" ? "var(--surface2)" : "rgba(217,119,6,0.12)",
-                color: historyLoadStatus === "loading" ? "var(--text2)" : "#b45309",
-              }}>
-                {historyLoadStatus === "loading"
-                  ? "⏳ กำลังโหลดประวัติคิวย้อนหลัง… ตัวเลขช่วงเก่ากว่า 30 วันอาจยังไม่ครบ"
-                  : "⚠️ โหลดประวัติคิวย้อนหลังไม่ครบ — ตัวเลขช่วงเก่ากว่า 30 วันอาจขาดหาย กรุณารีเฟรชหน้าก่อนใช้ตัวเลขนี้"}
-              </div>
-            )}
+            {/* แถบสถานะตอนกำลังดึงช่วงวันที่เพิ่ม / ดึงไม่สำเร็จ — ขึ้นเฉพาะตอนมี load จริง */}
+            {(rangeLoadStatus.loading || rangeLoadStatus.failed) && (() => {
+              const r = rangeLoadStatus.failed || rangeLoadStatus.loading;
+              const isFail = !!rangeLoadStatus.failed;
+              const label = r.from === "0000-01-01" ? "ประวัติทั้งหมด" : `${formatThaiDate(r.from)} – ${formatThaiDate(r.to)}`;
+              return (
+                <div role="status" style={{
+                  display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
+                  padding: "8px 14px", borderRadius: "var(--radius-sm)", fontSize: 13, fontWeight: 700,
+                  border: `1.5px solid ${isFail ? "#d97706" : "var(--border2)"}`,
+                  background: isFail ? "rgba(217,119,6,0.12)" : "var(--surface2)",
+                  color: isFail ? "#b45309" : "var(--text2)",
+                }}>
+                  {isFail
+                    ? <>⚠️ โหลดข้อมูล {label} ไม่สำเร็จ — ตัวเลขช่วงนี้อาจไม่ครบ
+                        <button type="button" onClick={() => r.from === "0000-01-01" ? loadAllQueues() : ensureQueueRange(r.from, r.to)}
+                          style={{ marginLeft: "auto", padding: "3px 10px", borderRadius: 6, border: "1.5px solid #d97706", background: "transparent", color: "#b45309", fontWeight: 700, cursor: "pointer" }}>
+                          ลองใหม่
+                        </button></>
+                    : <>⏳ กำลังโหลดข้อมูล {label}…</>}
+                </div>
+              );
+            })()}
 
             {page === "ceo-dashboard" && (
               <CeoDashboardPage
@@ -1214,6 +1268,7 @@ export default function App() {
                 promos={promos}
                 staff={staff}
                 currentUser={currentUser}
+                onRangeNeeded={ensureQueueRange}
               />
             )}
 
@@ -1288,6 +1343,7 @@ export default function App() {
                 onDelete={deleteQueue}
                 onUpdateStatus={(q) => setModal({ type: "status", data: q })}
                 onMoveToWaitingQueue={moveToWaitingQueue}
+                onRangeNeeded={ensureQueueRange}
               />
             )}
 
@@ -1300,6 +1356,7 @@ export default function App() {
                 onCallIn={callInWaitingQueue}
                 onUpdateStatus={(q) => setModal({ type: "status", data: q })}
                 onDelete={deleteQueue}
+                onRangeNeeded={ensureQueueRange}
               />
             )}
 
@@ -1464,6 +1521,7 @@ export default function App() {
                 }}
                 onEditQueue={(q) => { editQueue(q); }}
                 onMoveToWaitingQueue={moveToWaitingQueue}
+                onRangeNeeded={ensureQueueRange}
               />
             )}
 
@@ -1475,6 +1533,7 @@ export default function App() {
                 roomSchedules={filteredRoomSchedules}
                 procedures={procedures}
                 promos={promos}
+                onRangeNeeded={ensureQueueRange}
               />
             )}
 
@@ -1489,6 +1548,7 @@ export default function App() {
                 promos={promos}
                 staff={staff}
                 currentUser={currentUser}
+                onRangeNeeded={ensureQueueRange}
               />
             )}
 
@@ -1521,6 +1581,7 @@ export default function App() {
                 branches={filteredBranches}
                 procedures={procedures}
                 promos={promos}
+                onRangeNeeded={ensureQueueRange}
               />
             )}
 
@@ -1533,6 +1594,8 @@ export default function App() {
                 promos={promos}
                 staff={staff}
                 roomSchedules={filteredRoomSchedules}
+                onRangeNeeded={ensureQueueRange}
+                onLoadAll={loadAllQueues}
               />
             )}
 
