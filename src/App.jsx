@@ -1,5 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
+
+// หน้าที่คำนวณจากประวัติคิวเกิน 30 วัน (Phase 2b) — ต้องเห็น banner เมื่อประวัติยังโหลดไม่ครบ
+// capacity รวมด้วย — computeWeeklyPace ใช้ baseline ย้อนหลัง 8 สัปดาห์ (> 30 วันของ Phase 2a)
+// queue-table/timeline ไม่รวม — default เป็นวันนี้ (อยู่ในช่วง 30 วันเสมอ) การขึ้นแบนเนอร์ทุกครั้งที่เปิด
+// หน้าหลักทั้งที่ข้อมูลครบ จะทำให้คนเมินแบนเนอร์ในหน้าที่มันสำคัญจริง
+const HISTORY_DEPENDENT_PAGES = ["commission", "export", "ceo-dashboard", "summary", "capacity"];
 import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed, buildOverdueMoveNote, roleAtLeast, isActiveQueueStatus } from "./utils/helpers";
 import {
   getAllStaff, getAllBranches, getAllProcedures, getAllPromos, getAllRooms, getAllRoomSchedules, getAllQueues,
@@ -102,6 +108,14 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isDataReady, setIsDataReady] = useState(false);
   const [supabaseError, setSupabaseError] = useState(null);
+  // สถานะการโหลด "ประวัติคิวทั้งหมด" (Phase 2b) — หน้า Export/ค่าคอมต้องรู้ว่าข้อมูลเก่าครบหรือไม่
+  // "loading" | "complete" | "partial" | "failed"
+  const [historyLoadStatus, setHistoryLoadStatus] = useState("loading");
+  // id ของคิวที่ถูกลบ (local หรือ realtime) ระหว่างที่ Phase 2b กำลังโหลด — ตอน merge ต้องไม่ให้
+  // snapshot เก่าจาก DB ดึงคิวที่เพิ่งลบไปแล้วเด้งกลับมา
+  // ใช้เลขลำดับ (ไม่ใช่ boolean) ให้ปลอดภัยเมื่อ effect รันซ้อน (StrictMode double-mount / re-fetch ในอนาคต)
+  const deletedDuringHistoryLoadRef = useRef(null); // Set ขณะโหลดอยู่, null เมื่อไม่ได้โหลด
+  const historyLoadSeqRef = useRef(0);
   const [refreshRequired, setRefreshRequired] = useState(false);
 
   // ─── Booking form ───
@@ -192,17 +206,45 @@ export default function App() {
 
       // Phase 2b: Load FULL queue history in background, merge in (Export/Commission need old data)
       const historyLoadStartedAt = performance.now();
+      const myLoad = ++historyLoadSeqRef.current;
       try {
-        const allQueues = await getAllQueues();
+        // allowPartial: ถ้าบางส่วนล้ม ยังเก็บของที่ได้ไว้ (ดีกว่าทิ้งทั้งชุด) แต่ต้อง "รู้" ว่าไม่ครบ
+        // เพื่อให้หน้าที่ใช้ข้อมูลเก่ากว่า 30 วันเตือนผู้ใช้ แทนที่จะแสดงตัวเลขขาดเงียบ ๆ
+        let historyComplete = true;
+        let historyErrors = [];
+        const deletedIds = new Set();
+        deletedDuringHistoryLoadRef.current = deletedIds;
+        const allQueues = await getAllQueues({
+          allowPartial: true,
+          onResult: ({ complete, errors }) => {
+            historyComplete = complete;
+            historyErrors = errors;
+            if (!complete) console.error('Queue history loaded partially:', errors);
+          },
+        });
+        // ถ้ามี load รอบใหม่กว่าเริ่มไปแล้ว (StrictMode) รอบนี้ไม่ต้อง merge/เซ็ตสถานะทับ
+        if (myLoad !== historyLoadSeqRef.current) return;
+        deletedDuringHistoryLoadRef.current = null;
         setQueues((prev) => {
-          const byId = new Map(allQueues.map((q) => [q.id, q]));
-          // keep any realtime updates that arrived for recent queues
+          const byId = new Map();
+          // snapshot จาก DB — ข้ามคิวที่ถูกลบไประหว่างโหลด ไม่งั้นมันจะเด้งกลับ
+          for (const q of allQueues) if (!deletedIds.has(q.id)) byId.set(q.id, q);
+          // state ปัจจุบัน (รวม realtime/optimistic ที่เข้ามาระหว่างโหลด) ทับ snapshot เสมอ
           for (const q of prev) byId.set(q.id, q);
           return Array.from(byId.values());
         });
-        recordClientDiagnostic("initial_load", { stage: "history", outcome: "succeeded", durationMs: performance.now() - historyLoadStartedAt });
+        setHistoryLoadStatus(historyComplete ? "complete" : "partial");
+        recordClientDiagnostic("initial_load", {
+          stage: "history",
+          outcome: historyComplete ? "succeeded" : "failed",
+          durationMs: performance.now() - historyLoadStartedAt,
+          ...(historyComplete ? {} : { error: historyErrors[0] }),
+        });
       } catch (error) {
+        if (myLoad !== historyLoadSeqRef.current) return; // มี load ใหม่กว่าแล้ว ไม่ต้องแตะ state/ref
+        deletedDuringHistoryLoadRef.current = null;
         console.error('Error loading full queue history from Supabase:', error);
+        setHistoryLoadStatus("failed");
         recordClientDiagnostic("initial_load", { stage: "history", outcome: "failed", durationMs: performance.now() - historyLoadStartedAt, error });
       }
     }
@@ -259,6 +301,7 @@ export default function App() {
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "queues" }, (payload) => {
         try {
+          if (payload.old?.id) deletedDuringHistoryLoadRef.current?.add(payload.old.id);
           setQueues((prev) => reconcileRealtimeQueue(prev, "DELETE", payload.old));
         } catch (e) { console.error("realtime DELETE error", e); }
       })
@@ -655,7 +698,18 @@ export default function App() {
   }, [rooms, showToast]);
 
   const deleteQueue = useCallback(async (id, queueSnapshot) => {
-    await deleteQueueDB(id);
+    // บันทึกก่อนยิงลบ (กัน Phase 2b จบระหว่างรอ) แต่ถ้าลบล้ม ต้องถอนออก — แถวยังอยู่ใน DB จริง
+    // ไม่งั้น merge จะข้ามแถวนี้จาก snapshot แล้วมันหายจากหน้าจอทั้งที่ยังมีอยู่
+    const deletedSet = deletedDuringHistoryLoadRef.current;
+    const addedByUs = deletedSet ? !deletedSet.has(id) : false;
+    if (addedByUs) deletedSet.add(id);
+    try {
+      await deleteQueueDB(id);
+    } catch (error) {
+      // ถอนเฉพาะที่เราใส่เอง — ถ้า realtime DELETE เข้ามาใส่ไว้ก่อน แปลว่าลบสำเร็จฝั่ง DB แล้ว (แค่ response หาย)
+      if (addedByUs) deletedSet.delete(id);
+      throw error;
+    }
     if (queueSnapshot) {
       await createActivityLog({
         action: "delete_queue",
@@ -1135,6 +1189,21 @@ export default function App() {
           <TopBar page={page} isEditing={!!editingQueueId} supabaseError={supabaseError} />
 
           <div className="content">
+            {/* เตือนเมื่อประวัติคิวทั้งหมดยังโหลดไม่ครบ — ทุกหน้าที่อาจอ่านข้อมูลเก่ากว่า 30 วัน */}
+            {HISTORY_DEPENDENT_PAGES.includes(page) && historyLoadStatus !== "complete" && (
+              <div role="status" style={{
+                display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
+                padding: "8px 14px", borderRadius: "var(--radius-sm)", fontSize: 13, fontWeight: 700,
+                border: `1.5px solid ${historyLoadStatus === "loading" ? "var(--border2)" : "#d97706"}`,
+                background: historyLoadStatus === "loading" ? "var(--surface2)" : "rgba(217,119,6,0.12)",
+                color: historyLoadStatus === "loading" ? "var(--text2)" : "#b45309",
+              }}>
+                {historyLoadStatus === "loading"
+                  ? "⏳ กำลังโหลดประวัติคิวย้อนหลัง… ตัวเลขช่วงเก่ากว่า 30 วันอาจยังไม่ครบ"
+                  : "⚠️ โหลดประวัติคิวย้อนหลังไม่ครบ — ตัวเลขช่วงเก่ากว่า 30 วันอาจขาดหาย กรุณารีเฟรชหน้าก่อนใช้ตัวเลขนี้"}
+              </div>
+            )}
+
             {page === "ceo-dashboard" && (
               <CeoDashboardPage
                 queues={filteredQueues}
