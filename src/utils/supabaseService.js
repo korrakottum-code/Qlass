@@ -686,8 +686,9 @@ export async function fetchQueues(opts = {}) {
   report({ complete, errors, rowCount: rows.length });
 
   const mapped = rows.map(mapQueueRow);
-  // เรียงให้คงที่และตรงกับที่ผู้ใช้/Export คาดหวัง (ใหม่สุดก่อน) — บาง consumer เช่น exportService
-  // ไม่ sort เอง จึงต้องรับประกันลำดับตรงนี้ ไม่พึ่งลำดับจาก DB
+  // เรียงให้คงที่ (ใหม่สุดก่อน, tiebreak ด้วย id) — consumer ปัจจุบันทุกตัว sort เองอยู่แล้ว แต่ผลจาก
+  // keyset มาเป็นลำดับ uuid ล้วน ๆ การคืนลำดับที่คาดเดาได้จึงเป็นสัญญาที่ปลอดภัยกว่าสำหรับ consumer
+  // ในอนาคต และราคาถูก (~85ms/146k แถว รันครั้งเดียวใน background)
   // date เป็น "YYYY-MM-DD" และ id เป็น uuid ตัวพิมพ์เล็ก → เทียบ < > ตรง ๆ ได้ผลเท่า localeCompare
   // แต่เร็วกว่า ~3.5 เท่า (146k แถว: ~85ms vs ~295ms บน main thread)
   mapped.sort((a, b) => {

@@ -2,8 +2,10 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
 
 // หน้าที่คำนวณจากประวัติคิวเกิน 30 วัน (Phase 2b) — ต้องเห็น banner เมื่อประวัติยังโหลดไม่ครบ
-// (capacity ไม่รวม — มองเฉพาะวันนี้ไปข้างหน้า; queue-table/timeline รวม — มี date picker ย้อนหลังได้)
-const HISTORY_DEPENDENT_PAGES = ["commission", "export", "ceo-dashboard", "summary", "queue-table", "timeline"];
+// capacity รวมด้วย — computeWeeklyPace ใช้ baseline ย้อนหลัง 8 สัปดาห์ (> 30 วันของ Phase 2a)
+// queue-table/timeline ไม่รวม — default เป็นวันนี้ (อยู่ในช่วง 30 วันเสมอ) การขึ้นแบนเนอร์ทุกครั้งที่เปิด
+// หน้าหลักทั้งที่ข้อมูลครบ จะทำให้คนเมินแบนเนอร์ในหน้าที่มันสำคัญจริง
+const HISTORY_DEPENDENT_PAGES = ["commission", "export", "ceo-dashboard", "summary", "capacity"];
 import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed, buildOverdueMoveNote, roleAtLeast, isActiveQueueStatus } from "./utils/helpers";
 import {
   getAllStaff, getAllBranches, getAllProcedures, getAllPromos, getAllRooms, getAllRoomSchedules, getAllQueues,
@@ -204,12 +206,12 @@ export default function App() {
 
       // Phase 2b: Load FULL queue history in background, merge in (Export/Commission need old data)
       const historyLoadStartedAt = performance.now();
+      const myLoad = ++historyLoadSeqRef.current;
       try {
         // allowPartial: ถ้าบางส่วนล้ม ยังเก็บของที่ได้ไว้ (ดีกว่าทิ้งทั้งชุด) แต่ต้อง "รู้" ว่าไม่ครบ
         // เพื่อให้หน้าที่ใช้ข้อมูลเก่ากว่า 30 วันเตือนผู้ใช้ แทนที่จะแสดงตัวเลขขาดเงียบ ๆ
         let historyComplete = true;
         let historyErrors = [];
-        const myLoad = ++historyLoadSeqRef.current;
         const deletedIds = new Set();
         deletedDuringHistoryLoadRef.current = deletedIds;
         const allQueues = await getAllQueues({
@@ -239,6 +241,7 @@ export default function App() {
           ...(historyComplete ? {} : { error: historyErrors[0] }),
         });
       } catch (error) {
+        if (myLoad !== historyLoadSeqRef.current) return; // มี load ใหม่กว่าแล้ว ไม่ต้องแตะ state/ref
         deletedDuringHistoryLoadRef.current = null;
         console.error('Error loading full queue history from Supabase:', error);
         setHistoryLoadStatus("failed");
@@ -698,11 +701,13 @@ export default function App() {
     // บันทึกก่อนยิงลบ (กัน Phase 2b จบระหว่างรอ) แต่ถ้าลบล้ม ต้องถอนออก — แถวยังอยู่ใน DB จริง
     // ไม่งั้น merge จะข้ามแถวนี้จาก snapshot แล้วมันหายจากหน้าจอทั้งที่ยังมีอยู่
     const deletedSet = deletedDuringHistoryLoadRef.current;
-    deletedSet?.add(id);
+    const addedByUs = deletedSet ? !deletedSet.has(id) : false;
+    if (addedByUs) deletedSet.add(id);
     try {
       await deleteQueueDB(id);
     } catch (error) {
-      deletedSet?.delete(id);
+      // ถอนเฉพาะที่เราใส่เอง — ถ้า realtime DELETE เข้ามาใส่ไว้ก่อน แปลว่าลบสำเร็จฝั่ง DB แล้ว (แค่ response หาย)
+      if (addedByUs) deletedSet.delete(id);
       throw error;
     }
     if (queueSnapshot) {
