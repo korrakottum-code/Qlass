@@ -625,28 +625,68 @@ export function mapQueueRow(q) {
 
 export async function fetchQueues(opts = {}) {
   // sinceDate: "YYYY-MM-DD" — โหลดเฉพาะคิวที่ date >= sinceDate (Phase 2a: 30 วันล่าสุด)
-  // allowPartial: ถ้า true และบางช่วงล้ม จะคืนของที่ได้ + แจ้ง onResult({ complete:false })
+  // allowPartial: ถ้า true และบางส่วนล้ม จะคืนของที่ได้ + แจ้ง onResult({ complete:false })
   //               แทนที่จะ throw ทั้งชุด (Phase 2b: ประวัติทั้งหมดใน background)
-  // onResult({ complete, errors, rowCount }): callback รายงานความครบถ้วน (optional)
+  // onResult({ complete, errors, rowCount }): callback รายงานความครบถ้วน — ถูกเรียกทุก path
   const { sinceDate = null, allowPartial = false, onResult = null } = opts;
+  const report = (r) => { if (typeof onResult === "function") onResult(r); };
 
-  // Keyset บน id (uuid unique/not-null) แบ่ง 4 ช่วงเดินขนาน แทน OFFSET 146 หน้าพร้อมกัน —
-  // เหตุผลและตัวเลขวัดจริงดูที่ queueHistoryPagination.js
-  const fetchPage = async (afterId, upperInclusive) => {
-    let q = supabase.from("queues").select("*");
-    if (sinceDate) q = q.gte("date", sinceDate);
-    q = q.gt("id", afterId).lte("id", upperInclusive).order("id", { ascending: true }).limit(HISTORY_PAGE_SIZE);
-    const { data, error } = await q;
-    if (error) throw error;
-    return data || [];
-  };
+  let rows;
+  let complete = true;
+  let errors = [];
 
-  const { rows, complete, errors } = await fetchAllByUuidRanges(fetchPage);
-  if (!complete && !allowPartial) throw errors[0] || new Error("fetchQueues: incomplete");
-  if (typeof onResult === "function") onResult({ complete, errors, rowCount: rows.length });
+  if (sinceDate) {
+    // ─── Phase 2a: กรองตามวันที่ → ใช้ index date เดิม (ไม่เคย timeout; keyset-by-id ทำช้าลง 5 เท่า) ───
+    // เพิ่ม tiebreaker id ให้ลำดับคงที่ข้ามหน้า (เดิมไม่มี → OFFSET ทำแถวซ้ำ/หายได้)
+    const PAGE_SIZE = 1000;
+    const { count, error: countError } = await supabase
+      .from("queues").select("*", { count: "exact", head: true }).gte("date", sinceDate);
+    if (countError) throw countError;
+    if (!count) return [];
+    const numPages = Math.ceil(count / PAGE_SIZE);
+    const results = await Promise.all(Array.from({ length: numPages }, (_, i) =>
+      supabase.from("queues").select("*").gte("date", sinceDate)
+        .order("date", { ascending: false })
+        .order("time_block", { ascending: true, nullsFirst: false })
+        .order("id", { ascending: true })
+        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
+    ));
+    rows = [];
+    for (const { data, error } of results) {
+      if (error) throw error;
+      if (data) for (const r of data) rows.push(r);
+    }
+  } else {
+    // ─── Phase 2b: ทั้งตาราง → keyset บน id แบ่ง 4 ช่วงเดินขนาน (ดู queueHistoryPagination.js) ───
+    // count(*) ไว้เทียบว่าได้ครบจริง (กัน server ตัดหน้าสั้นกว่า pageSize แล้วเข้าใจผิดว่าหมด)
+    const { count, error: countError } = await supabase
+      .from("queues").select("*", { count: "exact", head: true });
+    if (countError) throw countError;
+    const fetchPage = async (afterId, upperInclusive) => {
+      const { data, error } = await supabase.from("queues").select("*")
+        .gt("id", afterId).lte("id", upperInclusive)
+        .order("id", { ascending: true }).limit(HISTORY_PAGE_SIZE);
+      if (error) throw error;
+      return data || [];
+    };
+    ({ rows, complete, errors } = await fetchAllByUuidRanges(fetchPage, { expectedCount: count ?? null }));
+    if (!complete && !allowPartial) {
+      report({ complete, errors, rowCount: rows.length });
+      throw errors[0];
+    }
+  }
 
-  const unique = Array.from(new Map(rows.map((q) => [q.id, q])).values());
-  return unique.map(mapQueueRow);
+  report({ complete, errors, rowCount: rows.length });
+
+  const mapped = rows.map(mapQueueRow);
+  // เรียงให้คงที่และตรงกับที่ผู้ใช้/Export คาดหวัง (ใหม่สุดก่อน) — บาง consumer เช่น exportService
+  // ไม่ sort เอง จึงต้องรับประกันลำดับตรงนี้ ไม่พึ่งลำดับจาก DB
+  mapped.sort((a, b) =>
+    (b.date || "").localeCompare(a.date || "") ||
+    ((a.timeBlock ?? 1e9) - (b.timeBlock ?? 1e9)) ||
+    String(a.id).localeCompare(String(b.id))
+  );
+  return mapped;
 }
 
 export async function createQueue(queue) {

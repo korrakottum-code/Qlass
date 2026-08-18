@@ -61,6 +61,7 @@ Branch filtering is applied in `App.jsx` via `filterByUserBranch()`: admin-level
 | `src/utils/helpers.js` | `blockToTime`, `formatThaiDate`, `filterByUserBranch`, `calcCommission` |
 | `src/utils/smartParser.js` | Natural-language booking text → structured fields; learns aliases from corrections |
 | `src/utils/exportService.js` | CSV export with Thai character support (xlsx library) |
+| `src/utils/queueHistoryPagination.js` | Pure keyset-pagination helpers (uuid ranges, partial-safe walk, count check) used by `fetchQueues` for the full-history load |
 
 ### Conflict detection
 
@@ -68,7 +69,7 @@ Before saving a queue, `App.jsx` fetches **fresh data from DB** (`fetchQueuesFor
 
 ### Large table pagination
 
-`fetchQueues` and `fetchRoomSchedules` paginate in chunks of 1 000 rows via parallel Supabase queries to work around Supabase's default row limit.
+`fetchRoomSchedules` paginates in chunks of 1 000 rows via parallel OFFSET queries to work around Supabase's default row limit. `fetchQueues` has two paths: with `sinceDate` (Phase 2a, ~30 days) it uses the same date-indexed OFFSET pagination plus an `id` tiebreaker; without `sinceDate` (Phase 2b, full history in background) it uses keyset pagination on `id` across 4 parallel uuid ranges (`src/utils/queueHistoryPagination.js`) — deep OFFSET + 146 concurrent requests previously hit the anon role's 3 s `statement_timeout`. Phase 2b cross-checks row count against `count(*)` and reports `complete` via `onResult`; App.jsx shows a banner on history-dependent pages while it loads or if it is incomplete.
 
 ### Environment variables
 
