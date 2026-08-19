@@ -11,7 +11,7 @@ npm run preview    # serve the dist/ build locally
 npm run lint       # ESLint check
 ```
 
-No test suite is configured.
+`npm test` runs `node --test` over `test/` and `tests/` (unit tests for pure utils + text-regex guards over App.jsx/migrations). Run it before proposing changes.
 
 ## Architecture
 
@@ -61,6 +61,8 @@ Branch filtering is applied in `App.jsx` via `filterByUserBranch()`: admin-level
 | `src/utils/helpers.js` | `blockToTime`, `formatThaiDate`, `filterByUserBranch`, `calcCommission` |
 | `src/utils/smartParser.js` | Natural-language booking text → structured fields; learns aliases from corrections |
 | `src/utils/exportService.js` | CSV export with Thai character support (xlsx library) |
+| `src/utils/queueHistoryPagination.js` | Pure keyset-pagination helpers (uuid ranges, partial-safe walk, count check) used by `fetchQueues` for the full-history load |
+| `src/utils/queueRanges.js` | Pure date-range helpers (`findUncoveredRanges`, `mergeRanges`, `addDays`) backing on-demand queue loading in App.jsx |
 
 ### Conflict detection
 
@@ -68,7 +70,7 @@ Before saving a queue, `App.jsx` fetches **fresh data from DB** (`fetchQueuesFor
 
 ### Large table pagination
 
-`fetchQueues` and `fetchRoomSchedules` paginate in chunks of 1 000 rows via parallel Supabase queries to work around Supabase's default row limit.
+`fetchRoomSchedules` paginates in chunks of 1 000 rows via parallel OFFSET queries to work around Supabase's default row limit. Queues are **not** loaded in full on app open: Phase 2a loads only the last 30 days (`fetchQueues({ sinceDate })`, date-indexed OFFSET pages + `id` tiebreaker + dedupe), and `App.jsx` tracks `loadedRanges`. Pages that read older data (Commission, Export, CEO Dashboard, Summary, Capacity, or a date picker set to an old day) call the `onRangeNeeded(from, to)` prop; `ensureQueueRange` in App.jsx fetches only the uncovered gap via `fetchQueues({ sinceDate, untilDate })` and merges it (skipping ids deleted mid-load). Only the Export "Backup" button loads the whole table, on click, via keyset pagination (`src/utils/queueHistoryPagination.js`). Range helpers live in `src/utils/queueRanges.js`. A banner at the top of `.content` shows only while a range is loading or after one failed (with retry).
 
 ### Environment variables
 

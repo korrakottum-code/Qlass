@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient";
+import { fetchAllByUuidRanges, HISTORY_PAGE_SIZE } from "./queueHistoryPagination";
 import { getServerSessionToken } from "./sessionAuth";
 import { buildQueueStatusUpdate } from "./queueStatusUpdate";
 import { lookupHnCustomers } from "./hnLookup";
@@ -623,37 +624,84 @@ export function mapQueueRow(q) {
 }
 
 export async function fetchQueues(opts = {}) {
-  const { sinceDate = null } = opts; // "YYYY-MM-DD" — include queues with date >= sinceDate (optional)
-  const PAGE_SIZE = 1000;
+  // sinceDate / untilDate: "YYYY-MM-DD" — โหลดเฉพาะคิวที่ sinceDate <= date <= untilDate
+  //   (ตอนเปิดแอป: 30 วันล่าสุด; หน้าที่ต้องการข้อมูลเก่ากว่านั้นเรียกเพิ่มเฉพาะช่วงที่ยังไม่มี)
+  //   ถ้าไม่ส่ง sinceDate = โหลดทั้งตาราง (ใช้เฉพาะปุ่ม Backup)
+  // allowPartial: ถ้า true และบางส่วนล้ม จะคืนของที่ได้ + แจ้ง onResult({ complete:false })
+  // onResult({ complete, errors, rowCount }): callback รายงานความครบถ้วน — ถูกเรียกทุก path
+  const { sinceDate = null, untilDate = null, allowPartial = false, onResult = null } = opts;
+  const report = (r) => { if (typeof onResult === "function") onResult(r); };
 
-  // Get total count first, then fetch all pages in parallel
-  let countQuery = supabase.from("queues").select("*", { count: "exact", head: true });
-  if (sinceDate) countQuery = countQuery.gte("date", sinceDate);
-  const { count, error: countError } = await countQuery;
-  if (countError) throw countError;
+  let rows;
+  let complete = true;
+  let errors = [];
 
-  if (!count || count === 0) return [];
-
-  const numPages = Math.ceil(count / PAGE_SIZE);
-  const promises = [];
-  for (let i = 0; i < numPages; i++) {
-    let q = supabase.from("queues").select("*");
-    if (sinceDate) q = q.gte("date", sinceDate);
-    q = q
-      .order("date", { ascending: false })
-      .order("time_block", { ascending: true })
-      .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1);
-    promises.push(q);
+  if (sinceDate) {
+    // ─── Phase 2a: กรองตามวันที่ → ใช้ index date เดิม (ไม่เคย timeout; keyset-by-id ทำช้าลง 5 เท่า) ───
+    // เพิ่ม tiebreaker id ให้ลำดับคงที่ข้ามหน้า (เดิมไม่มี → OFFSET ทำแถวซ้ำ/หายได้)
+    const PAGE_SIZE = 1000;
+    let countQ = supabase.from("queues").select("*", { count: "exact", head: true }).gte("date", sinceDate);
+    if (untilDate) countQ = countQ.lte("date", untilDate);
+    const { count, error: countError } = await countQ;
+    if (countError) throw countError;
+    if (!count) { report({ complete: true, errors: [], rowCount: 0 }); return []; }
+    const numPages = Math.ceil(count / PAGE_SIZE);
+    const results = await Promise.all(Array.from({ length: numPages }, (_, i) => {
+      let q = supabase.from("queues").select("*").gte("date", sinceDate);
+      if (untilDate) q = q.lte("date", untilDate);
+      return q
+        .order("date", { ascending: false })
+        .order("time_block", { ascending: true, nullsFirst: false })
+        .order("id", { ascending: true })
+        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1);
+    }));
+    // แต่ละหน้าเป็นคนละ snapshot — ถ้ามีคน INSERT ระหว่างยิง แถวอาจเลื่อนไปโผล่ 2 หน้า → dedupe ด้วย id
+    // (keyset ใน Phase 2b ไม่มีปัญหานี้เพราะช่วง id ไม่ทับกัน)
+    const byId = new Map();
+    for (const { data, error } of results) {
+      if (error) throw error;
+      if (data) for (const r of data) byId.set(r.id, r);
+    }
+    rows = Array.from(byId.values());
+  } else {
+    // ─── Phase 2b: ทั้งตาราง → keyset บน id แบ่ง 4 ช่วงเดินขนาน (ดู queueHistoryPagination.js) ───
+    // count(*) ไว้เทียบว่าได้ครบจริง (กัน server ตัดหน้าสั้นกว่า pageSize แล้วเข้าใจผิดว่าหมด)
+    // ถ้า count เองล้ม (เช่น timeout) อย่าทิ้งทั้ง phase — โหลดต่อแบบ "ยืนยันความครบไม่ได้" ดีกว่าได้ศูนย์
+    const { count, error: countError } = await supabase
+      .from("queues").select("*", { count: "exact", head: true });
+    if (countError) console.error("fetchQueues: count(*) failed, completeness unverified:", countError);
+    // limit ต้องเท่ากับ pageSize ที่ walkRange ใช้ตัดสินว่า "หมดช่วง" — รับมาจาก walkRange เสมอ
+    const fetchPage = async (afterId, upperInclusive, pageSize) => {
+      const { data, error } = await supabase.from("queues").select("*")
+        .gt("id", afterId).lte("id", upperInclusive)
+        .order("id", { ascending: true }).limit(pageSize);
+      if (error) throw error;
+      return data || [];
+    };
+    ({ rows, complete, errors } = await fetchAllByUuidRanges(fetchPage, { pageSize: HISTORY_PAGE_SIZE, expectedCount: countError ? null : (count ?? null) }));
+    // count(*) ล้ม = ยืนยันความครบไม่ได้ → ต้องรายงานว่า "ไม่ครบ" ให้ banner ขึ้น ไม่ใช่ปล่อยผ่านเป็น complete
+    if (countError && complete) { complete = false; errors = [countError]; }
+    if (!complete && !allowPartial) {
+      report({ complete, errors, rowCount: rows.length });
+      throw errors[0];
+    }
   }
-  const results = await Promise.all(promises);
-  const allData = [];
-  for (const { data, error } of results) {
-    if (error) throw error;
-    if (data) allData.push(...data);
-  }
 
-  const unique = Array.from(new Map(allData.map((q) => [q.id, q])).values());
-  return unique.map(mapQueueRow);
+  report({ complete, errors, rowCount: rows.length });
+
+  const mapped = rows.map(mapQueueRow);
+  // เรียงให้คงที่ (ใหม่สุดก่อน, tiebreak ด้วย id) — consumer ปัจจุบันทุกตัว sort เองอยู่แล้ว แต่ผลจาก
+  // keyset มาเป็นลำดับ uuid ล้วน ๆ การคืนลำดับที่คาดเดาได้จึงเป็นสัญญาที่ปลอดภัยกว่าสำหรับ consumer
+  // ในอนาคต และราคาถูก (~85ms/146k แถว รันครั้งเดียวใน background)
+  // date เป็น "YYYY-MM-DD" และ id เป็น uuid ตัวพิมพ์เล็ก → เทียบ < > ตรง ๆ ได้ผลเท่า localeCompare
+  // แต่เร็วกว่า ~3.5 เท่า (146k แถว: ~85ms vs ~295ms บน main thread)
+  mapped.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    const ta = a.timeBlock ?? 1e9, tb = b.timeBlock ?? 1e9;
+    if (ta !== tb) return ta - tb;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+  return mapped;
 }
 
 export async function createQueue(queue) {

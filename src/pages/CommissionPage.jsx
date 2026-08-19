@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { ROLES, CUSTOMER_TYPES } from "../utils/constants";
 import { getTodayStr, calcCommission } from "../utils/helpers";
 
@@ -23,10 +23,12 @@ function RoleBadge({ role }) {
   );
 }
 
-export default function CommissionPage({ queues, staff, branches, procedures, promos }) {
+export default function CommissionPage({ queues, staff, branches, procedures, promos, onRangeNeeded }) {
   const { from: defaultFrom, to: defaultTo } = getMonthRange();
   const [fromDate, setFromDate] = useState(defaultFrom);
   const [toDate, setToDate] = useState(defaultTo);
+  // ขอให้ App โหลดคิวช่วงที่เลือก ถ้ายังไม่มีใน state (เกิน 30 วันล่าสุด)
+  useEffect(() => { onRangeNeeded?.(fromDate, toDate); }, [fromDate, toDate, onRangeNeeded]);
   const [filterBranch, setFilterBranch] = useState("all");
   const [expandedStaff, setExpandedStaff] = useState(null);
 

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { CUSTOMER_TYPES, QUEUE_STATUSES } from "../utils/constants";
 import { formatThaiDate, getCustomerBadgeClass, getTodayStr, isoToLocalDateStr, OVERDUE_MOVE_NOTE_PREFIX } from "../utils/helpers";
 
@@ -39,10 +39,11 @@ const EMPTY_MESSAGES = {
 
 export default function WaitingQueuePage({
   queues, branches, procedures, staff,
-  onCallIn, onUpdateStatus, onDelete,
+  onCallIn, onUpdateStatus, onDelete, onRangeNeeded,
 }) {
   const [qfBranch, setQfBranch] = useState("all");
   const [qfDate, setQfDate] = useState(getTodayStr());
+  useEffect(() => { if (qfDate) onRangeNeeded?.(qfDate, qfDate); }, [qfDate, onRangeNeeded]);
   const [activeTab, setActiveTab] = useState("unspecified");
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { queue }
   const [deleteInput, setDeleteInput] = useState("");

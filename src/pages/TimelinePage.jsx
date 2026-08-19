@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useLayoutEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useLayoutEffect } from "react";
 import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed, roleAtLeast } from "../utils/helpers";
 import { getBedSwitchState } from "../utils/bedSwitch";
 import HnLookup from "../components/HnLookup";
@@ -8,8 +8,10 @@ import { proceduresForRoom, roomLockLabel } from "../utils/roomProcedures";
 // สถานะที่ยังถือว่า "ยังไม่ยืนยัน" — ปุ่มย้ายเข้าคิวรอใน popover ใช้ได้เฉพาะกลุ่มนี้
 const UNCONFIRMED_STATUSES = ["pending", "follow1", "follow2", "follow3"];
 
-export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], roomProcedureIndex, currentUser, onSubmitBooking, onAbandonDraft, onEditQueue, onMoveToWaitingQueue, onToggleBedSwitch, showToast }) {
+export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], roomProcedureIndex, currentUser, onSubmitBooking, onAbandonDraft, onEditQueue, onMoveToWaitingQueue, onToggleBedSwitch, showToast, onRangeNeeded }) {
   const [date, setDate] = useState(getTodayStr());
+  // เลื่อนไปวันเก่ากว่า 30 วัน → ขอให้ App โหลดวันนั้น
+  useEffect(() => { if (date) onRangeNeeded?.(date, date); }, [date, onRangeNeeded]);
   // เลือกได้ทีละสาขา (ไม่มี "ทุกสาขา" — เรนเดอร์ทุกห้องทุกสาขาพร้อมกันทำให้หน้าช้ามาก)
   // ถ้ายังไม่เคยเลือก หรือสาขาที่เลือกไว้หายไป (branches โหลดเสร็จ/เปลี่ยน) ใช้สาขาแรกแทน
   const [filterBranchOverride, setFilterBranchOverride] = useState(null);
@@ -110,6 +112,10 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
     return arr;
   }, [minBlock, maxBlock]);
 
+  // โปร/แพ็กเกจ — หน้าร้านอยากเห็นข้างชื่อหัตถการ เพราะหัตถการเดียวกันมีหลายแพ็กเกจ
+  // ทำ Map ครั้งเดียวแทนการ .find ต่อคิว (คิววันละหลายร้อย × โปร 272 รายการ)
+  const promoById = useMemo(() => new Map((promos || []).map((p) => [p.id, p.name])), [promos]);
+
   // map roomId → { block → queue }
   const roomOccupied = useMemo(() => {
     const map = {};
@@ -120,11 +126,11 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
       const proc = procedures.find((p) => p.id === q.procedureId);
       const dur = q.durationBlocks ?? proc?.blocks ?? 1;
       for (let i = 0; i < dur; i++) {
-        map[q.roomId][q.timeBlock + i] = { ...q, procName: proc?.name || "", isStart: i === 0, dur };
+        map[q.roomId][q.timeBlock + i] = { ...q, procName: proc?.name || "", promoName: promoById.get(q.promoId) || "", isStart: i === 0, dur };
       }
     });
     return map;
-  }, [filteredRooms, dayQueues, procedures]);
+  }, [filteredRooms, dayQueues, procedures, promoById]);
 
   const totalQueues = dayQueues.length;
 
@@ -283,39 +289,22 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                         </div>
                         {lockLabel && (
                           <div style={{ marginTop: 3, display: "flex", justifyContent: "center" }}>
-                            <span title="เตียงนี้ลงได้เฉพาะหัตถการเหล่านี้ (ตั้งค่าที่หน้าจัดการห้อง)" style={{ fontSize: 10.5, fontWeight: 800, color: "var(--accent)", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: 6, padding: "1px 7px", lineHeight: 1.5, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <span title="เตียงนี้ลงได้เฉพาะหัตถการเหล่านี้ (ตั้งค่าที่หน้าจัดการห้อง)" style={{ fontSize: 10.5, fontWeight: 800, color: "var(--accent)", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: 6, padding: "1px 7px", lineHeight: 1.45, maxWidth: "100%", wordBreak: "break-word" }}>
                               🔒 {lockLabel}
                             </span>
                           </div>
                         )}
                         {/* ปุ่ม/ป้ายปิดเตียงรายวัน — เตียงที่ปิดจากหน้าตารางห้อง (hand) โชว์ป้ายอย่างเดียว */}
-                        {(bed.state !== "open" || (canToggleBed && !isPastDay)) && (
+                        {/* ป้ายสถานะ "ปิดอยู่" — แยกจากปุ่มสั่งการชัดเจน เพราะป้ายกับปุ่มที่หน้าตา
+                            เหมือนกันทำให้อ่านหัวคอลัมน์แล้วเข้าใจผิดว่าเตียงปิดอยู่ทั้งที่ยังเปิด */}
+                        {bed.state !== "open" && (
                           <div style={{ marginTop: 3, display: "flex", justifyContent: "center" }}>
-                            {bed.state === "closed_by_hand" || !canToggleBed ? (
-                              bed.state !== "open" && (
-                                <span
-                                  title={bed.state === "closed_by_hand" ? "ปิดไว้จากหน้าตารางห้อง/เครื่อง — เปิดคืนที่นั่น" : "เตียงปิดวันนี้"}
-                                  style={{ fontSize: 10.5, fontWeight: 800, color: "#b91c1c", background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 6, padding: "1px 7px", lineHeight: 1.5 }}
-                                >
-                                  ⛔ ปิดเตียง
-                                </span>
-                              )
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); onToggleBedSwitch?.(room, date); }}
-                                title={bed.state === "open" ? "ปิดเตียงนี้ทั้งวัน (เฉพาะวันที่ดูอยู่)" : "เปิดเตียงคืน (ลบเฉพาะรายการที่ปุ่มนี้สร้าง)"}
-                                style={{
-                                  fontSize: 10.5, fontWeight: 800, lineHeight: 1.5, cursor: "pointer",
-                                  padding: "1px 8px", borderRadius: 6,
-                                  border: bed.state === "open" ? "1px solid var(--border2)" : "1px solid #b91c1c",
-                                  background: bed.state === "open" ? "var(--surface)" : "#fee2e2",
-                                  color: bed.state === "open" ? "var(--text2)" : "#b91c1c",
-                                }}
-                              >
-                                {bed.state === "open" ? "🛏 ปิดเตียง" : "🔓 เปิดคืน"}
-                              </button>
-                            )}
+                            <span
+                              title={bed.state === "closed_by_hand" ? "ปิดไว้จากหน้าตารางห้อง/เครื่อง — เปิดคืนที่นั่น" : "เตียงนี้ปิดรับคิววันนี้"}
+                              style={{ fontSize: 11, fontWeight: 800, color: "#ffffff", background: "#b91c1c", border: "1px solid #7f1d1d", borderRadius: 6, padding: "2px 8px", lineHeight: 1.5 }}
+                            >
+                              ⛔ ปิดรับคิววันนี้
+                            </span>
                           </div>
                         )}
                         {roomScheduleNotes.length > 0 && (
@@ -330,6 +319,33 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                         )}
                         {cnt > 0 && (
                           <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", marginTop: 2 }}>{cnt} คิว</div>
+                        )}
+                        {/* ปุ่มสั่งการ — ขึ้นต้นด้วยคำกริยา "กด" และทำหน้าตาให้เป็นปุ่มจริง
+                            ไม่ใช่ป้ายแบน ๆ แบบ chip อื่นในหัวคอลัมน์ */}
+                        {canToggleBed && !isPastDay && bed.state !== "closed_by_hand" && (
+                          <div style={{ marginTop: 4, display: "flex", justifyContent: "center" }}>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); onToggleBedSwitch?.(room, date); }}
+                              title={bed.state === "open" ? "กดเพื่อปิดเตียงนี้ทั้งวัน (เฉพาะวันที่ดูอยู่)" : "กดเพื่อเปิดเตียงคืน (ลบเฉพาะรายการที่ปุ่มนี้สร้าง)"}
+                              style={{
+                                fontSize: 10.5, fontWeight: 700, lineHeight: 1.4, cursor: "pointer",
+                                padding: "3px 9px", borderRadius: 14,
+                                border: `1.5px solid ${bed.state === "open" ? "var(--text3)" : "#15803d"}`,
+                                background: bed.state === "open" ? "var(--surface2)" : "#dcfce7",
+                                color: bed.state === "open" ? "var(--text2)" : "#15803d",
+                                boxShadow: "0 1px 2px rgba(0,0,0,0.10)",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {bed.state === "open" ? "กดปิดเตียง" : "↩︎ กดเปิดคืน"}
+                            </button>
+                          </div>
+                        )}
+                        {bed.state === "closed_by_hand" && canToggleBed && !isPastDay && (
+                          <div style={{ marginTop: 2, fontSize: 9.5, color: "var(--text3)", lineHeight: 1.4 }}>
+                            เปิดคืนที่หน้าตารางห้อง/เครื่อง
+                          </div>
                         )}
                       </th>
                     );
@@ -423,8 +439,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                                     {isOverdue ? "⚠️ " : ""}{q.name}
                                   </div>
                                   {q.procName && (
-                                    <div style={{ fontSize: 9, color: isCourse ? "#b45309" : isM ? "#b91c1c" : "#166534", opacity: 0.8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                      {q.procName}
+                                    <div title={q.promoName ? `${q.procName} · ${q.promoName}` : q.procName} style={{ fontSize: 9, color: isCourse ? "#b45309" : isM ? "#b91c1c" : "#166534", opacity: 0.8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                      {q.procName}{q.promoName ? ` · ${q.promoName}` : ""}
                                     </div>
                                   )}
                                 </div>
@@ -507,6 +523,12 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                   <span style={{ fontWeight: 600 }}>{popup.q.procName}</span>
                 </div>
               )}
+              {popup.q.promoName && (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <span style={{ color: "var(--text3)", minWidth: 56 }}>โปร/แพ็ก</span>
+                  <span style={{ fontWeight: 600 }}>{popup.q.promoName}</span>
+                </div>
+              )}
               {popup.q.note && (
                 <div style={{ display: "flex", gap: 8 }}>
                   <span style={{ color: "var(--text3)", minWidth: 56 }}>Note</span>
@@ -542,7 +564,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                 }}
                 onClick={() => {
                   // ตัดฟิลด์ enrich ที่เติมมาจาก roomOccupied ออก ให้เหลือคิวดิบแบบเดียวกับหน้าตารางคิว
-                  const { procName: _procName, isStart: _isStart, dur: _dur, ...rawQueue } = popup.q;
+                  const { procName: _procName, promoName: _promoName, isStart: _isStart, dur: _dur, ...rawQueue } = popup.q;
                   setPopup(null);
                   onMoveToWaitingQueue(rawQueue);
                 }}

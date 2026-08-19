@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { CUSTOMER_TYPES, QUEUE_STATUSES, DAY_START_BLOCK, DAY_END_BLOCK } from "../utils/constants";
 import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass, isOverdueUnconfirmed } from "../utils/helpers";
 
@@ -31,10 +31,12 @@ function StatusBadge({ status }) {
 
 export default function QueueTablePage({
   queues, branches, rooms, procedures, promos, staff, roomSchedules,
-  onEdit, onDelete, onUpdateStatus, onMoveToWaitingQueue,
+  onEdit, onDelete, onUpdateStatus, onMoveToWaitingQueue, onRangeNeeded,
 }) {
   const [qfBranch, setQfBranch] = useState("all");
   const [qfDate, setQfDate] = useState(getTodayStr());
+  // เลือกวันเก่ากว่า 30 วัน → ขอให้ App โหลดวันนั้น (วันในช่วงที่มีแล้วจะไม่ยิงอะไร)
+  useEffect(() => { if (qfDate) onRangeNeeded?.(qfDate, qfDate); }, [qfDate, onRangeNeeded]);
   const [qfSearch, setQfSearch] = useState("");
   const [qfTimeBlock, setQfTimeBlock] = useState(""); // "" = ไม่กรองเวลา
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { queue }

@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { addDays } from "../utils/queueRanges";
 import { getTodayStr, formatThaiDate } from "../utils/helpers";
 import {
   computeCapacitySummary, listDates, daysUntilEndOfMonth,
-  blocksToHours, freePercent, averageFreePercentByBranch, computeWeeklyPace,
+  blocksToHours, freePercent, averageFreePercentByBranch, computeWeeklyPace, PACE_LOOKBACK_WEEKS,
 } from "../utils/capacity";
 
 // สีของ heatmap ตาม % ว่าง — ไล่เฉดต่อเนื่อง (แดง→ส้ม→เหลือง→เขียวอ่อน→เขียวเข้ม)
@@ -116,13 +117,15 @@ function PaceStrip({ weeklyPace }) {
   );
 }
 
-export default function CapacityPage({ rooms, roomSchedules, queues, branches, procedures }) {
+export default function CapacityPage({ rooms, roomSchedules, queues, branches, procedures, onRangeNeeded }) {
   const [range, setRange] = useState("7d"); // 7d | eom
   const [filterBranch, setFilterBranch] = useState("all");
   const [splitByType, setSplitByType] = useState(false);
   const [selected, setSelected] = useState(null); // { branchId, date }
 
   const today = getTodayStr();
+  // computeWeeklyPace ใช้ baseline ย้อนหลัง PACE_LOOKBACK_WEEKS สัปดาห์ (เกิน 30 วันที่โหลดตอนเปิดแอป)
+  useEffect(() => { onRangeNeeded?.(addDays(today, -PACE_LOOKBACK_WEEKS * 7), today); }, [today, onRangeNeeded]);
   const dates = useMemo(() => (
     range === "7d" ? listDates(today, 7) : listDates(today, daysUntilEndOfMonth(today))
   ), [range, today]);

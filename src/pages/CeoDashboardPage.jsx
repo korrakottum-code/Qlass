@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { QUEUE_STATUSES } from "../utils/constants";
 import { getTodayStr, formatThaiDate, isoToLocalDateStr } from "../utils/helpers";
 
@@ -118,7 +118,7 @@ function BranchDiagnosticDetail({ diag }) {
   );
 }
 
-export default function CeoDashboardPage({ queues, allQueues, branches, rooms, procedures, promos, staff, currentUser }) {
+export default function CeoDashboardPage({ queues, allQueues, branches, rooms, procedures, promos, staff, currentUser, onRangeNeeded }) {
   const todayKey = getTodayStr();
   const RANGES = [
     { key: "today", label: "วันนี้" },
@@ -224,6 +224,12 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
       label: rangeLabel,
     };
   }, [rangeKey, singleDate, startDate, endDate, rangeLabel]);
+
+  // ขอช่วงที่หน้านี้ใช้จริงทั้งหมด: เทียบช่วงก่อนหน้า (prevStart) + กราฟแนวโน้ม 7 วันในโหมด "วันนี้" (trendRange.start)
+  // และถึง "วันนี้" เสมอ เพราะสถิติแอดมิน (dayANO) นับตาม createdAt แต่ DB กรองตาม date (วันนัดอาจอยู่หลัง endDate)
+  const rangeFrom = trendRange.start < prevStart ? trendRange.start : prevStart;
+  const rangeTo = endDate > todayKey ? endDate : todayKey;
+  useEffect(() => { onRangeNeeded?.(rangeFrom, rangeTo); }, [rangeFrom, rangeTo, onRangeNeeded]);
 
   // daily trend within selected range
   const trend = useMemo(() => {
