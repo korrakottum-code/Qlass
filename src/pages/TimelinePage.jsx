@@ -215,10 +215,13 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
               คือตอนโชว์แถบ → scrollHeight มากกว่า innerHeight ตลอด ตารางเลยหดจนยุบ
               และหน้าต่างเบราว์เซอร์ย่อ ๆ ตรวจไม่เจอเพราะไม่มีแถบเครื่องมือยุบได้
 
-              190px = แถบบนแอป ~60 + แถบตัวเลือก 2 แถว ~63 + คำอธิบายสี 2 บรรทัด ~51 + เผื่อ
-              ถ้าแถบเตือนคิวเลยเวลาโผล่ ตารางจะเตี้ยกว่าที่ควรนิดหน่อย ซึ่งยอมได้ —
-              เสียที่ดีกว่าเสี่ยงยุบ ส่วน dvh (ไม่ใช่ vh) ปรับตามแถบเครื่องมือให้เองอยู่แล้ว */}
-          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: isMobile ? "calc(100dvh - 190px)" : "calc(100dvh - 230px)" }}>
+              235px วัดจากของจริงที่ 375px: ของเหนือตาราง 168 (แถบแอป + แถบตัวเลือก 2 แถว)
+              + คำอธิบายสี 2 บรรทัด 51 + padding ท้ายหน้าของ .content 16 — สามก้อนนี้ขึ้นกับ
+              ความ "กว้าง" จอ ไม่ใช่ความ "สูง" เลยเป็นค่าคงที่ได้ ส่วน dvh จัดการความสูงให้เอง
+
+              ข้อยกเว้นที่ยอมรับ: วันที่มีแถบเตือนคิวเลยเวลา แถบนั้นดันตารางลง หน้าจะเลื่อนเอง
+              ได้นิดหน่อย — เป็นการเสื่อมแบบมีขอบเขต ไม่ใช่ยุบ จึงไม่แลกกับการกลับไปวัดเอง */}
+          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: isMobile ? "calc(100dvh - 235px)" : "calc(100dvh - 230px)" }}>
             <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed", minWidth: TIME_COL + filteredRooms.length * ROOM_COL_MIN }}>
               {/* Header: ชื่อห้องเป็น column */}
               <thead>
