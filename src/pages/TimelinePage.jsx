@@ -275,78 +275,78 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                     const bed = bedSwitchStateByRoomId[room.id] || { state: "open" };
                     return (
                       <th key={room.id} style={{
-                        padding: "6px 10px", textAlign: "center",
+                        // height 1px + ลูกในสูง 100% = ทุกคอลัมน์ยืดเท่าความสูงแถวจริง
+                        // ทำให้ดันก้อนล่าง (จำนวนคิว+ปุ่ม) ไปชิดล่างด้วย marginTop:auto ได้
+                        padding: 0, height: 1, verticalAlign: "top", textAlign: "center",
                         borderBottom: "2px solid var(--border2)",
                         borderRight: "1px solid var(--border)",
                         position: "sticky", top: 0, zIndex: 3,
                         background: room.type === "M" ? "#eff6ff" : "#f0fdf4",
                       }}>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: room.type === "M" ? "var(--blue)" : "var(--green)" }}>
-                          {room.name}
-                        </div>
-                        <div style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>
-                          [{room.type}]{branch ? ` • ${branch.name}` : ""}
-                        </div>
-                        {lockLabel && (
-                          <div style={{ marginTop: 3, display: "flex", justifyContent: "center" }}>
-                            <span title="เตียงนี้ลงได้เฉพาะหัตถการเหล่านี้ (ตั้งค่าที่หน้าจัดการห้อง)" style={{ fontSize: 10.5, fontWeight: 800, color: "var(--accent)", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: 6, padding: "1px 7px", lineHeight: 1.45, maxWidth: "100%", wordBreak: "break-word" }}>
+                        {/* ทุกคอลัมน์ใช้โครงเดียวกัน: ชื่อ → เครื่อง → สถานะ/โน้ต → (ดันลงล่าง) จำนวน+ปุ่ม
+                            ป้ายทุกใบกว้างเต็มคอลัมน์ ขอบซ้ายขวาจะได้ตรงกันทุกใบทุกคอลัมน์
+                            แทนที่จะเป็น pill ลอย ๆ กว้างไม่เท่ากันจัดกึ่งกลาง */}
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 3, height: "100%", boxSizing: "border-box", padding: "6px 8px" }}>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: room.type === "M" ? "var(--blue)" : "var(--green)" }}>
+                            {room.name}
+                          </div>
+                          <div style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>
+                            [{room.type}]{branch ? ` • ${branch.name}` : ""}
+                          </div>
+                          {lockLabel && (
+                            <span title="เตียงนี้ลงได้เฉพาะหัตถการเหล่านี้ (ตั้งค่าที่หน้าจัดการห้อง)" style={{ display: "block", fontSize: 10.5, fontWeight: 800, color: "var(--accent)", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: 6, padding: "1px 6px", lineHeight: 1.45, wordBreak: "break-word" }}>
                               🔒 {lockLabel}
                             </span>
-                          </div>
-                        )}
+                          )}
                         {/* ปุ่ม/ป้ายปิดเตียงรายวัน — เตียงที่ปิดจากหน้าตารางห้อง (hand) โชว์ป้ายอย่างเดียว */}
                         {/* ป้ายสถานะ "ปิดอยู่" — แยกจากปุ่มสั่งการชัดเจน เพราะป้ายกับปุ่มที่หน้าตา
                             เหมือนกันทำให้อ่านหัวคอลัมน์แล้วเข้าใจผิดว่าเตียงปิดอยู่ทั้งที่ยังเปิด */}
-                        {bed.state !== "open" && (
-                          <div style={{ marginTop: 3, display: "flex", justifyContent: "center" }}>
+                          {bed.state !== "open" && (
                             <span
                               title={bed.state === "closed_by_hand" ? "ปิดไว้จากหน้าตารางห้อง/เครื่อง — เปิดคืนที่นั่น" : "เตียงนี้ปิดรับคิววันนี้"}
-                              style={{ fontSize: 11, fontWeight: 800, color: "#ffffff", background: "#b91c1c", border: "1px solid #7f1d1d", borderRadius: 6, padding: "2px 8px", lineHeight: 1.5 }}
+                              style={{ display: "block", fontSize: 11, fontWeight: 800, color: "#ffffff", background: "#b91c1c", border: "1px solid #7f1d1d", borderRadius: 6, padding: "2px 6px", lineHeight: 1.5 }}
                             >
                               ⛔ ปิดรับคิววันนี้
                             </span>
-                          </div>
-                        )}
-                        {roomScheduleNotes.length > 0 && (
-                          // มือถือ: ป้ายละบรรทัด ตัดท้ายเอา — ข้อความเต็มอยู่ใน popup ตอนกดลงคิว
-                          <div style={{ marginTop: 3, display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: "center", justifyContent: "center", flexWrap: isMobile ? "nowrap" : "wrap", gap: isMobile ? 2 : 6 }}>
-                            {roomScheduleNotes.map((note, idx) => (
-                              <span key={`${note}_${idx}`} title={note} style={{ fontSize: isMobile ? 9.5 : 11, fontWeight: 800, color: "#ffffff", lineHeight: 1.4, background: "#dc2626", border: "1px solid #b91c1c", borderRadius: 6, padding: isMobile ? "1px 5px" : "2px 8px", maxWidth: "100%", ...(isMobile ? { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } : {}) }}>
-                                📅 {note}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {cnt > 0 && (
-                          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", marginTop: 2 }}>{cnt} คิว</div>
-                        )}
+                          )}
+                          {/* โน้ตเรียงบรรทัดละใบเสมอ — เดิมบนจอใหญ่ปล่อยให้ wrap เอง สองใบเลยบางที
+                              อยู่ข้างกันบางทีตกบรรทัด คอลัมน์ข้าง ๆ จึงสูงไม่เท่ากันแบบเดาไม่ได้ */}
+                          {roomScheduleNotes.map((note, idx) => (
+                            <span key={`${note}_${idx}`} title={note} style={{ display: "block", fontSize: isMobile ? 9.5 : 11, fontWeight: 800, color: "#ffffff", lineHeight: 1.4, background: "#dc2626", border: "1px solid #b91c1c", borderRadius: 6, padding: isMobile ? "1px 5px" : "2px 6px", ...(isMobile ? { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } : { wordBreak: "break-word" }) }}>
+                              📅 {note}
+                            </span>
+                          ))}
+                          {/* ก้อนล่าง — marginTop:auto ดันไปชิดก้นเสมอ ปุ่มทุกคอลัมน์เลยอยู่ระดับเดียวกัน
+                              จำนวนคิวโชว์ตลอดแม้เป็น 0 ไม่งั้นคอลัมน์ที่ยังไม่มีคิวจะสูงไม่เท่าเพื่อน */}
+                          <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, paddingTop: 3 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: cnt > 0 ? "var(--accent)" : "var(--text3)" }}>{cnt} คิว</div>
                         {/* ปุ่มสั่งการ — ขึ้นต้นด้วยคำกริยา "กด" และทำหน้าตาให้เป็นปุ่มจริง
                             ไม่ใช่ป้ายแบน ๆ แบบ chip อื่นในหัวคอลัมน์ */}
-                        {canToggleBed && !isPastDay && bed.state !== "closed_by_hand" && (
-                          <div style={{ marginTop: 4, display: "flex", justifyContent: "center" }}>
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); onToggleBedSwitch?.(room, date); }}
-                              title={bed.state === "open" ? "กดเพื่อปิดเตียงนี้ทั้งวัน (เฉพาะวันที่ดูอยู่)" : "กดเพื่อเปิดเตียงคืน (ลบเฉพาะรายการที่ปุ่มนี้สร้าง)"}
-                              style={{
-                                fontSize: 10.5, fontWeight: 700, lineHeight: 1.4, cursor: "pointer",
-                                padding: "3px 9px", borderRadius: 14,
-                                border: `1.5px solid ${bed.state === "open" ? "var(--text3)" : "#15803d"}`,
-                                background: bed.state === "open" ? "var(--surface2)" : "#dcfce7",
-                                color: bed.state === "open" ? "var(--text2)" : "#15803d",
-                                boxShadow: "0 1px 2px rgba(0,0,0,0.10)",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {bed.state === "open" ? "กดปิดเตียง" : "↩︎ กดเปิดคืน"}
-                            </button>
+                            {canToggleBed && !isPastDay && bed.state !== "closed_by_hand" && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); onToggleBedSwitch?.(room, date); }}
+                                title={bed.state === "open" ? "กดเพื่อปิดเตียงนี้ทั้งวัน (เฉพาะวันที่ดูอยู่)" : "กดเพื่อเปิดเตียงคืน (ลบเฉพาะรายการที่ปุ่มนี้สร้าง)"}
+                                style={{
+                                  fontSize: 10.5, fontWeight: 700, lineHeight: 1.4, cursor: "pointer",
+                                  padding: "3px 9px", borderRadius: 14,
+                                  border: `1.5px solid ${bed.state === "open" ? "var(--text3)" : "#15803d"}`,
+                                  background: bed.state === "open" ? "var(--surface2)" : "#dcfce7",
+                                  color: bed.state === "open" ? "var(--text2)" : "#15803d",
+                                  boxShadow: "0 1px 2px rgba(0,0,0,0.10)",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {bed.state === "open" ? "กดปิดเตียง" : "↩︎ กดเปิดคืน"}
+                              </button>
+                            )}
+                            {bed.state === "closed_by_hand" && canToggleBed && !isPastDay && (
+                              <div style={{ fontSize: 9.5, color: "var(--text3)", lineHeight: 1.4 }}>
+                                เปิดคืนที่หน้าตารางห้อง/เครื่อง
+                              </div>
+                            )}
                           </div>
-                        )}
-                        {bed.state === "closed_by_hand" && canToggleBed && !isPastDay && (
-                          <div style={{ marginTop: 2, fontSize: 9.5, color: "var(--text3)", lineHeight: 1.4 }}>
-                            เปิดคืนที่หน้าตารางห้อง/เครื่อง
-                          </div>
-                        )}
+                        </div>
                       </th>
                     );
                   })}
@@ -457,13 +457,20 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
           </div>
 
           {/* Legend */}
-          <div ref={legendRef} style={{ display: "flex", gap: 12, padding: "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap" }}>
-            {[["#fde8e8","มีคิว (M)"],["#dcfce7","มีคิว (T)"],["#fef9c3","ใช้คอร์ส"],["rgba(217,119,6,0.2)","เลยเวลายืนยัน"],["var(--surface3)","ปิด / ไม่พร้อม"],["transparent","ว่าง"]].map(([c, l]) => (
-              <span key={l} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text2)" }}>
-                <span style={{ width: 12, height: 12, borderRadius: 3, background: c, border: "1px solid var(--border)", display: "inline-block" }} />{l}
+          {/* มือถือ: ย่อชื่อให้สีทั้งหกอยู่บรรทัดเดียว แล้ววิธีใช้อีกบรรทัด = จบใน 2 บรรทัด
+              (เดิมชื่อยาวทำให้ตกเป็น 3 บรรทัด กินที่ตารางไปเปล่า ๆ) */}
+          <div ref={legendRef} style={{ display: "flex", gap: isMobile ? 8 : 12, padding: isMobile ? "6px 8px" : "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap", alignItems: "center" }}>
+            {(isMobile
+              ? [["#fde8e8","M"],["#dcfce7","T"],["#fef9c3","คอร์ส"],["rgba(217,119,6,0.2)","เลยเวลา"],["var(--surface3)","ปิด"],["transparent","ว่าง"]]
+              : [["#fde8e8","มีคิว (M)"],["#dcfce7","มีคิว (T)"],["#fef9c3","ใช้คอร์ส"],["rgba(217,119,6,0.2)","เลยเวลายืนยัน"],["var(--surface3)","ปิด / ไม่พร้อม"],["transparent","ว่าง"]]
+            ).map(([c, l]) => (
+              <span key={l} style={{ display: "flex", alignItems: "center", gap: isMobile ? 3 : 4, fontSize: isMobile ? 10 : 11, fontWeight: isMobile ? 700 : 400, color: "var(--text2)", whiteSpace: "nowrap" }}>
+                <span style={{ width: isMobile ? 11 : 12, height: isMobile ? 11 : 12, borderRadius: 3, background: c, border: "1px solid var(--border2)", display: "inline-block", flexShrink: 0 }} />{l}
               </span>
             ))}
-            <span style={{ fontSize: 11, color: "var(--text3)", marginLeft: "auto" }}>กดช่องว่าง = บันทึกคิว • กดช่องคิว = ดูรายละเอียด</span>
+            <span style={{ fontSize: isMobile ? 10 : 11, color: "var(--text3)", ...(isMobile ? { width: "100%" } : { marginLeft: "auto" }) }}>
+              {isMobile ? "กดช่องว่าง = ลงคิว · กดช่องคิว = ดูรายละเอียด" : "กดช่องว่าง = บันทึกคิว • กดช่องคิว = ดูรายละเอียด"}
+            </span>
           </div>
         </div>
       )}
