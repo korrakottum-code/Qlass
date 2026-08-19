@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useLayoutEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed, roleAtLeast } from "../utils/helpers";
 import { getBedSwitchState } from "../utils/bedSwitch";
 import HnLookup from "../components/HnLookup";
@@ -21,35 +21,13 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   const [popup, setPopup] = useState(null); // { q, room, block, x, y }
   const [bookingForm, setBookingForm] = useState(null); // mini booking popup form
   const { isSaving: saving, run: runBookingSubmit } = useSubmissionLock();
-  const isMobile = typeof window !== "undefined" && window.innerWidth <= 640;
-  const [outsideTapHint, setOutsideTapHint] = useState(false);
-  const scrollerRef = useRef(null);
-  const legendRef = useRef(null);
-  const [scrollerMaxH, setScrollerMaxH] = useState(null);
 
   // Goal 13: closing the popup without a successful save abandons this draft —
   // a stale request ID left over from a failed attempt must not be reused for
   // the next customer's booking (see fix/goal13-request-id-reset-on-cancel).
   function closeBookingForm() {
     onAbandonDraft?.();
-    setOutsideTapHint(false);
     setBookingForm(null);
-  }
-
-  // กรอกไปครึ่งทางแล้วนิ้วไปโดนนอกกรอบ = พิมพ์ใหม่หมด ซึ่งบนมือถือเกิดง่ายมาก
-  // กดนอกกรอบเลยปิดให้เฉพาะตอนที่ยังไม่ได้กรอกอะไร ถ้ากรอกแล้วต้องตั้งใจกด ยกเลิก
-  function isBookingFormDirty(f) {
-    if (!f) return false;
-    return Boolean(
-      f.name?.trim() || f.phone?.trim() || f.procedureId || f.promoId ||
-      f.note?.trim() || (f.price !== "" && f.price != null && Number(f.price) !== 0) ||
-      f.customerType !== "new"
-    );
-  }
-
-  function onBackdropClick() {
-    if (isBookingFormDirty(bookingForm)) setOutsideTapHint(true);
-    else closeBookingForm();
   }
 
   function navigate(dir) {
@@ -145,52 +123,6 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   const canToggleBed = roleAtLeast(currentUser, "branch_manager");
   const isPastDay = date < getTodayStr();
 
-  // ความสูงตารางบนมือถือ — วัดจริง ไม่ใช้ค่าคงที่
-  //
-  // เดิมใช้ calc(100dvh - 155px) ซึ่งเป็นการเดาว่าของข้างบนสูงเท่าไร พอเดาพลาด ก้นการ์ด
-  // (คำอธิบายสี) จะเลยขอบจอลงไป แล้วหน้าเว็บก็เลื่อนได้เองอีกชั้นซ้อนกับตารางที่เลื่อนข้างใน
-  // — สองสกรอลล์ซ้อนกันทำให้แถวท้าย ๆ กับคำอธิบายสีเข้าไม่ถึงเลย
-  //
-  // แถบตัวเลือกด้านบนสูงไม่คงที่ (ชื่อสาขายาว/สั้น, แถบเตือนคิวเลยเวลาโผล่บ้างไม่โผล่บ้าง)
-  // เลยต้องวัดตำแหน่งจริงของตารางกับความสูงจริงของคำอธิบายสี แล้วให้การ์ดจบพอดีขอบจอ
-  //
-  // ใช้ระยะจากหัวเอกสาร (rect.top + scrollY) ไม่ใช่ระยะจากขอบจอ — ค่าจะได้ไม่แกว่งตาม
-  // ตำแหน่งที่ผู้ใช้เลื่อนค้างไว้ตอนวัด
-  useLayoutEffect(() => {
-    // จอใหญ่ใช้ค่า calc คงที่ ไม่ต้องล้าง state — ตอน render ไม่ได้อ่าน scrollerMaxH อยู่แล้ว
-    if (!isMobile) return;
-    let raf = 0;
-    function measure() {
-      cancelAnimationFrame(raf);
-      // รอ frame ถัดไปก่อนวัด — ตอนข้อมูลเพิ่งโหลดเสร็จ layout ยังขยับอยู่ ถ้าวัดทันทีจะได้ค่าเก่า
-      raf = requestAnimationFrame(() => {
-        const el = scrollerRef.current;
-        if (!el) return;
-        const topInDoc = el.getBoundingClientRect().top + window.scrollY;
-        // นับ "ทุกอย่างที่อยู่ใต้ตาราง" จากความสูงเอกสารจริง ไม่ใช่แค่คำอธิบายสี — ยังมี
-        // padding ท้ายหน้าของ layout อีก ถ้าไม่นับ หน้าจะยังเลื่อนได้นิดหน่อยแล้วก้นหลุดจออยู่ดี
-        const below = document.documentElement.scrollHeight - (topInDoc + el.offsetHeight);
-        const next = Math.max(220, Math.round(window.innerHeight - topInDoc - below));
-        // กันลูป: ตั้งความสูงตารางทำให้ body สูงเปลี่ยน → observer ยิงซ้ำ ถ้าค่าเท่าเดิมต้องหยุด
-        setScrollerMaxH((prev) => (prev === next ? prev : next));
-      });
-    }
-    measure();
-    // ไล่ระบุ deps เองไม่ครอบคลุม — แถบเตือนคิวเลยเวลาโผล่, ชื่อสาขาตกบรรทัด, ฟอนต์โหลดเสร็จ
-    // ล้วนดันตารางลงโดยไม่ผ่าน state ตัวไหนเลย ให้ observer จับการขยับจริงแทน
-    const ro = new ResizeObserver(measure);
-    ro.observe(document.body);
-    if (legendRef.current) ro.observe(legendRef.current);
-    window.addEventListener("resize", measure);
-    window.addEventListener("orientationchange", measure);
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("orientationchange", measure);
-    };
-  }, [isMobile]);
-
   const ROW_H = 30;  // ความสูงแต่ละ block 5 นาที (ลดจาก 40 ให้เห็นช่วงเวลาได้มากขึ้นโดยไม่ต้องเลื่อน)
   const TIME_COL = 72; // คอลัมน์เวลาซ้าย
   // ความกว้างขั้นต่ำต่อห้อง — บนมือถือคอลัมน์จะไม่ถูกบีบจนอ่านชื่อไม่ออก
@@ -200,47 +132,28 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   return (
     <>
       {/* Controls */}
-      {isMobile ? (
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
-            <button onClick={() => navigate(-1)} style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16, flexShrink: 0 }}>‹</button>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
-            <button onClick={() => navigate(1)} style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16, flexShrink: 0 }}>›</button>
-            <button onClick={() => setDate(getTodayStr())} style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--accent)", flexShrink: 0 }}>วันนี้</button>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <select value={filterBranch} onChange={(e) => setFilterBranchOverride(e.target.value)} style={{ flex: 1, minWidth: 0 }}>
-              {branches.length === 0 && <option value="">-- ไม่มีสาขา --</option>}
-              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)", whiteSpace: "nowrap" }}>{formatThaiDate(date)}</span>
-            <span style={{ background: "var(--surface3)", borderRadius: 20, padding: "3px 10px", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>{totalQueues} คิว</span>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end", marginBottom: 16 }}>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">วันที่</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button onClick={() => navigate(-1)} style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16 }}>‹</button>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: 140 }} />
+            <button onClick={() => navigate(1)} style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16 }}>›</button>
+            <button onClick={() => setDate(getTodayStr())} style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>วันนี้</button>
           </div>
         </div>
-      ) : (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end", marginBottom: 16 }}>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">วันที่</label>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <button onClick={() => navigate(-1)} style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16 }}>‹</button>
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: 140 }} />
-              <button onClick={() => navigate(1)} style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16 }}>›</button>
-              <button onClick={() => setDate(getTodayStr())} style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>วันนี้</button>
-            </div>
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">สาขา</label>
-            <select value={filterBranch} onChange={(e) => setFilterBranchOverride(e.target.value)}>
-              {branches.length === 0 && <option value="">-- ไม่มีสาขา --</option>}
-              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}>{formatThaiDate(date)}</span>
-            <span style={{ background: "var(--surface3)", borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 700 }}>{totalQueues} คิว</span>
-          </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">สาขา</label>
+          <select value={filterBranch} onChange={(e) => setFilterBranchOverride(e.target.value)}>
+            {branches.length === 0 && <option value="">-- ไม่มีสาขา --</option>}
+            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
         </div>
-      )}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}>{formatThaiDate(date)}</span>
+          <span style={{ background: "var(--surface3)", borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 700 }}>{totalQueues} คิว</span>
+        </div>
+      </div>
 
       {overdueCount > 0 && (
         <div style={{
@@ -257,7 +170,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
         <div className="card"><div className="empty"><div className="e-icon">🚪</div><p>ไม่พบห้อง</p></div></div>
       ) : (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <div ref={scrollerRef} style={{ overflowX: "auto", overflowY: "auto", maxHeight: isMobile ? (scrollerMaxH ? `${scrollerMaxH}px` : "calc(100dvh - 245px)") : "calc(100dvh - 230px)" }}>
+          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100dvh - 230px)" }}>
             <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed", minWidth: TIME_COL + filteredRooms.length * ROOM_COL_MIN }}>
               {/* Header: ชื่อห้องเป็น column */}
               <thead>
@@ -275,78 +188,77 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                     const bed = bedSwitchStateByRoomId[room.id] || { state: "open" };
                     return (
                       <th key={room.id} style={{
-                        // height 1px + ลูกในสูง 100% = ทุกคอลัมน์ยืดเท่าความสูงแถวจริง
-                        // ทำให้ดันก้อนล่าง (จำนวนคิว+ปุ่ม) ไปชิดล่างด้วย marginTop:auto ได้
-                        padding: 0, height: 1, verticalAlign: "top", textAlign: "center",
+                        padding: "6px 10px", textAlign: "center",
                         borderBottom: "2px solid var(--border2)",
                         borderRight: "1px solid var(--border)",
                         position: "sticky", top: 0, zIndex: 3,
                         background: room.type === "M" ? "#eff6ff" : "#f0fdf4",
                       }}>
-                        {/* ทุกคอลัมน์ใช้โครงเดียวกัน: ชื่อ → เครื่อง → สถานะ/โน้ต → (ดันลงล่าง) จำนวน+ปุ่ม
-                            ป้ายทุกใบกว้างเต็มคอลัมน์ ขอบซ้ายขวาจะได้ตรงกันทุกใบทุกคอลัมน์
-                            แทนที่จะเป็น pill ลอย ๆ กว้างไม่เท่ากันจัดกึ่งกลาง */}
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 3, height: "100%", boxSizing: "border-box", padding: "6px 8px" }}>
-                          <div style={{ fontSize: 12, fontWeight: 800, color: room.type === "M" ? "var(--blue)" : "var(--green)" }}>
-                            {room.name}
-                          </div>
-                          <div style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>
-                            [{room.type}]{branch ? ` • ${branch.name}` : ""}
-                          </div>
-                          {lockLabel && (
-                            <span title="เตียงนี้ลงได้เฉพาะหัตถการเหล่านี้ (ตั้งค่าที่หน้าจัดการห้อง)" style={{ display: "block", fontSize: 10.5, fontWeight: 800, color: "var(--accent)", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: 6, padding: "1px 6px", lineHeight: 1.45, wordBreak: "break-word" }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: room.type === "M" ? "var(--blue)" : "var(--green)" }}>
+                          {room.name}
+                        </div>
+                        <div style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>
+                          [{room.type}]{branch ? ` • ${branch.name}` : ""}
+                        </div>
+                        {lockLabel && (
+                          <div style={{ marginTop: 3, display: "flex", justifyContent: "center" }}>
+                            <span title="เตียงนี้ลงได้เฉพาะหัตถการเหล่านี้ (ตั้งค่าที่หน้าจัดการห้อง)" style={{ fontSize: 10.5, fontWeight: 800, color: "var(--accent)", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: 6, padding: "1px 7px", lineHeight: 1.45, maxWidth: "100%", wordBreak: "break-word" }}>
                               🔒 {lockLabel}
                             </span>
-                          )}
+                          </div>
+                        )}
                         {/* ปุ่ม/ป้ายปิดเตียงรายวัน — เตียงที่ปิดจากหน้าตารางห้อง (hand) โชว์ป้ายอย่างเดียว */}
                         {/* ป้ายสถานะ "ปิดอยู่" — แยกจากปุ่มสั่งการชัดเจน เพราะป้ายกับปุ่มที่หน้าตา
                             เหมือนกันทำให้อ่านหัวคอลัมน์แล้วเข้าใจผิดว่าเตียงปิดอยู่ทั้งที่ยังเปิด */}
-                          {bed.state !== "open" && (
+                        {bed.state !== "open" && (
+                          <div style={{ marginTop: 3, display: "flex", justifyContent: "center" }}>
                             <span
                               title={bed.state === "closed_by_hand" ? "ปิดไว้จากหน้าตารางห้อง/เครื่อง — เปิดคืนที่นั่น" : "เตียงนี้ปิดรับคิววันนี้"}
-                              style={{ display: "block", fontSize: 11, fontWeight: 800, color: "#ffffff", background: "#b91c1c", border: "1px solid #7f1d1d", borderRadius: 6, padding: "2px 6px", lineHeight: 1.5 }}
+                              style={{ fontSize: 11, fontWeight: 800, color: "#ffffff", background: "#b91c1c", border: "1px solid #7f1d1d", borderRadius: 6, padding: "2px 8px", lineHeight: 1.5 }}
                             >
                               ⛔ ปิดรับคิววันนี้
                             </span>
-                          )}
-                          {/* โน้ตเรียงบรรทัดละใบเสมอ — เดิมบนจอใหญ่ปล่อยให้ wrap เอง สองใบเลยบางที
-                              อยู่ข้างกันบางทีตกบรรทัด คอลัมน์ข้าง ๆ จึงสูงไม่เท่ากันแบบเดาไม่ได้ */}
-                          {roomScheduleNotes.map((note, idx) => (
-                            <span key={`${note}_${idx}`} title={note} style={{ display: "block", fontSize: isMobile ? 9.5 : 11, fontWeight: 800, color: "#ffffff", lineHeight: 1.4, background: "#dc2626", border: "1px solid #b91c1c", borderRadius: 6, padding: isMobile ? "1px 5px" : "2px 6px", ...(isMobile ? { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } : { wordBreak: "break-word" }) }}>
-                              📅 {note}
-                            </span>
-                          ))}
-                          {/* ก้อนล่าง — marginTop:auto ดันไปชิดก้นเสมอ ปุ่มทุกคอลัมน์เลยอยู่ระดับเดียวกัน
-                              จำนวนคิวโชว์ตลอดแม้เป็น 0 ไม่งั้นคอลัมน์ที่ยังไม่มีคิวจะสูงไม่เท่าเพื่อน */}
-                          <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, paddingTop: 3 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: cnt > 0 ? "var(--accent)" : "var(--text3)" }}>{cnt} คิว</div>
+                          </div>
+                        )}
+                        {roomScheduleNotes.length > 0 && (
+                          <div style={{ marginTop: 3, display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 6 }}>
+                            {roomScheduleNotes.map((note, idx) => (
+                              <span key={`${note}_${idx}`} style={{ fontSize: 11, fontWeight: 800, color: "#ffffff", lineHeight: 1.5, background: "#dc2626", border: "1px solid #b91c1c", borderRadius: 6, padding: "2px 8px" }}>
+                                📅 {note}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {cnt > 0 && (
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", marginTop: 2 }}>{cnt} คิว</div>
+                        )}
                         {/* ปุ่มสั่งการ — ขึ้นต้นด้วยคำกริยา "กด" และทำหน้าตาให้เป็นปุ่มจริง
                             ไม่ใช่ป้ายแบน ๆ แบบ chip อื่นในหัวคอลัมน์ */}
-                            {canToggleBed && !isPastDay && bed.state !== "closed_by_hand" && (
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); onToggleBedSwitch?.(room, date); }}
-                                title={bed.state === "open" ? "กดเพื่อปิดเตียงนี้ทั้งวัน (เฉพาะวันที่ดูอยู่)" : "กดเพื่อเปิดเตียงคืน (ลบเฉพาะรายการที่ปุ่มนี้สร้าง)"}
-                                style={{
-                                  fontSize: 10.5, fontWeight: 700, lineHeight: 1.4, cursor: "pointer",
-                                  padding: "3px 9px", borderRadius: 14,
-                                  border: `1.5px solid ${bed.state === "open" ? "var(--text3)" : "#15803d"}`,
-                                  background: bed.state === "open" ? "var(--surface2)" : "#dcfce7",
-                                  color: bed.state === "open" ? "var(--text2)" : "#15803d",
-                                  boxShadow: "0 1px 2px rgba(0,0,0,0.10)",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {bed.state === "open" ? "กดปิดเตียง" : "↩︎ กดเปิดคืน"}
-                              </button>
-                            )}
-                            {bed.state === "closed_by_hand" && canToggleBed && !isPastDay && (
-                              <div style={{ fontSize: 9.5, color: "var(--text3)", lineHeight: 1.4 }}>
-                                เปิดคืนที่หน้าตารางห้อง/เครื่อง
-                              </div>
-                            )}
+                        {canToggleBed && !isPastDay && bed.state !== "closed_by_hand" && (
+                          <div style={{ marginTop: 4, display: "flex", justifyContent: "center" }}>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); onToggleBedSwitch?.(room, date); }}
+                              title={bed.state === "open" ? "กดเพื่อปิดเตียงนี้ทั้งวัน (เฉพาะวันที่ดูอยู่)" : "กดเพื่อเปิดเตียงคืน (ลบเฉพาะรายการที่ปุ่มนี้สร้าง)"}
+                              style={{
+                                fontSize: 10.5, fontWeight: 700, lineHeight: 1.4, cursor: "pointer",
+                                padding: "3px 9px", borderRadius: 14,
+                                border: `1.5px solid ${bed.state === "open" ? "var(--text3)" : "#15803d"}`,
+                                background: bed.state === "open" ? "var(--surface2)" : "#dcfce7",
+                                color: bed.state === "open" ? "var(--text2)" : "#15803d",
+                                boxShadow: "0 1px 2px rgba(0,0,0,0.10)",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {bed.state === "open" ? "กดปิดเตียง" : "↩︎ กดเปิดคืน"}
+                            </button>
                           </div>
-                        </div>
+                        )}
+                        {bed.state === "closed_by_hand" && canToggleBed && !isPastDay && (
+                          <div style={{ marginTop: 2, fontSize: 9.5, color: "var(--text3)", lineHeight: 1.4 }}>
+                            เปิดคืนที่หน้าตารางห้อง/เครื่อง
+                          </div>
+                        )}
                       </th>
                     );
                   })}
@@ -457,20 +369,13 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
           </div>
 
           {/* Legend */}
-          {/* มือถือ: ย่อชื่อให้สีทั้งหกอยู่บรรทัดเดียว แล้ววิธีใช้อีกบรรทัด = จบใน 2 บรรทัด
-              (เดิมชื่อยาวทำให้ตกเป็น 3 บรรทัด กินที่ตารางไปเปล่า ๆ) */}
-          <div ref={legendRef} style={{ display: "flex", gap: isMobile ? 8 : 12, padding: isMobile ? "6px 8px" : "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap", alignItems: "center" }}>
-            {(isMobile
-              ? [["#fde8e8","M"],["#dcfce7","T"],["#fef9c3","คอร์ส"],["rgba(217,119,6,0.2)","เลยเวลา"],["var(--surface3)","ปิด"],["transparent","ว่าง"]]
-              : [["#fde8e8","มีคิว (M)"],["#dcfce7","มีคิว (T)"],["#fef9c3","ใช้คอร์ส"],["rgba(217,119,6,0.2)","เลยเวลายืนยัน"],["var(--surface3)","ปิด / ไม่พร้อม"],["transparent","ว่าง"]]
-            ).map(([c, l]) => (
-              <span key={l} style={{ display: "flex", alignItems: "center", gap: isMobile ? 3 : 4, fontSize: isMobile ? 10 : 11, fontWeight: isMobile ? 700 : 400, color: "var(--text2)", whiteSpace: "nowrap" }}>
-                <span style={{ width: isMobile ? 11 : 12, height: isMobile ? 11 : 12, borderRadius: 3, background: c, border: "1px solid var(--border2)", display: "inline-block", flexShrink: 0 }} />{l}
+          <div style={{ display: "flex", gap: 12, padding: "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap" }}>
+            {[["#fde8e8","มีคิว (M)"],["#dcfce7","มีคิว (T)"],["#fef9c3","ใช้คอร์ส"],["rgba(217,119,6,0.2)","เลยเวลายืนยัน"],["var(--surface3)","ปิด / ไม่พร้อม"],["transparent","ว่าง"]].map(([c, l]) => (
+              <span key={l} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text2)" }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: c, border: "1px solid var(--border)", display: "inline-block" }} />{l}
               </span>
             ))}
-            <span style={{ fontSize: isMobile ? 10 : 11, color: "var(--text3)", ...(isMobile ? { width: "100%" } : { marginLeft: "auto" }) }}>
-              {isMobile ? "กดช่องว่าง = ลงคิว · กดช่องคิว = ดูรายละเอียด" : "กดช่องว่าง = บันทึกคิว • กดช่องคิว = ดูรายละเอียด"}
-            </span>
+            <span style={{ fontSize: 11, color: "var(--text3)", marginLeft: "auto" }}>กดช่องว่าง = บันทึกคิว • กดช่องคิว = ดูรายละเอียด</span>
           </div>
         </div>
       )}
@@ -592,12 +497,9 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
           : procedures;
         const selectedProc = procedures.find((p) => p.id === bookingForm.procedureId);
         const availablePromos = promos.filter((p) => !p.procedureId || p.procedureId === bookingForm.procedureId);
-        // โน้ตรายวัน + ป้ายเครื่องของเตียงนี้ — หัวคอลัมน์โชว์ได้แค่บรรทัดเดียว ตรงนี้คือที่เดียวที่อ่านครบ
-        const bookingRoomNotes = roomScheduleNotesByRoomId[bookingForm.roomId] || [];
-        const bookingRoomLock = room ? roomLockLabel(roomProcedureIndex, room, procedures) : "";
         return (
           <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
-            onClick={onBackdropClick}>
+            onClick={closeBookingForm}>
             <div style={{ background: "var(--surface)", borderRadius: 16, padding: "22px 26px", minWidth: "min(340px, calc(100vw - 24px))", maxWidth: 440, width: "94%", maxHeight: "92dvh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.22)" }}
               onClick={(e) => e.stopPropagation()}>
 
@@ -616,23 +518,6 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                 <span style={{ fontFamily: "var(--mono)", fontWeight: 700 }}>⏰ {blockToTime(bookingForm.timeBlock)}</span>
                 <span style={{ color: "var(--text3)" }}>📅 {bookingForm.date}</span>
               </div>
-
-              {bookingRoomLock && (
-                <div style={{ background: "var(--accent-soft)", border: "1.5px solid var(--accent)", borderRadius: 8, padding: "9px 12px", marginBottom: 14, fontSize: 12.5, fontWeight: 700, color: "var(--accent)", lineHeight: 1.5 }}>
-                  🔒 เตียงนี้ลงได้เฉพาะ: {bookingRoomLock}
-                </div>
-              )}
-
-              {bookingRoomNotes.length > 0 && (
-                <div style={{ background: "rgba(220,38,38,0.10)", border: "1.5px solid #dc2626", borderRadius: 8, padding: "9px 12px", marginBottom: 14 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: "#b91c1c", marginBottom: 5 }}>📅 โน้ตเตียงนี้วันนี้</div>
-                  {bookingRoomNotes.map((note, idx) => (
-                    <div key={`${note}_${idx}`} style={{ fontSize: 12.5, fontWeight: 700, color: "#991b1b", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-                      • {note}
-                    </div>
-                  ))}
-                </div>
-              )}
 
               {/* Form fields */}
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -712,12 +597,6 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                     placeholder="หมายเหตุ (ถ้ามี)" />
                 </div>
               </div>
-
-              {outsideTapHint && (
-                <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #d97706", background: "rgba(217,119,6,0.12)", color: "#b45309", fontSize: 12, fontWeight: 700, lineHeight: 1.5 }}>
-                  ข้อมูลที่กรอกไว้ยังอยู่ครบ — กดนอกกรอบไม่ปิดฟอร์มแล้ว ถ้าจะทิ้งให้กด ยกเลิก
-                </div>
-              )}
 
               {/* Actions */}
               <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
