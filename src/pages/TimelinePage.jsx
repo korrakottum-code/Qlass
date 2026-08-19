@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useLayoutEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed, roleAtLeast } from "../utils/helpers";
 import { getBedSwitchState } from "../utils/bedSwitch";
 import HnLookup from "../components/HnLookup";
@@ -23,9 +23,6 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   const { isSaving: saving, run: runBookingSubmit } = useSubmissionLock();
   const isMobile = typeof window !== "undefined" && window.innerWidth <= 640;
   const [outsideTapHint, setOutsideTapHint] = useState(false);
-  const scrollerRef = useRef(null);
-  const legendRef = useRef(null);
-  const [scrollerMaxH, setScrollerMaxH] = useState(null);
 
   // Goal 13: closing the popup without a successful save abandons this draft —
   // a stale request ID left over from a failed attempt must not be reused for
@@ -145,52 +142,6 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   const canToggleBed = roleAtLeast(currentUser, "branch_manager");
   const isPastDay = date < getTodayStr();
 
-  // ความสูงตารางบนมือถือ — วัดจริง ไม่ใช้ค่าคงที่
-  //
-  // เดิมใช้ calc(100dvh - 155px) ซึ่งเป็นการเดาว่าของข้างบนสูงเท่าไร พอเดาพลาด ก้นการ์ด
-  // (คำอธิบายสี) จะเลยขอบจอลงไป แล้วหน้าเว็บก็เลื่อนได้เองอีกชั้นซ้อนกับตารางที่เลื่อนข้างใน
-  // — สองสกรอลล์ซ้อนกันทำให้แถวท้าย ๆ กับคำอธิบายสีเข้าไม่ถึงเลย
-  //
-  // แถบตัวเลือกด้านบนสูงไม่คงที่ (ชื่อสาขายาว/สั้น, แถบเตือนคิวเลยเวลาโผล่บ้างไม่โผล่บ้าง)
-  // เลยต้องวัดตำแหน่งจริงของตารางกับความสูงจริงของคำอธิบายสี แล้วให้การ์ดจบพอดีขอบจอ
-  //
-  // ใช้ระยะจากหัวเอกสาร (rect.top + scrollY) ไม่ใช่ระยะจากขอบจอ — ค่าจะได้ไม่แกว่งตาม
-  // ตำแหน่งที่ผู้ใช้เลื่อนค้างไว้ตอนวัด
-  useLayoutEffect(() => {
-    // จอใหญ่ใช้ค่า calc คงที่ ไม่ต้องล้าง state — ตอน render ไม่ได้อ่าน scrollerMaxH อยู่แล้ว
-    if (!isMobile) return;
-    let raf = 0;
-    function measure() {
-      cancelAnimationFrame(raf);
-      // รอ frame ถัดไปก่อนวัด — ตอนข้อมูลเพิ่งโหลดเสร็จ layout ยังขยับอยู่ ถ้าวัดทันทีจะได้ค่าเก่า
-      raf = requestAnimationFrame(() => {
-        const el = scrollerRef.current;
-        if (!el) return;
-        const topInDoc = el.getBoundingClientRect().top + window.scrollY;
-        // นับ "ทุกอย่างที่อยู่ใต้ตาราง" จากความสูงเอกสารจริง ไม่ใช่แค่คำอธิบายสี — ยังมี
-        // padding ท้ายหน้าของ layout อีก ถ้าไม่นับ หน้าจะยังเลื่อนได้นิดหน่อยแล้วก้นหลุดจออยู่ดี
-        const below = document.documentElement.scrollHeight - (topInDoc + el.offsetHeight);
-        const next = Math.max(220, Math.round(window.innerHeight - topInDoc - below));
-        // กันลูป: ตั้งความสูงตารางทำให้ body สูงเปลี่ยน → observer ยิงซ้ำ ถ้าค่าเท่าเดิมต้องหยุด
-        setScrollerMaxH((prev) => (prev === next ? prev : next));
-      });
-    }
-    measure();
-    // ไล่ระบุ deps เองไม่ครอบคลุม — แถบเตือนคิวเลยเวลาโผล่, ชื่อสาขาตกบรรทัด, ฟอนต์โหลดเสร็จ
-    // ล้วนดันตารางลงโดยไม่ผ่าน state ตัวไหนเลย ให้ observer จับการขยับจริงแทน
-    const ro = new ResizeObserver(measure);
-    ro.observe(document.body);
-    if (legendRef.current) ro.observe(legendRef.current);
-    window.addEventListener("resize", measure);
-    window.addEventListener("orientationchange", measure);
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("orientationchange", measure);
-    };
-  }, [isMobile]);
-
   const ROW_H = 30;  // ความสูงแต่ละ block 5 นาที (ลดจาก 40 ให้เห็นช่วงเวลาได้มากขึ้นโดยไม่ต้องเลื่อน)
   const TIME_COL = 72; // คอลัมน์เวลาซ้าย
   // ความกว้างขั้นต่ำต่อห้อง — บนมือถือคอลัมน์จะไม่ถูกบีบจนอ่านชื่อไม่ออก
@@ -257,7 +208,17 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
         <div className="card"><div className="empty"><div className="e-icon">🚪</div><p>ไม่พบห้อง</p></div></div>
       ) : (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <div ref={scrollerRef} style={{ overflowX: "auto", overflowY: "auto", maxHeight: isMobile ? (scrollerMaxH ? `${scrollerMaxH}px` : "calc(100dvh - 245px)") : "calc(100dvh - 230px)" }}>
+          {/* ความสูงตาราง — ค่าคงที่เท่านั้น ห้ามวัดด้วย JS
+              เคยลองวัดเองแล้วพัง production (PR #156 → revert #157): สูตรอิง
+              document.scrollHeight ซึ่งชนกับ .app { min-height:100vh } ใน index.css
+              บน iOS Safari 100vh คือวิวพอร์ตตอนซ่อนแถบเครื่องมือ แต่ window.innerHeight
+              คือตอนโชว์แถบ → scrollHeight มากกว่า innerHeight ตลอด ตารางเลยหดจนยุบ
+              และหน้าต่างเบราว์เซอร์ย่อ ๆ ตรวจไม่เจอเพราะไม่มีแถบเครื่องมือยุบได้
+
+              190px = แถบบนแอป ~60 + แถบตัวเลือก 2 แถว ~63 + คำอธิบายสี 2 บรรทัด ~51 + เผื่อ
+              ถ้าแถบเตือนคิวเลยเวลาโผล่ ตารางจะเตี้ยกว่าที่ควรนิดหน่อย ซึ่งยอมได้ —
+              เสียที่ดีกว่าเสี่ยงยุบ ส่วน dvh (ไม่ใช่ vh) ปรับตามแถบเครื่องมือให้เองอยู่แล้ว */}
+          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: isMobile ? "calc(100dvh - 190px)" : "calc(100dvh - 230px)" }}>
             <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed", minWidth: TIME_COL + filteredRooms.length * ROOM_COL_MIN }}>
               {/* Header: ชื่อห้องเป็น column */}
               <thead>
@@ -459,7 +420,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
           {/* Legend */}
           {/* มือถือ: ย่อชื่อให้สีทั้งหกอยู่บรรทัดเดียว แล้ววิธีใช้อีกบรรทัด = จบใน 2 บรรทัด
               (เดิมชื่อยาวทำให้ตกเป็น 3 บรรทัด กินที่ตารางไปเปล่า ๆ) */}
-          <div ref={legendRef} style={{ display: "flex", gap: isMobile ? 8 : 12, padding: isMobile ? "6px 8px" : "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: isMobile ? 8 : 12, padding: isMobile ? "6px 8px" : "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap", alignItems: "center" }}>
             {(isMobile
               ? [["#fde8e8","M"],["#dcfce7","T"],["#fef9c3","คอร์ส"],["rgba(217,119,6,0.2)","เลยเวลา"],["var(--surface3)","ปิด"],["transparent","ว่าง"]]
               : [["#fde8e8","มีคิว (M)"],["#dcfce7","มีคิว (T)"],["#fef9c3","ใช้คอร์ส"],["rgba(217,119,6,0.2)","เลยเวลายืนยัน"],["var(--surface3)","ปิด / ไม่พร้อม"],["transparent","ว่าง"]]
