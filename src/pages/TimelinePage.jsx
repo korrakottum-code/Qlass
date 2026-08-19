@@ -252,15 +252,13 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                           </div>
                         )}
                         {roomScheduleNotes.length > 0 && (
-                          <div style={{ marginTop: 3, display: "flex", justifyContent: "center", flexWrap: isMobile ? "nowrap" : "wrap", gap: 4, overflow: isMobile ? "hidden" : undefined }}>
-                            {(isMobile ? roomScheduleNotes.slice(0, 1) : roomScheduleNotes).map((note, idx) => (
-                              <span key={`${note}_${idx}`} title={note} style={{ fontSize: isMobile ? 9.5 : 11, fontWeight: 800, color: "#ffffff", lineHeight: 1.4, background: "#dc2626", border: "1px solid #b91c1c", borderRadius: 6, padding: isMobile ? "1px 5px" : "2px 8px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: isMobile ? "100%" : undefined }}>
+                          // มือถือ: ป้ายละบรรทัด ตัดท้ายเอา — ข้อความเต็มอยู่ใน popup ตอนกดลงคิว
+                          <div style={{ marginTop: 3, display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: "center", justifyContent: "center", flexWrap: isMobile ? "nowrap" : "wrap", gap: isMobile ? 2 : 6 }}>
+                            {roomScheduleNotes.map((note, idx) => (
+                              <span key={`${note}_${idx}`} title={note} style={{ fontSize: isMobile ? 9.5 : 11, fontWeight: 800, color: "#ffffff", lineHeight: 1.4, background: "#dc2626", border: "1px solid #b91c1c", borderRadius: 6, padding: isMobile ? "1px 5px" : "2px 8px", maxWidth: "100%", ...(isMobile ? { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } : {}) }}>
                                 📅 {note}
                               </span>
                             ))}
-                            {isMobile && roomScheduleNotes.length > 1 && (
-                              <span style={{ fontSize: 9.5, fontWeight: 700, color: "#dc2626", lineHeight: 1.4, padding: "1px 2px", flexShrink: 0 }}>+{roomScheduleNotes.length - 1}</span>
-                            )}
                           </div>
                         )}
                         {cnt > 0 && (
@@ -498,6 +496,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
           : procedures;
         const selectedProc = procedures.find((p) => p.id === bookingForm.procedureId);
         const availablePromos = promos.filter((p) => !p.procedureId || p.procedureId === bookingForm.procedureId);
+        // โน้ตรายวันของเตียงนี้ — หัวคอลัมน์โชว์ได้แค่บรรทัดเดียว ตรงนี้คือที่เดียวที่อ่านครบ
+        const bookingRoomNotes = roomScheduleNotesByRoomId[bookingForm.roomId] || [];
         return (
           <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
             onClick={closeBookingForm}>
@@ -519,6 +519,17 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                 <span style={{ fontFamily: "var(--mono)", fontWeight: 700 }}>⏰ {blockToTime(bookingForm.timeBlock)}</span>
                 <span style={{ color: "var(--text3)" }}>📅 {bookingForm.date}</span>
               </div>
+
+              {bookingRoomNotes.length > 0 && (
+                <div style={{ background: "rgba(220,38,38,0.10)", border: "1.5px solid #dc2626", borderRadius: 8, padding: "9px 12px", marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#b91c1c", marginBottom: 5 }}>📅 โน้ตเตียงนี้วันนี้</div>
+                  {bookingRoomNotes.map((note, idx) => (
+                    <div key={`${note}_${idx}`} style={{ fontSize: 12.5, fontWeight: 700, color: "#991b1b", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                      • {note}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Form fields */}
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
