@@ -20,13 +20,31 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   const [bookingForm, setBookingForm] = useState(null); // mini booking popup form
   const { isSaving: saving, run: runBookingSubmit } = useSubmissionLock();
   const isMobile = typeof window !== "undefined" && window.innerWidth <= 640;
+  const [outsideTapHint, setOutsideTapHint] = useState(false);
 
   // Goal 13: closing the popup without a successful save abandons this draft —
   // a stale request ID left over from a failed attempt must not be reused for
   // the next customer's booking (see fix/goal13-request-id-reset-on-cancel).
   function closeBookingForm() {
     onAbandonDraft?.();
+    setOutsideTapHint(false);
     setBookingForm(null);
+  }
+
+  // กรอกไปครึ่งทางแล้วนิ้วไปโดนนอกกรอบ = พิมพ์ใหม่หมด ซึ่งบนมือถือเกิดง่ายมาก
+  // กดนอกกรอบเลยปิดให้เฉพาะตอนที่ยังไม่ได้กรอกอะไร ถ้ากรอกแล้วต้องตั้งใจกด ยกเลิก
+  function isBookingFormDirty(f) {
+    if (!f) return false;
+    return Boolean(
+      f.name?.trim() || f.phone?.trim() || f.procedureId || f.promoId ||
+      f.note?.trim() || (f.price !== "" && f.price != null && Number(f.price) !== 0) ||
+      f.customerType !== "new"
+    );
+  }
+
+  function onBackdropClick() {
+    if (isBookingFormDirty(bookingForm)) setOutsideTapHint(true);
+    else closeBookingForm();
   }
 
   function navigate(dir) {
@@ -214,7 +232,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                         <div style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>
                           [{room.type}]{branch ? ` • ${branch.name}` : ""}
                         </div>
-                        {lockLabel && !isMobile && (
+                        {lockLabel && (
                           <div style={{ marginTop: 3, display: "flex", justifyContent: "center" }}>
                             <span title="เตียงนี้ลงได้เฉพาะหัตถการเหล่านี้ (ตั้งค่าที่หน้าจัดการห้อง)" style={{ fontSize: 10.5, fontWeight: 800, color: "var(--accent)", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: 6, padding: "1px 7px", lineHeight: 1.5, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               🔒 {lockLabel}
@@ -496,11 +514,12 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
           : procedures;
         const selectedProc = procedures.find((p) => p.id === bookingForm.procedureId);
         const availablePromos = promos.filter((p) => !p.procedureId || p.procedureId === bookingForm.procedureId);
-        // โน้ตรายวันของเตียงนี้ — หัวคอลัมน์โชว์ได้แค่บรรทัดเดียว ตรงนี้คือที่เดียวที่อ่านครบ
+        // โน้ตรายวัน + ป้ายเครื่องของเตียงนี้ — หัวคอลัมน์โชว์ได้แค่บรรทัดเดียว ตรงนี้คือที่เดียวที่อ่านครบ
         const bookingRoomNotes = roomScheduleNotesByRoomId[bookingForm.roomId] || [];
+        const bookingRoomLock = room ? roomLockLabel(roomProcedureIndex, room, procedures) : "";
         return (
           <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
-            onClick={closeBookingForm}>
+            onClick={onBackdropClick}>
             <div style={{ background: "var(--surface)", borderRadius: 16, padding: "22px 26px", minWidth: "min(340px, calc(100vw - 24px))", maxWidth: 440, width: "94%", maxHeight: "92dvh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.22)" }}
               onClick={(e) => e.stopPropagation()}>
 
@@ -519,6 +538,12 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                 <span style={{ fontFamily: "var(--mono)", fontWeight: 700 }}>⏰ {blockToTime(bookingForm.timeBlock)}</span>
                 <span style={{ color: "var(--text3)" }}>📅 {bookingForm.date}</span>
               </div>
+
+              {bookingRoomLock && (
+                <div style={{ background: "var(--accent-soft)", border: "1.5px solid var(--accent)", borderRadius: 8, padding: "9px 12px", marginBottom: 14, fontSize: 12.5, fontWeight: 700, color: "var(--accent)", lineHeight: 1.5 }}>
+                  🔒 เตียงนี้ลงได้เฉพาะ: {bookingRoomLock}
+                </div>
+              )}
 
               {bookingRoomNotes.length > 0 && (
                 <div style={{ background: "rgba(220,38,38,0.10)", border: "1.5px solid #dc2626", borderRadius: 8, padding: "9px 12px", marginBottom: 14 }}>
@@ -609,6 +634,12 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                     placeholder="หมายเหตุ (ถ้ามี)" />
                 </div>
               </div>
+
+              {outsideTapHint && (
+                <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #d97706", background: "rgba(217,119,6,0.12)", color: "#b45309", fontSize: 12, fontWeight: 700, lineHeight: 1.5 }}>
+                  ข้อมูลที่กรอกไว้ยังอยู่ครบ — กดนอกกรอบไม่ปิดฟอร์มแล้ว ถ้าจะทิ้งให้กด ยกเลิก
+                </div>
+              )}
 
               {/* Actions */}
               <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
