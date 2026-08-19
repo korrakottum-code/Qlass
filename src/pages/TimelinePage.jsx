@@ -19,7 +19,6 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   const [popup, setPopup] = useState(null); // { q, room, block, x, y }
   const [bookingForm, setBookingForm] = useState(null); // mini booking popup form
   const { isSaving: saving, run: runBookingSubmit } = useSubmissionLock();
-  const [filterOpen, setFilterOpen] = useState(true);
   const isMobile = typeof window !== "undefined" && window.innerWidth <= 640;
 
   // Goal 13: closing the popup without a successful save abandons this draft —
@@ -127,19 +126,23 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
 
   return (
     <>
-      {/* Controls — มือถือ: ยุบเป็นแถวบางๆ ประหยัดพื้นที่ตาราง */}
-      {isMobile && !filterOpen ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "nowrap" }}>
-          <button onClick={() => navigate(-1)} style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16, flexShrink: 0 }}>‹</button>
-          <button onClick={() => setDate(getTodayStr())} style={{ flex: 1, textAlign: "center", padding: "5px 4px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--accent)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {formatThaiDate(date)}
-          </button>
-          <button onClick={() => navigate(1)} style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16, flexShrink: 0 }}>›</button>
-          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text2)", whiteSpace: "nowrap", flexShrink: 0 }}>
-            {branches.find((b) => b.id === filterBranch)?.name?.replace(/^Class\s*/i, "") || ""}
-          </span>
-          <span style={{ background: "var(--surface3)", borderRadius: 20, padding: "3px 8px", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{totalQueues} คิว</span>
-          <button onClick={() => setFilterOpen(true)} title="ขยายตัวเลือก" style={{ padding: "5px 8px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 13, flexShrink: 0 }}>⚙︎</button>
+      {/* Controls */}
+      {isMobile ? (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+            <button onClick={() => navigate(-1)} style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16, flexShrink: 0 }}>‹</button>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
+            <button onClick={() => navigate(1)} style={{ padding: "6px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 16, flexShrink: 0 }}>›</button>
+            <button onClick={() => setDate(getTodayStr())} style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--accent)", flexShrink: 0 }}>วันนี้</button>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <select value={filterBranch} onChange={(e) => setFilterBranchOverride(e.target.value)} style={{ flex: 1, minWidth: 0 }}>
+              {branches.length === 0 && <option value="">-- ไม่มีสาขา --</option>}
+              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)", whiteSpace: "nowrap" }}>{formatThaiDate(date)}</span>
+            <span style={{ background: "var(--surface3)", borderRadius: 20, padding: "3px 10px", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>{totalQueues} คิว</span>
+          </div>
         </div>
       ) : (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end", marginBottom: 16 }}>
@@ -163,9 +166,6 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
             <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}>{formatThaiDate(date)}</span>
             <span style={{ background: "var(--surface3)", borderRadius: 20, padding: "3px 12px", fontSize: 12, fontWeight: 700 }}>{totalQueues} คิว</span>
           </div>
-          {isMobile && (
-            <button onClick={() => setFilterOpen(false)} title="ย่อตัวเลือก" style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--surface2)", cursor: "pointer", fontSize: 12, color: "var(--text2)" }}>ย่อ ↑</button>
-          )}
         </div>
       )}
 
@@ -184,7 +184,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
         <div className="card"><div className="empty"><div className="e-icon">🚪</div><p>ไม่พบห้อง</p></div></div>
       ) : (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: isMobile && !filterOpen ? "calc(100dvh - 115px)" : "calc(100dvh - 230px)" }}>
+          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: isMobile ? "calc(100dvh - 155px)" : "calc(100dvh - 230px)" }}>
             <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed", minWidth: TIME_COL + filteredRooms.length * ROOM_COL_MIN }}>
               {/* Header: ชื่อห้องเป็น column */}
               <thead>
