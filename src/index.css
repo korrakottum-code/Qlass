@@ -195,12 +195,17 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
 .modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end}
 
 /* ─── Toast ─── */
+/* z-index ต้องสูงกว่า modal ทุกตัว (popup ลงคิว 1000, ฟอร์มจอง/ล็อกอิน 9999)
+   ก่อนหน้านี้เป็น 200 → toast ไปอยู่หลัง modal จนอ่านข้อความเตือนไม่ได้ */
 .toast{
-  position:fixed;bottom:20px;right:20px;z-index:200;padding:12px 18px;
+  position:fixed;bottom:20px;right:20px;z-index:10000;padding:12px 18px;
   border-radius:var(--radius-sm);font-size:13px;font-weight:600;
   animation:slideUp 0.3s;box-shadow:var(--shadow-md);
-  display:flex;align-items:center;gap:8px;
+  display:flex;align-items:flex-start;gap:8px;
+  max-width:min(420px,calc(100vw - 40px));
+  line-height:1.5;overflow-wrap:anywhere;
 }
+.toast-icon{flex:none}
 .toast-success{background:var(--green);color:#fff}
 .toast-error{background:var(--red);color:#fff}
 
@@ -330,6 +335,7 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
 
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes slideDown{from{transform:translateY(-20px);opacity:0}to{transform:translateY(0);opacity:1}}
 
 /* ─── Mobile hamburger button ─── */
 .mobile-menu-btn{
@@ -377,4 +383,11 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
   .summary-mode-btn{white-space:normal}
   .summary-date-input{min-width:170px}
   .summary-chart-scroll.compact,.summary-chart-scroll.detailed{max-height:none}
+  /* มุมล่างขวาบนมือถือคือที่อยู่ของปุ่มใน modal และแถบเครื่องมือเบราว์เซอร์
+     ย้าย toast ไปด้านบนเต็มความกว้าง จะได้ไม่โดนบังอีก */
+  .toast{
+    top:calc(env(safe-area-inset-top,0px) + 10px);
+    bottom:auto;left:10px;right:10px;max-width:none;
+    animation:slideDown 0.3s;
+  }
 }

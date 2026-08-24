@@ -374,7 +374,8 @@ export default function App() {
   // ─── Toast auto-dismiss ───
   useEffect(() => {
     if (toast) {
-      const t = setTimeout(() => setToast(null), 2500);
+      // ข้อความ error ต้องอ่านแล้วลงมือแก้ 2.5 วิไม่พอ โดยเฉพาะข้อความยาวๆ ภาษาไทย
+      const t = setTimeout(() => setToast(null), toast.type === "error" ? 6000 : 2500);
       return () => clearTimeout(t);
     }
   }, [toast]);
@@ -462,7 +463,7 @@ export default function App() {
 
     // ─── ตรวจสอบวันย้อนหลัง ───
     if (!editingQueueId && form.date < getTodayStr()) {
-      showToast("error", "❌ ไม่สามารถบันทึกคิวย้อนหลังได้");
+      showToast("error", "ไม่สามารถบันทึกคิวย้อนหลังได้");
       return;
     }
 
@@ -497,7 +498,7 @@ export default function App() {
         : roomSchedules.some((s) => s.roomId === form.roomId && (s.date === form.date || s.date === "") && !s.available && !s.noteOnly && s.startBlock === null);
 
       if (isClosed) {
-        showToast("error", "❌ ห้องนี้ปิดรับคิวหรือปิดให้บริการในเวลาที่เลือก ไม่สามารถลงคิวได้");
+        showToast("error", "ห้องนี้ปิดรับคิวหรือปิดให้บริการในเวลาที่เลือก ไม่สามารถลงคิวได้");
         return;
       }
     }
@@ -510,7 +511,7 @@ export default function App() {
         (form.procedureId ? q.procedureId === form.procedureId : true)
       );
       if (duplicate) {
-        showToast("error", `⚠️ ${duplicate.name} (${duplicate.phone}) มีคิววันนี้แล้ว (${duplicate.timeBlock !== null ? blockToTime(duplicate.timeBlock) : "ไม่ระบุเวลา"}) — ถ้าต้องการบันทึกจริง กรุณาตรวจสอบก่อน`);
+        showToast("error", `${duplicate.name} (${duplicate.phone}) มีคิววันนี้แล้ว (${duplicate.timeBlock !== null ? blockToTime(duplicate.timeBlock) : "ไม่ระบุเวลา"}) — ถ้าต้องการบันทึกจริง กรุณาตรวจสอบก่อน`);
         return;
       }
     }
@@ -1321,7 +1322,7 @@ export default function App() {
                     }
                   }
                   if (created > 0) {
-                    showToast("success", `🚀 สร้าง ${created} คิวเรียบร้อย!`);
+                    showToast("success", `สร้าง ${created} คิวเรียบร้อย!`);
                   }
                 }}
                 todayStats={todayStats}
@@ -1441,7 +1442,7 @@ export default function App() {
                       : roomSchedules.some((s) => s.roomId === bookingForm.roomId && (s.date === bookingForm.date || s.date === "") && !s.available && !s.noteOnly && s.startBlock === null);
 
                     if (isClosed) {
-                      showToast("error", "❌ ห้องนี้ปิดรับคิวหรือปิดให้บริการในเวลาที่เลือก ไม่สามารถลงคิวได้");
+                      showToast("error", "ห้องนี้ปิดรับคิวหรือปิดให้บริการในเวลาที่เลือก ไม่สามารถลงคิวได้");
                       return false;
                     }
                   }
@@ -1453,7 +1454,7 @@ export default function App() {
                     (bookingForm.procedureId ? q.procedureId === bookingForm.procedureId : true)
                   );
                   if (dup) {
-                    showToast("error", `⚠️ ${dup.name} (${dup.phone}) มีคิววันนี้แล้ว (${dup.timeBlock !== null ? blockToTime(dup.timeBlock) : "ไม่ระบุเวลา"})`);
+                    showToast("error", `${dup.name} (${dup.phone}) มีคิววันนี้แล้ว (${dup.timeBlock !== null ? blockToTime(dup.timeBlock) : "ไม่ระบุเวลา"})`);
                     return false;
                   }
                   // conflict check — ดึงจาก DB สด ป้องกัน race condition หลายเครื่อง
