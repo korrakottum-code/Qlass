@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { QUEUE_STATUSES } from "../utils/constants";
 import { getTodayStr, formatThaiDate, isoToLocalDateStr } from "../utils/helpers";
+import { SMALL_BASE, byCustomerType, lostRateOf, changePct, sortByChange, topMovers } from "../utils/growthCompare";
 
 const fmtNum = (n) => n.toLocaleString("en-US");
 // Wilson score lower bound (95%) — ใช้จัดอันดับ % ที่มาจากฐานตัวอย่างขนาดต่างกัน โดยไม่ให้ฐานเล็ก
@@ -62,8 +63,10 @@ function SectionCard({ title, children }) {
   return <div className="ceo-section-card" style={S.card}><div className="ceo-section-card-title" style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#2d2a26" }}>{title}</div>{children}</div>;
 }
 
-// ─── "ทำไมสาขานี้ถึงเปลี่ยน" — new/old/course + no-show/ยกเลิก + โปรที่เปลี่ยนแปลงมากสุด ───
-function BranchDiagnosticDetail({ diag }) {
+// ─── "ทำไมแถวนี้ถึงเปลี่ยน" — new/old/course + no-show/ยกเลิก + ตัวที่เปลี่ยนแปลงมากสุด ───
+// ใช้ร่วมกันทั้งโซนสาขาและโซนหัตถการ ต่างกันแค่ movers (สาขาโชว์ "โปรที่เปลี่ยน" / หัตถการโชว์
+// "สาขาที่เปลี่ยน") เลยรับ moversTitle เข้ามา ไม่แยกเป็นสองคอมโพเนนต์ที่แก้แล้วหลุดไม่ตรงกันทีหลัง
+function ChangeDetail({ diag, moversTitle }) {
   if (!diag) return <div style={{ fontSize: 11, color: "#bbb", padding: "8px 0" }}>ข้อมูลไม่พอ</div>;
   const typeRow = (label, curV, prevV, color) => (
     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
@@ -98,12 +101,12 @@ function BranchDiagnosticDetail({ diag }) {
         </span>
       </div>
       <div>
-        <div style={{ fontSize: 10, color: "#bbb", marginBottom: 4, fontWeight: 700 }}>โปรที่เปลี่ยนแปลงมากสุด</div>
-        {diag.promoMovers.length === 0 ? (
+        <div style={{ fontSize: 10, color: "#bbb", marginBottom: 4, fontWeight: 700 }}>{moversTitle}</div>
+        {diag.movers.length === 0 ? (
           <div style={{ fontSize: 11, color: "#ccc" }}>ไม่มีการเปลี่ยนแปลงเด่นชัด</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {diag.promoMovers.map((m) => (
+            {diag.movers.map((m) => (
               <div key={m.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{m.name}</span>
                 <span style={{ marginLeft: 8, fontWeight: 700, color: m.delta >= 0 ? "#2E7D32" : "#C62828" }}>
@@ -114,6 +117,73 @@ function BranchDiagnosticDetail({ diag }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── ลิสต์ "เติบโต / ลดลง" — โครงเดียวกันทั้งโซนสาขาและโซนหัตถการ ───
+// เกณฑ์แสดงผลทุกข้อ (จัดกลุ่มลดลงก่อน, ฐาน <10 ไม่โชว์ %, ยอดเท่าเดิม = "คงที่") อยู่ที่เดียว
+// กันสองโซนในหน้าเดียวกันตัดสินคนละมาตรฐานเมื่อมีคนไปแก้ทีหลัง
+function GrowthList({ rows, cap, showAll, onToggleShowAll, expandedId, onToggleRow, diagnostics, moversTitle, moreLabel }) {
+  if (rows.length === 0) return <div style={{ color: "#ccc", textAlign: "center", padding: 20 }}>ไม่มีข้อมูล</div>;
+  const visible = showAll ? rows : rows.slice(0, cap);
+  return (
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      {visible.map((r, i) => {
+        const isOpen = expandedId === r.id;
+        // ฐานเทียบเล็กเกินไป (เช่นสาขาใหม่/หัตถการเพิ่งเปิดที่ช่วงก่อนมีแค่ 1-2 คิว) — % จะบวมจน
+        // ไม่มีความหมาย (1→587 กลายเป็น 58600%) โชว์จำนวนที่เปลี่ยนไปตรงๆ แทนดีกว่า
+        const baseTooSmall = r.prev < SMALL_BASE;
+        const isDeclining = r.total < r.prev;
+        // โชว์หัวข้อกลุ่มแค่ตอนเปลี่ยนกลุ่ม (ลดลง → เพิ่มขึ้น) กันงงว่าทำไมสลับทิศทางกลางลิสต์
+        const showGroupHeader = i === 0 || isDeclining !== (visible[i - 1].total < visible[i - 1].prev);
+        return (
+          <div key={r.id}>
+            {showGroupHeader && (
+              <div style={{ fontSize: 11, fontWeight: 700, color: isDeclining ? "#C62828" : "#2E7D32", margin: i === 0 ? "0 0 6px" : "14px 0 6px" }}>
+                {isDeclining ? "📉 ลดลง" : "📈 เพิ่มขึ้น"}
+              </div>
+            )}
+            <div style={{ borderBottom: i < visible.length - 1 ? "1px solid #f0ebe8" : "none" }}>
+              <div
+                onClick={() => onToggleRow(isOpen ? null : r.id)}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 4px", cursor: "pointer", flexWrap: "nowrap" }}
+              >
+                {/* ชื่อไม่ยืดเต็มแถว (ไม่ใช้ flex:1) — กันตัวเลข/ป้ายเปอร์เซ็นต์ถูกดันไปไกลสุดขอบการ์ด
+                    ที่กว้างเต็มจอ ที่ว่างส่วนเกินให้ไปอยู่ท้ายแถวแทน ไม่ใช่แทรกกลางระหว่างชื่อกับตัวเลข
+                    ใช้ min(px, vw) แทน px ตรงๆ — กันล้นจอมือถือ (px ตายตัวเคยทำแถวนี้กว้างเกิน 350px
+                    ในพื้นที่มือถือจริงมีแค่ ~300px) */}
+                <div style={{ minWidth: 0, maxWidth: "min(220px, 42vw)", flexShrink: 1, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</div>
+                <div style={{ fontSize: 11, color: "#999", flexShrink: 0, whiteSpace: "nowrap" }}>{r.prev}→{r.total}</div>
+                {/* ยอดเท่าเดิมเป๊ะ (ไม่ใช่ทั้งขึ้นและลง) ไม่ควรมีลูกศร ▲/▼ — เดิม total===prev
+                    ตกไปอยู่กลุ่ม "เพิ่มขึ้น" พร้อมป้าย ▲0% ซึ่งขัดกับความจริงตรงๆ */}
+                {r.total === r.prev ? (
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12, color: "#999", background: "#f0ebe8" }}>คงที่</span>
+                ) : baseTooSmall ? (
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12, color: "#8b7f76", background: "#f0ebe8" }}>
+                    {r.total >= r.prev ? "▲" : "▼"} {r.total - r.prev >= 0 ? "+" : ""}{r.total - r.prev} คิว
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 8px", borderRadius: 12,
+                    color: r.ch >= 0 ? "#2E7D32" : "#C62828", background: r.ch >= 0 ? "#E8F5E9" : "#FFEBEE" }}>
+                    {r.ch >= 0 ? "▲" : "▼"}{Math.abs(r.ch)}%
+                  </span>
+                )}
+                <span style={{ fontSize: 10, color: "#bbb", transform: isOpen ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s", display: "inline-block" }}>▾</span>
+              </div>
+              {isOpen && <div style={{ padding: "0 4px 10px" }}><ChangeDetail diag={diagnostics[r.id]} moversTitle={moversTitle} /></div>}
+            </div>
+          </div>
+        );
+      })}
+      {rows.length > cap && (
+        <button
+          onClick={onToggleShowAll}
+          style={{ marginTop: 2, border: "1px solid #e8e0dc", background: "#faf7f5", color: "#B45309", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+        >
+          {showAll ? "ซ่อนรายการ" : `ดูเพิ่ม ${rows.length - cap} ${moreLabel}`}
+        </button>
+      )}
     </div>
   );
 }
@@ -133,6 +203,8 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
   const [expandedBranchId, setExpandedBranchId] = useState(null);
   const [showAllBranchBreakdown, setShowAllBranchBreakdown] = useState(false);
   const [showAllBranchGrowth, setShowAllBranchGrowth] = useState(false);
+  const [expandedProcId, setExpandedProcId] = useState(null);
+  const [showAllProcGrowth, setShowAllProcGrowth] = useState(false);
   const [showAllAdminPerf, setShowAllAdminPerf] = useState(false);
   const [showAllProcedures, setShowAllProcedures] = useState(false);
   const [promoSortMode, setPromoSortMode] = useState("new"); // "new" = % ลูกค้าใหม่ (ปรับตามขนาดตัวอย่าง), "lost" = อัตราเบี้ยว/ยกเลิกเยอะสุด
@@ -185,6 +257,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
   const staffMap = useMemo(() => { const m = {}; (staff||[]).forEach(s => { m[s.id] = s; }); return m; }, [staff]);
   const promoMap = useMemo(() => { const m = {}; (promos||[]).forEach(p => { m[p.id] = p; }); return m; }, [promos]);
   const procMap = useMemo(() => { const m = {}; (procedures||[]).forEach(p => { m[p.id] = p; }); return m; }, [procedures]);
+  const branchMap = useMemo(() => { const m = {}; (branches||[]).forEach(b => { m[b.id] = b; }); return m; }, [branches]);
   const getLD = (q) => q.createdAt ? isoToLocalDateStr(q.createdAt) : (q.date || "");
 
   const all = allQueues || queues || [];
@@ -309,7 +382,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
   const delta = (c,p) => {
     if (!p) return "";
     const d = c - p;
-    if (p < 10) return d>=0 ? `▲ +${d} คิว` : `▼ ${d} คิว`;
+    if (p < SMALL_BASE) return d>=0 ? `▲ +${d} คิว` : `▼ ${d} คิว`;
     const pc = Math.round((d/p)*100);
     return d>=0 ? `▲ +${d} (+${pc}%)` : `▼ ${d} (${pc}%)`;
   };
@@ -350,37 +423,15 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
     const rows = bStats.map(b => {
       const bid = b.id;
       const prev = bid ? prevDayQ.filter(q=>q.branchId===bid).length : 0;
-      const ch = prev>0 ? Math.round(((b.total-prev)/prev)*100) : (b.total>0?100:0);
+      const ch = changePct(b.total, prev);
       return {...b, bid, prev, ch};
     }).filter(b => b.total > 0 || b.prev > 0);
-    // แยกกลุ่ม "ลดลง" ก่อน "เพิ่มขึ้น" เสมอ (สาขาที่แย่ลงน่าจะอยากเห็นก่อน) ภายในแต่ละกลุ่มเรียงตาม
-    // ขนาดการเปลี่ยนแปลงมากไปน้อย ไม่ใช่ตามยอดคิวรวม — เพราะหัวข้อคือ "ทำไมถึงเปลี่ยน" ควรเห็นสาขา
-    // ที่ขยับแรงสุดก่อน ไม่ใช่สาขาที่คิวเยอะสุด สาขาที่ฐานเทียบน้อยเกินไป (prev<10, % ไม่มีความหมาย —
-    // ดู baseTooSmall ตรงจุดแสดงผล) จมไว้ท้ายกลุ่มเสมอ กันไม่ให้สาขาเปิดใหม่ที่ % บวมเทียม (เช่น
-    // 1→587) ไปแย่งอันดับต้นจากสาขาที่เปลี่ยนแปลงจริง
-    return rows.sort((a, b) => {
-      const aDeclining = a.total < a.prev, bDeclining = b.total < b.prev;
-      if (aDeclining !== bDeclining) return aDeclining ? -1 : 1;
-      const aSmall = a.prev < 10, bSmall = b.prev < 10;
-      if (aSmall !== bSmall) return aSmall ? 1 : -1;
-      // กลุ่มฐานเล็ก (prev<10) ทั้งคู่ — ch% ไม่มีความหมายสำหรับกลุ่มนี้แล้ว (เหตุผลเดียวกับที่ไม่โชว์ %
-      // บนหน้าจอ) เรียงด้วยจำนวนที่เพิ่มขึ้นจริงแทน ไม่ใช่ % ที่บวมเทียม
-      if (aSmall && bSmall) return Math.abs(b.total - b.prev) - Math.abs(a.total - a.prev);
-      return Math.abs(b.ch) - Math.abs(a.ch);
-    });
+    // เกณฑ์เรียงอยู่ที่ sortByChange ใน utils/growthCompare — ใช้ร่วมกับโซนหัตถการ
+    return rows.sort(sortByChange);
   }, [bStats, prevDayQ]);
 
   // ─── 4b. เจาะสาเหตุรายสาขา — new/old/course + อัตรา no-show/ยกเลิก + โปรที่เปลี่ยนแปลงมากสุด ───
   const branchDiagnostics = useMemo(() => {
-    const byType = (arr) => ({
-      new: arr.filter((q) => q.customerType === "new").length,
-      old: arr.filter((q) => q.customerType === "old").length,
-      course: arr.filter((q) => q.customerType === "course").length,
-    });
-    // คืน null เมื่อไม่มีคิวเลย — ห้ามคืน 0 เพราะ "ไม่มีข้อมูล" ≠ "อัตรายกเลิก 0%" (จะโชว์เขียวหลอกๆ)
-    const lostRate = (arr) => arr.length > 0
-      ? Math.round((arr.filter((q) => q.status === "no_show" || q.status === "cancelled").length / arr.length) * 100)
-      : null;
     const promoCounts = (arr) => {
       const pm = {};
       arr.forEach((q) => {
@@ -405,26 +456,62 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
       const cur = dayQ.filter((q) => q.branchId === b.bid);
       const prev = prevDayQ.filter((q) => q.branchId === b.bid);
       const curPromo = promoCounts(cur), prevPromo = promoCounts(prev);
-      const promoIds = new Set([...Object.keys(curPromo), ...Object.keys(prevPromo)]);
-      const promoMovers = Array.from(promoIds)
-        .map((id) => {
-          const c = curPromo[id]?.count || 0, p = prevPromo[id]?.count || 0;
-          // เก็บ promoId ไว้เป็น key — ชื่อโปรซ้ำกันได้ (เช่น "ใช้คอร์ส" คนละหัตถการ แม้ในนี้กันไปแล้ว
-          // แต่โปรอื่นก็ตั้งชื่อซ้ำกันได้เหมือนกัน) ใช้ name เป็น React key ตรงๆ เสี่ยงชนกัน
-          return { id, name: curPromo[id]?.name || prevPromo[id]?.name || id, cur: c, prev: p, delta: c - p };
-        })
-        .filter((mover) => mover.delta !== 0)
-        .sort((a, b2) => Math.abs(b2.delta) - Math.abs(a.delta))
-        .slice(0, 5);
+      const toCounts = (pm) => Object.fromEntries(Object.entries(pm).map(([id, v]) => [id, v.count]));
+      // เก็บ promoId ไว้เป็น key — ชื่อโปรซ้ำกันได้ (เช่น "ใช้คอร์ส" คนละหัตถการ แม้ในนี้กันไปแล้ว
+      // แต่โปรอื่นก็ตั้งชื่อซ้ำกันได้เหมือนกัน) ใช้ name เป็น React key ตรงๆ เสี่ยงชนกัน
+      const movers = topMovers(toCounts(curPromo), toCounts(prevPromo),
+        (id) => curPromo[id]?.name || prevPromo[id]?.name || id);
 
       m[b.bid] = {
-        cur: byType(cur), prev: byType(prev),
-        lostRateCur: lostRate(cur), lostRatePrev: lostRate(prev),
-        promoMovers,
+        cur: byCustomerType(cur), prev: byCustomerType(prev),
+        lostRateCur: lostRateOf(cur), lostRatePrev: lostRateOf(prev),
+        movers,
       };
     });
     return m;
   }, [bGrowth, dayQ, prevDayQ, promoMap, procMap]);
+
+  // ─── 4c. หัตถการเติบโต / ลดลง — โครงเดียวกับโซนสาขา แต่จัดกลุ่มด้วยหัตถการแทน ───
+  // ใช้ q.procedureId ตรงๆ ไม่อ้อมผ่านโปร (เหมือน adminProcedureStats) — คิวที่ไม่ได้แท็กโปรจะได้ไม่
+  // หายไปเงียบๆ จากยอด แบ่งกลุ่มครั้งเดียวแล้วให้ทั้ง pGrowth และ procDiagnostics ใช้ต่อ ไม่ filter
+  // ซ้ำต่อหัตถการ (คิวช่วง 28 วันของทั้งเครือหลักหมื่นแถว × หัตถการหลายสิบตัว)
+  const procGroups = useMemo(() => {
+    const m = {};
+    const put = (q, key) => {
+      if (!q.procedureId) return;
+      if (!m[q.procedureId]) m[q.procedureId] = { cur: [], prev: [] };
+      m[q.procedureId][key].push(q);
+    };
+    dayQ.forEach((q) => put(q, "cur"));
+    prevDayQ.forEach((q) => put(q, "prev"));
+    return m;
+  }, [dayQ, prevDayQ]);
+
+  const pGrowth = useMemo(() => Object.entries(procGroups).map(([id, g]) => {
+    const total = g.cur.length, prev = g.prev.length;
+    // หัตถการที่ถูกลบไปแล้วแต่คิวเก่ายังอ้างถึงอยู่ — โชว์ป้ายกำกับไว้ ดีกว่าซ่อนแถวจนยอดไม่ครบ
+    const name = procMap[id]?.name || "(หัตถการที่ถูกลบแล้ว)";
+    return { id, name, total, prev, ch: changePct(total, prev) };
+  }).sort(sortByChange), [procGroups, procMap]);
+
+  // เจาะสาเหตุรายหัตถการ — new/old/course + อัตรายกเลิก/ไม่มา + "สาขาไหนทำให้เปลี่ยน"
+  // (โซนสาขาโชว์โปรที่ขยับ ส่วนโซนนี้โชว์สาขาที่ขยับ — เป็นคำตอบตรงคำถามว่ายอดหัตถการนี้หายไปไหน)
+  const procDiagnostics = useMemo(() => {
+    const branchCounts = (arr) => {
+      const c = {};
+      arr.forEach((q) => { if (!q.branchId) return; c[q.branchId] = (c[q.branchId] || 0) + 1; });
+      return c;
+    };
+    const m = {};
+    Object.entries(procGroups).forEach(([id, g]) => {
+      m[id] = {
+        cur: byCustomerType(g.cur), prev: byCustomerType(g.prev),
+        lostRateCur: lostRateOf(g.cur), lostRatePrev: lostRateOf(g.prev),
+        movers: topMovers(branchCounts(g.cur), branchCounts(g.prev), (bid) => branchMap[bid]?.name || bid),
+      };
+    });
+    return m;
+  }, [procGroups, branchMap]);
 
   // ─── 5. Admin new customer ranking ───
   const adminNewRank = useMemo(() => {
@@ -653,68 +740,35 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
       <div style={{ marginBottom: 16, width: "100%" }}>
         <SectionCard title="🏢 สาขาเติบโต / ลดลง — ทำไมถึงเปลี่ยน">
           <div style={{ fontSize: 11, color: "#999", marginBottom: 12 }}>เทียบยอดคิวช่วงนี้กับช่วงก่อนหน้าของแต่ละสาขา กดที่แถวสาขาเพื่อดูว่าเปลี่ยนเพราะอะไร (ลูกค้าใหม่/เก่า/คอร์ส, อัตรายกเลิก, โปรที่เปลี่ยนแปลง)</div>
-          {bGrowth.length===0 ? <div style={{ color: "#ccc", textAlign: "center", padding: 20 }}>ไม่มีข้อมูล</div> : (() => {
-            const visible = showAllBranchGrowth ? bGrowth : bGrowth.slice(0, LIST_CAP);
-            return (
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              {visible.map((b,i)=>{
-                const isOpen = expandedBranchId === b.bid;
-                // ฐานเทียบเล็กเกินไป (เช่นสาขาใหม่ที่ช่วงก่อนมีแค่ 1-2 คิว) — % จะบวมจนไม่มีความหมาย
-                // (1→587 กลายเป็น 58600%) โชว์จำนวนที่เพิ่มขึ้นตรงๆ แทนดีกว่า
-                const baseTooSmall = b.prev < 10;
-                const isDeclining = b.total < b.prev;
-                // โชว์หัวข้อกลุ่มแค่ตอนเปลี่ยนกลุ่ม (ลดลง → เพิ่มขึ้น) กันงงว่าทำไมสลับทิศทางกลางลิสต์
-                const showGroupHeader = i === 0 || isDeclining !== (visible[i-1].total < visible[i-1].prev);
-                return (
-                <div key={b.bid || b.name}>
-                  {showGroupHeader && (
-                    <div style={{ fontSize: 11, fontWeight: 700, color: isDeclining ? "#C62828" : "#2E7D32", margin: i === 0 ? "0 0 6px" : "14px 0 6px" }}>
-                      {isDeclining ? "📉 ลดลง" : "📈 เพิ่มขึ้น"}
-                    </div>
-                  )}
-                <div style={{ borderBottom: i < visible.length - 1 ? "1px solid #f0ebe8" : "none" }}>
-                  <div
-                    onClick={() => setExpandedBranchId(isOpen ? null : b.bid)}
-                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 4px", cursor: b.bid ? "pointer" : "default", flexWrap: "nowrap" }}
-                  >
-                    {/* ชื่อสาขาไม่ยืดเต็มแถว (ไม่ใช้ flex:1) — กันตัวเลข/ป้ายเปอร์เซ็นต์ถูกดันไปไกลสุดขอบ
-                        การ์ดกว้าง ที่ว่างส่วนเกินให้ไปอยู่ท้ายแถวแทน ไม่ใช่แทรกกลางระหว่างชื่อกับตัวเลข
-                        ใช้ min(px, vw) แทน px ตรงๆ — กันล้นจอมือถือ (px ตายตัวเคยทำแถวนี้กว้างเกิน 350px
-                        ในพื้นที่มือถือจริงมีแค่ ~300px) */}
-                    <div style={{ minWidth: 0, maxWidth: "min(220px, 42vw)", flexShrink: 1, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</div>
-                    <div style={{ fontSize: 11, color: "#999", flexShrink: 0, whiteSpace: "nowrap" }}>{b.prev}→{b.total}</div>
-                    {/* ยอดเท่าเดิมเป๊ะ (ไม่ใช่ทั้งขึ้นและลง) ไม่ควรมีลูกศร ▲/▼ — เดิม total===prev
-                        ตกไปอยู่กลุ่ม "เพิ่มขึ้น" พร้อมป้าย ▲0% ซึ่งขัดกับความจริงตรงๆ */}
-                    {b.total === b.prev ? (
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12, color: "#999", background: "#f0ebe8" }}>คงที่</span>
-                    ) : baseTooSmall ? (
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12, color: "#8b7f76", background: "#f0ebe8" }}>
-                        {b.total>=b.prev?"▲":"▼"} {b.total-b.prev>=0?"+":""}{b.total-b.prev} คิว
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 8px", borderRadius: 12,
-                        color: b.ch>=0?"#2E7D32":"#C62828", background: b.ch>=0?"#E8F5E9":"#FFEBEE" }}>
-                        {b.ch>=0?"▲":"▼"}{Math.abs(b.ch)}%
-                      </span>
-                    )}
-                    {b.bid && <span style={{ fontSize: 10, color: "#bbb", transform: isOpen ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s", display: "inline-block" }}>▾</span>}
-                  </div>
-                  {isOpen && <div style={{ padding: "0 4px 10px" }}><BranchDiagnosticDetail diag={branchDiagnostics[b.bid]} /></div>}
-                </div>
-                </div>
-                );
-              })}
-              {bGrowth.length > LIST_CAP && (
-                <button
-                  onClick={() => setShowAllBranchGrowth(v => !v)}
-                  style={{ marginTop: 2, border: "1px solid #e8e0dc", background: "#faf7f5", color: "#B45309", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-                >
-                  {showAllBranchGrowth ? "ซ่อนรายการ" : `ดูเพิ่ม ${bGrowth.length - LIST_CAP} สาขา`}
-                </button>
-              )}
-            </div>
-            );
-          })()}
+          <GrowthList
+            rows={bGrowth}
+            cap={LIST_CAP}
+            showAll={showAllBranchGrowth}
+            onToggleShowAll={() => setShowAllBranchGrowth(v => !v)}
+            expandedId={expandedBranchId}
+            onToggleRow={setExpandedBranchId}
+            diagnostics={branchDiagnostics}
+            moversTitle="โปรที่เปลี่ยนแปลงมากสุด"
+            moreLabel="สาขา"
+          />
+        </SectionCard>
+      </div>
+
+      {/* 💉 หัตถการเติบโต / ลดลง — คู่กับโซนสาขา ตอบว่า "ของที่ขายเปลี่ยนไป" ไม่ใช่แค่ "ที่ไหนเปลี่ยน" */}
+      <div style={{ marginBottom: 16, width: "100%" }}>
+        <SectionCard title="💉 หัตถการเติบโต / ลดลง — ทำไมถึงเปลี่ยน">
+          <div style={{ fontSize: 11, color: "#999", marginBottom: 12 }}>เทียบยอดคิวช่วงนี้กับช่วงก่อนหน้าของแต่ละหัตถการ (นับทุกสาขารวมกัน) กดที่แถวเพื่อดูว่าเปลี่ยนเพราะอะไร (ลูกค้าใหม่/เก่า/คอร์ส, อัตรายกเลิก, สาขาที่เปลี่ยนแปลง)</div>
+          <GrowthList
+            rows={pGrowth}
+            cap={LIST_CAP}
+            showAll={showAllProcGrowth}
+            onToggleShowAll={() => setShowAllProcGrowth(v => !v)}
+            expandedId={expandedProcId}
+            onToggleRow={setExpandedProcId}
+            diagnostics={procDiagnostics}
+            moversTitle="สาขาที่เปลี่ยนแปลงมากสุด"
+            moreLabel="หัตถการ"
+          />
         </SectionCard>
       </div>
 
