@@ -12,10 +12,21 @@ export const byCustomerType = (arr) => ({
   course: arr.filter((q) => q.customerType === "course").length,
 });
 
-// คืน null เมื่อไม่มีคิวเลย — ห้ามคืน 0 เพราะ "ไม่มีข้อมูล" ≠ "อัตรายกเลิก 0%" (จะโชว์เขียวหลอกๆ)
-export const lostRateOf = (arr) => arr.length > 0
-  ? Math.round((arr.filter((q) => q.status === "no_show" || q.status === "cancelled").length / arr.length) * 100)
-  : null;
+// อัตรายกเลิก+ไม่มา พร้อมตัวตั้ง/ตัวหารดิบ — ต้องส่งตัวหารกลับไปด้วยเสมอ ไม่ใช่แค่ %
+// เพราะ % จากคิวไม่กี่ใบไม่มีความหมาย (คิวใบเดียวโดนยกเลิก = "100%" ตัวแดง, ไม่โดน = "0%" ตัวเขียว
+// ทั้งที่เป็นคิวใบเดียวกันเรื่องเดียวกัน) ฝั่งแสดงผลต้องเห็นตัวหารถึงจะเลือกได้ว่าจะโชว์ % หรือจำนวน
+// rate เป็น null เมื่อไม่มีคิวเลย — ห้ามคืน 0 เพราะ "ไม่มีข้อมูล" ≠ "อัตรายกเลิก 0%"
+export const lostStat = (arr) => {
+  const total = arr.length;
+  const lost = arr.filter((q) => q.status === "no_show" || q.status === "cancelled").length;
+  return {
+    lost,
+    total,
+    rate: total > 0 ? Math.round((lost / total) * 100) : null,
+    // ฐานพอเชื่อ % ได้หรือยัง — ใช้เส้นเดียวกับ SMALL_BASE ที่ป้าย ▲▼% ใช้ กันหน้าเดียวกันมีสองมาตรฐาน
+    reliable: total >= SMALL_BASE,
+  };
+};
 
 // % เปลี่ยนแปลง — ฐาน 0 แต่มีคิวในช่วงนี้ถือเป็น +100 (ตัวเลขนี้ไม่ได้เอาไปโชว์อยู่ดี เพราะ
 // prev=0 < SMALL_BASE จะโชว์เป็นจำนวนคิวแทน แต่ต้องมีค่าให้ตัวเรียงใช้)

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  SMALL_BASE, byCustomerType, lostRateOf, changePct, sortByChange, topMovers,
+  SMALL_BASE, byCustomerType, lostStat, changePct, sortByChange, topMovers,
 } from "../src/utils/growthCompare.js";
 
 const row = (name, prev, total) => ({ name, prev, total, ch: changePct(total, prev) });
@@ -46,10 +46,35 @@ test("changePct: ฐาน 0 แต่มีคิว = +100, ฐาน 0 แล
   assert.equal(changePct(0, 80), -100);
 });
 
-test("lostRateOf คืน null เมื่อไม่มีคิว ไม่ใช่ 0 (ไม่มีข้อมูล ≠ ยกเลิก 0%)", () => {
-  assert.equal(lostRateOf([]), null);
-  assert.equal(lostRateOf([{ status: "done" }, { status: "no_show" }]), 50);
-  assert.equal(lostRateOf([{ status: "cancelled" }, { status: "no_show" }]), 100);
+const q = (status) => ({ status });
+const many = (n, status) => Array.from({ length: n }, () => q(status));
+
+test("lostStat คืน rate null เมื่อไม่มีคิว ไม่ใช่ 0 (ไม่มีข้อมูล ≠ ยกเลิก 0%)", () => {
+  assert.deepEqual(lostStat([]), { lost: 0, total: 0, rate: null, reliable: false });
+});
+
+test("lostStat คิดอัตราถูกและส่งตัวตั้ง/ตัวหารดิบกลับมาด้วยเสมอ", () => {
+  const arr = [...many(8, "done"), q("no_show"), q("cancelled")];
+  assert.deepEqual(lostStat(arr), { lost: 2, total: 10, rate: 20, reliable: true });
+});
+
+test("ฐานน้อยกว่า SMALL_BASE ถือว่าเชื่อ % ไม่ได้ — คิวใบเดียวต้องไม่กลายเป็น 100% ที่เชื่อถือได้", () => {
+  // เคสจริงจาก production: Oligio มีคิวเดียวในช่วงนั้นแล้วโดนยกเลิก เดิมขึ้น "100%" ตัวหนาสีแดง
+  const one = lostStat([q("cancelled")]);
+  assert.equal(one.rate, 100);
+  assert.equal(one.reliable, false, "คิวใบเดียวห้ามถือว่าฐานพอ");
+  // และคิวใบเดียวที่ไม่โดนยกเลิกก็ต้องไม่ถือว่า "0% เขียว" ที่เชื่อได้เหมือนกัน
+  assert.equal(lostStat([q("done")]).reliable, false);
+});
+
+test("เส้นแบ่ง reliable อยู่ที่ SMALL_BASE พอดี ไม่เหลื่อม", () => {
+  assert.equal(lostStat(many(SMALL_BASE - 1, "done")).reliable, false);
+  assert.equal(lostStat(many(SMALL_BASE, "done")).reliable, true);
+});
+
+test("นับทั้งยกเลิกและไม่มาเป็น lost สถานะอื่นไม่นับ", () => {
+  const arr = [q("cancelled"), q("no_show"), q("done"), q("confirmed"), q("waiting")];
+  assert.equal(lostStat(arr).lost, 2);
 });
 
 test("byCustomerType นับครบสามประเภท ไม่ปนกับสถานะอื่น", () => {
