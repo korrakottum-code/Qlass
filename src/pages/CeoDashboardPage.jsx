@@ -168,18 +168,19 @@ function GrowthList({ rows, cap, showAll, onToggleShowAll, expandedId, onToggleR
                     ในพื้นที่มือถือจริงมีแค่ ~300px) */}
                 <div style={{ minWidth: 0, maxWidth: "min(220px, 42vw)", flexShrink: 1, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</div>
                 <div style={{ fontSize: 11, color: "#999", flexShrink: 0, whiteSpace: "nowrap" }}>{r.prev}→{r.total}</div>
-                {/* ยอดเท่าเดิมเป๊ะ (ไม่ใช่ทั้งขึ้นและลง) ไม่ควรมีลูกศร ▲/▼ — เดิม total===prev
-                    ตกไปอยู่กลุ่ม "เพิ่มขึ้น" พร้อมป้าย ▲0% ซึ่งขัดกับความจริงตรงๆ */}
+                {/* ป้ายนี้ต้องนำด้วย "จำนวนคิว" ไม่ใช่ % — คำถามของผู้บริหารคือยอดหายไปกี่คิว ส่วน %
+                    เป็นบริบทรอง (หาย 204 คิว = -15% ของ Hifu สำคัญกว่าหาย 17 คิว = -94% ของ Oligio)
+                    เดิมโชว์ % อย่างเดียวจนเจ้าของระบบต้องนั่งลบเลข prev→total ในหัวเอง
+                    ยอดเท่าเดิมเป๊ะ (ไม่ใช่ทั้งขึ้นและลง) ไม่ควรมีลูกศร ▲/▼ — เดิม total===prev
+                    ตกไปอยู่กลุ่ม "เพิ่มขึ้น" พร้อมป้าย ▲0% ซึ่งขัดกับความจริงตรงๆ
+                    ฐานน้อยกว่า SMALL_BASE ไม่ต่อ % ท้าย — 1→2 ที่เขียนว่า "+100%" หลอกตามากกว่าบอกอะไร */}
                 {r.total === r.prev ? (
                   <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12, color: "#999", background: "#f0ebe8" }}>คงที่</span>
-                ) : baseTooSmall ? (
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12, color: "#8b7f76", background: "#f0ebe8" }}>
-                    {r.total >= r.prev ? "▲" : "▼"} {r.total - r.prev >= 0 ? "+" : ""}{r.total - r.prev} คิว
-                  </span>
                 ) : (
-                  <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 8px", borderRadius: 12,
-                    color: r.ch >= 0 ? "#2E7D32" : "#C62828", background: r.ch >= 0 ? "#E8F5E9" : "#FFEBEE" }}>
-                    {r.ch >= 0 ? "▲" : "▼"}{Math.abs(r.ch)}%
+                  <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 8px", borderRadius: 12, whiteSpace: "nowrap",
+                    color: r.total > r.prev ? "#2E7D32" : "#C62828", background: r.total > r.prev ? "#E8F5E9" : "#FFEBEE" }}>
+                    {r.total > r.prev ? "▲" : "▼"}{Math.abs(r.total - r.prev)} คิว
+                    {!baseTooSmall && <span style={{ fontWeight: 500, opacity: 0.75 }}> ({Math.abs(r.ch)}%)</span>}
                   </span>
                 )}
                 <span style={{ fontSize: 10, color: "#bbb", transform: isOpen ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s", display: "inline-block" }}>▾</span>
@@ -752,7 +753,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
           กันไม่ให้การ์ดหดจนเหลือที่ว่างโล่งๆ ข้างๆ ดูเหมือนหน้าพัง */}
       <div style={{ marginBottom: 16, width: "100%" }}>
         <SectionCard title="🏢 สาขาเติบโต / ลดลง — ทำไมถึงเปลี่ยน">
-          <div style={{ fontSize: 11, color: "#999", marginBottom: 12 }}>เทียบยอดคิวช่วงนี้กับช่วงก่อนหน้าของแต่ละสาขา กดที่แถวสาขาเพื่อดูว่าเปลี่ยนเพราะอะไร (ลูกค้าใหม่/เก่า/คอร์ส, อัตรายกเลิก, โปรที่เปลี่ยนแปลง)</div>
+          <div style={{ fontSize: 11, color: "#999", marginBottom: 12 }}>เทียบยอดคิวช่วงนี้กับช่วงก่อนหน้าของแต่ละสาขา เรียงตามจำนวนคิวที่เปลี่ยนไปมากสุด กดที่แถวสาขาเพื่อดูว่าเปลี่ยนเพราะอะไร (ลูกค้าใหม่/เก่า/คอร์ส, อัตรายกเลิก, โปรที่เปลี่ยนแปลง)</div>
           <GrowthList
             rows={bGrowth}
             cap={LIST_CAP}
@@ -770,7 +771,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
       {/* 💉 หัตถการเติบโต / ลดลง — คู่กับโซนสาขา ตอบว่า "ของที่ขายเปลี่ยนไป" ไม่ใช่แค่ "ที่ไหนเปลี่ยน" */}
       <div style={{ marginBottom: 16, width: "100%" }}>
         <SectionCard title="💉 หัตถการเติบโต / ลดลง — ทำไมถึงเปลี่ยน">
-          <div style={{ fontSize: 11, color: "#999", marginBottom: 12 }}>เทียบยอดคิวช่วงนี้กับช่วงก่อนหน้าของแต่ละหัตถการ (นับทุกสาขารวมกัน) กดที่แถวเพื่อดูว่าเปลี่ยนเพราะอะไร (ลูกค้าใหม่/เก่า/คอร์ส, อัตรายกเลิก, สาขาที่เปลี่ยนแปลง)</div>
+          <div style={{ fontSize: 11, color: "#999", marginBottom: 12 }}>เทียบยอดคิวช่วงนี้กับช่วงก่อนหน้าของแต่ละหัตถการ (นับทุกสาขารวมกัน) เรียงตามจำนวนคิวที่เปลี่ยนไปมากสุด กดที่แถวเพื่อดูว่าเปลี่ยนเพราะอะไร (ลูกค้าใหม่/เก่า/คอร์ส, อัตรายกเลิก, สาขาที่เปลี่ยนแปลง)</div>
           <GrowthList
             rows={pGrowth}
             cap={LIST_CAP}
