@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  SMALL_BASE, byCustomerType, lostStat, changePct, sortByChange, topMovers,
+  SMALL_BASE, byCustomerType, lostStat, changePct, sortByQueueCount, sortByPercent, sorterFor, topMovers,
 } from "../src/utils/growthCompare.js";
 
 const row = (name, prev, total) => ({ name, prev, total, ch: changePct(total, prev) });
-const order = (rows) => [...rows].sort(sortByChange).map((r) => r.name);
+const order = (rows) => [...rows].sort(sortByQueueCount).map((r) => r.name);
+const orderByPct = (rows) => [...rows].sort(sortByPercent).map((r) => r.name);
 
 test("ลดลงมาก่อนเพิ่มขึ้นเสมอ แม้ตัวที่เพิ่มจะขยับแรงกว่า", () => {
   // สาขาที่แย่ลงคือสิ่งที่เจ้าของอยากเห็นก่อน ต่อให้ % ของอีกกลุ่มจะสูงกว่า
@@ -93,4 +94,38 @@ test("topMovers: เอาตัวที่ขยับแรงสุด ต�
 test("topMovers เคารพ limit", () => {
   const cur = { a: 9, b: 8, c: 7, d: 6, e: 5, f: 4 };
   assert.equal(topMovers(cur, {}, (id) => id).length, 5);
+});
+
+// ─── โหมด "% ตกหนัก" (ปุ่มสลับในหน้า) ───
+
+test("โหมด % เรียงตามอัตราที่ตก ไม่ใช่จำนวน — เคสสาขาที่ % เกาะกลุ่มกัน", () => {
+  // ข้อมูลจริง 28 วัน: หอกาญหาย 245 คิวแต่แค่ -9% ส่วนสุรินทร์หาย 115 คิวแต่ -15%
+  // โหมดจำนวนดันหอกาญขึ้นก่อน โหมด % ต้องดันสุรินทร์ขึ้นก่อน
+  const rows = [row("หอกาญ", 2805, 2560), row("สุรินทร์", 760, 645)];
+  assert.deepEqual(order(rows), ["หอกาญ", "สุรินทร์"]);
+  assert.deepEqual(orderByPct(rows), ["สุรินทร์", "หอกาญ"]);
+});
+
+test("โหมด % ยังต้องดันฐานเล็กลงท้ายกลุ่ม — บั๊ก 1→587 = +58600% ห้ามกลับมา", () => {
+  assert.deepEqual(orderByPct([row("เปิดใหม่", 1, 587), row("โตจริง", 1000, 1300)]), ["โตจริง", "เปิดใหม่"]);
+  assert.deepEqual(orderByPct([row("บวม%", 1, 2), row("โตจริง", 1000, 1300)]), ["โตจริง", "บวม%"]);
+});
+
+test("โหมด % ที่ตกเท่ากันเป๊ะ ให้จำนวนตัดสิน ไม่ปล่อยให้ลำดับมั่ว", () => {
+  // ลาดกระบัง -15% และสุรินทร์ -15% เท่ากัน ตัวที่หายมากกว่าต้องมาก่อนเสมอ
+  const rows = [row("สุรินทร์", 760, 645), row("ลาดกระบัง", 794, 677)];
+  assert.equal(rows[0].ch, rows[1].ch, "สองแถวนี้ต้อง % เท่ากันจริงถึงจะทดสอบตัวตัดสินได้");
+  assert.deepEqual(orderByPct(rows), ["ลาดกระบัง", "สุรินทร์"]);
+});
+
+test("ทั้งสองโหมดแยกกลุ่มลดลงมาก่อนเพิ่มขึ้นเหมือนกัน", () => {
+  const rows = [row("โตแรง", 100, 900), row("ตกนิด", 100, 99)];
+  assert.deepEqual(order(rows), ["ตกนิด", "โตแรง"]);
+  assert.deepEqual(orderByPct(rows), ["ตกนิด", "โตแรง"]);
+});
+
+test("sorterFor เลือกตัวเรียงตามชื่อโหมด และ default เป็นจำนวนคิว", () => {
+  assert.equal(sorterFor("pct"), sortByPercent);
+  assert.equal(sorterFor("count"), sortByQueueCount);
+  assert.equal(sorterFor(undefined), sortByQueueCount, "โหมดที่ไม่รู้จักต้องตกมาที่จำนวนคิว");
 });
