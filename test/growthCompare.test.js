@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  SMALL_BASE, byCustomerType, lostRateOf, changePct, sortByChange, topMovers,
+  SMALL_BASE, byCustomerType, lostStat, changePct, sortByChange, topMovers,
 } from "../src/utils/growthCompare.js";
 
 const row = (name, prev, total) => ({ name, prev, total, ch: changePct(total, prev) });
@@ -12,32 +12,29 @@ test("ลดลงมาก่อนเพิ่มขึ้นเสมอ แ�
   assert.deepEqual(order([row("โต", 100, 300), row("ตก", 100, 90)]), ["ตก", "โต"]);
 });
 
-test("ในกลุ่มเดียวกัน เรียงตามขนาด % ไม่ใช่ยอดคิวรวม", () => {
-  assert.deepEqual(
-    order([row("ใหญ่แต่ขยับนิด", 5000, 4900), row("เล็กแต่ขยับแรง", 100, 40)]),
-    ["เล็กแต่ขยับแรง", "ใหญ่แต่ขยับนิด"],
-  );
+test("ในกลุ่มเดียวกัน เรียงตามจำนวนคิวที่เปลี่ยนไป ไม่ใช่ %", () => {
+  // เคสจริง 28 วัน: Hifu หาย 204 คิว (-15%) ต้องมาก่อน Oligio ที่หายแค่ 17 คิว (-94%)
+  // เดิมเรียงด้วย % ทำให้ Hifu ตกไปอันดับ 10 จนถูกซ่อนหลังปุ่ม "ดูเพิ่ม" (โชว์แค่ 8 แถวแรก)
+  assert.deepEqual(order([row("Oligio", 18, 1), row("Hifu", 1340, 1136)]), ["Hifu", "Oligio"]);
 });
 
-test("ฐานเทียบน้อยกว่า SMALL_BASE จมท้ายกลุ่มเสมอ ไม่แย่งอันดับต้นด้วย % บวมเทียม", () => {
-  // 1→587 = +58600% ต้องไม่ชนะ 1000→1300 = +30% ที่เป็นการเติบโตจริง
-  const rows = [row("เปิดใหม่", 1, 587), row("โตจริง", 1000, 1300)];
-  assert.equal(changePct(587, 1) > changePct(1300, 1000), true, "ตัว % ดิบยังบวมกว่าจริง");
-  assert.deepEqual(order(rows), ["โตจริง", "เปิดใหม่"]);
+test("ของฐานเล็กจมท้ายเองโดยไม่ต้องมีกฎพิเศษ เพราะขยับไม่กี่คิว", () => {
+  // 1→2 ที่ % = +100% แต่ขยับคิวเดียว ต้องแพ้ของที่ขยับ 300 คิว
+  assert.deepEqual(order([row("บวม%", 1, 2), row("โตจริง", 1000, 1300)]), ["โตจริง", "บวม%"]);
+  // ส่วน 1→587 เคยต้องมีกฎดันลง ตอนนี้ 586 คิวคือการขยับจริง ควรได้อันดับต้นจริงๆ
+  assert.deepEqual(order([row("เปิดใหม่", 1, 587), row("โตจริง", 1000, 1300)]), ["เปิดใหม่", "โตจริง"]);
 });
 
-test("ฐานเล็กทั้งคู่ เรียงด้วยจำนวนคิวที่เปลี่ยนจริง ไม่ใช่ %", () => {
-  // 1→9 = +800% แต่ขยับแค่ 8 คิว ส่วน 9→40 = +344% แต่ขยับ 31 คิว — อันหลังสำคัญกว่า
-  assert.deepEqual(order([row("บวม%", 1, 9), row("ขยับจริง", 9, 40)]), ["ขยับจริง", "บวม%"]);
+test("ขยับเท่ากันเป๊ะ ให้ % ตัดสิน — หาย 5 จาก 10 หนักกว่าหาย 5 จาก 500", () => {
+  assert.deepEqual(order([row("ฐานใหญ่", 500, 495), row("ฐานเล็ก", 10, 5)]), ["ฐานเล็ก", "ฐานใหญ่"]);
 });
 
 test("ยอดเท่าเดิมไม่ถือว่าลดลง (ไปอยู่กลุ่มเพิ่มขึ้น แล้วโชว์ป้ายคงที่แทน)", () => {
   assert.deepEqual(order([row("คงที่", 100, 100), row("ตก", 100, 99)]), ["ตก", "คงที่"]);
 });
 
-test("SMALL_BASE คือ 10 — เส้นแบ่งเดียวกับที่หน้าจอใช้ตัดสินว่าจะโชว์ % หรือจำนวนคิว", () => {
+test("SMALL_BASE คือ 10 — เส้นแบ่งที่ฝั่งแสดงผลใช้ตัดสินว่าจะต่อ % ท้ายป้ายไหม", () => {
   assert.equal(SMALL_BASE, 10);
-  assert.deepEqual(order([row("ฐาน10", 10, 5), row("ฐาน9", 9, 1)]), ["ฐาน10", "ฐาน9"]);
 });
 
 test("changePct: ฐาน 0 แต่มีคิว = +100, ฐาน 0 และไม่มีคิว = 0", () => {
@@ -46,10 +43,35 @@ test("changePct: ฐาน 0 แต่มีคิว = +100, ฐาน 0 แล
   assert.equal(changePct(0, 80), -100);
 });
 
-test("lostRateOf คืน null เมื่อไม่มีคิว ไม่ใช่ 0 (ไม่มีข้อมูล ≠ ยกเลิก 0%)", () => {
-  assert.equal(lostRateOf([]), null);
-  assert.equal(lostRateOf([{ status: "done" }, { status: "no_show" }]), 50);
-  assert.equal(lostRateOf([{ status: "cancelled" }, { status: "no_show" }]), 100);
+const q = (status) => ({ status });
+const many = (n, status) => Array.from({ length: n }, () => q(status));
+
+test("lostStat คืน rate null เมื่อไม่มีคิว ไม่ใช่ 0 (ไม่มีข้อมูล ≠ ยกเลิก 0%)", () => {
+  assert.deepEqual(lostStat([]), { lost: 0, total: 0, rate: null, reliable: false });
+});
+
+test("lostStat คิดอัตราถูกและส่งตัวตั้ง/ตัวหารดิบกลับมาด้วยเสมอ", () => {
+  const arr = [...many(8, "done"), q("no_show"), q("cancelled")];
+  assert.deepEqual(lostStat(arr), { lost: 2, total: 10, rate: 20, reliable: true });
+});
+
+test("ฐานน้อยกว่า SMALL_BASE ถือว่าเชื่อ % ไม่ได้ — คิวใบเดียวต้องไม่กลายเป็น 100% ที่เชื่อถือได้", () => {
+  // เคสจริงจาก production: Oligio มีคิวเดียวในช่วงนั้นแล้วโดนยกเลิก เดิมขึ้น "100%" ตัวหนาสีแดง
+  const one = lostStat([q("cancelled")]);
+  assert.equal(one.rate, 100);
+  assert.equal(one.reliable, false, "คิวใบเดียวห้ามถือว่าฐานพอ");
+  // และคิวใบเดียวที่ไม่โดนยกเลิกก็ต้องไม่ถือว่า "0% เขียว" ที่เชื่อได้เหมือนกัน
+  assert.equal(lostStat([q("done")]).reliable, false);
+});
+
+test("เส้นแบ่ง reliable อยู่ที่ SMALL_BASE พอดี ไม่เหลื่อม", () => {
+  assert.equal(lostStat(many(SMALL_BASE - 1, "done")).reliable, false);
+  assert.equal(lostStat(many(SMALL_BASE, "done")).reliable, true);
+});
+
+test("นับทั้งยกเลิกและไม่มาเป็น lost สถานะอื่นไม่นับ", () => {
+  const arr = [q("cancelled"), q("no_show"), q("done"), q("confirmed"), q("waiting")];
+  assert.equal(lostStat(arr).lost, 2);
 });
 
 test("byCustomerType นับครบสามประเภท ไม่ปนกับสถานะอื่น", () => {

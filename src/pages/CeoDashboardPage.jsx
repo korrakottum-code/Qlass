@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { QUEUE_STATUSES } from "../utils/constants";
 import { getTodayStr, formatThaiDate, isoToLocalDateStr } from "../utils/helpers";
-import { SMALL_BASE, byCustomerType, lostRateOf, changePct, sortByChange, topMovers } from "../utils/growthCompare";
+import { SMALL_BASE, byCustomerType, lostStat, changePct, sortByChange, topMovers } from "../utils/growthCompare";
 
 const fmtNum = (n) => n.toLocaleString("en-US");
 // Wilson score lower bound (95%) — ใช้จัดอันดับ % ที่มาจากฐานตัวอย่างขนาดต่างกัน โดยไม่ให้ฐานเล็ก
@@ -63,6 +63,18 @@ function SectionCard({ title, children }) {
   return <div className="ceo-section-card" style={S.card}><div className="ceo-section-card-title" style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#2d2a26" }}>{title}</div>{children}</div>;
 }
 
+// อัตรายกเลิก/ไม่มา: โชว์ % ต่อเมื่อฐานพอเชื่อได้ ไม่งั้นโชว์จำนวนจริงให้คนอ่านตัดสินเอง
+const lostText = (st) => {
+  if (!st || st.total === 0) return "—";
+  return st.reliable ? `${st.rate}%` : `${st.lost}/${st.total} คิว`;
+};
+// ฐานไม่พอ = เทาเสมอ ไม่เขียวไม่แดง — เกณฑ์เขียว/เหลือง/แดงตั้งจากค่ากลางทั้งเครือ 90 วัน
+// เอามาตัดสินคิว 1-2 ใบไม่ได้
+const lostColor = (st) => {
+  if (!st || st.total === 0 || !st.reliable) return "#999";
+  return st.rate > LOST_RATE_OK_MAX ? "#C62828" : st.rate > LOST_RATE_GOOD_MAX ? "#E65100" : "#2E7D32";
+};
+
 // ─── "ทำไมแถวนี้ถึงเปลี่ยน" — new/old/course + no-show/ยกเลิก + ตัวที่เปลี่ยนแปลงมากสุด ───
 // ใช้ร่วมกันทั้งโซนสาขาและโซนหัตถการ ต่างกันแค่ movers (สาขาโชว์ "โปรที่เปลี่ยน" / หัตถการโชว์
 // "สาขาที่เปลี่ยน") เลยรับ moversTitle เข้ามา ไม่แยกเป็นสองคอมโพเนนต์ที่แก้แล้วหลุดไม่ตรงกันทีหลัง
@@ -90,14 +102,15 @@ function ChangeDetail({ diag, moversTitle }) {
       <div style={{ fontSize: 11, display: "flex", justifyContent: "space-between" }}>
         {/* ⚠️ = ยกเลิก+ไม่มา รวมกัน ต่างจาก 🚫 ที่ใช้เฉพาะ "ไม่มา" อย่างเดียวในโซนรายละเอียดด้านล่าง กันสับสน */}
         <span style={{ color: "#999" }}>⚠️ อัตรายกเลิก/ไม่มา</span>
-        {/* lostRate เป็น null ได้ (ไม่มีคิวเลยในช่วงนั้น) — ห้ามโชว์ "0%" หรือตัดสินสีจากค่าปลอม
-            สีตัดสินจากเกณฑ์เทียบเครือข่ายเดียวกับการ์ด "⚠️ อัตรายกเลิก/ไม่มา" ด้านล่างของหน้า (ไม่ใช่
-            แค่ดีขึ้น/แย่ลงจากช่วงก่อน) กันป้ายเดียวกันในหน้าเดียวกันตัดสินคนละมาตรฐาน */}
+        {/* ไม่มีคิวเลย → "—" (ห้ามโชว์ "0%" ที่แปลว่า "ไม่มีใครยกเลิก" ทั้งที่ไม่มีข้อมูล)
+            คิวน้อยกว่า SMALL_BASE → โชว์จำนวนจริง "1/2 คิว" ไม่ใช่ % และไม่ตัดสินสี — คิวใบเดียว
+            โดนยกเลิกได้ "100%" ตัวแดง ไม่โดนได้ "0%" ตัวเขียว ทั้งที่เป็นเรื่องเดียวกัน หลักเดียวกับ
+            ป้าย ▲▼% ของแถวที่ฐานน้อยแล้วโชว์จำนวนคิวแทน
+            ฐานพอแล้ว → สีตัดสินจากเกณฑ์เทียบเครือข่ายเดียวกับการ์ด "⚠️ อัตรายกเลิก/ไม่มา" ด้านล่าง
+            ของหน้า (ไม่ใช่แค่ดีขึ้น/แย่ลงจากช่วงก่อน) กันป้ายเดียวกันในหน้าเดียวกันตัดสินคนละมาตรฐาน */}
         <span>
-          <span style={{ color: "#bbb" }}>{diag.lostRatePrev === null ? "—" : `${diag.lostRatePrev}%`} → </span>
-          <span style={{ fontWeight: 700, color: diag.lostRateCur === null ? "#999" : (diag.lostRateCur > LOST_RATE_OK_MAX ? "#C62828" : diag.lostRateCur > LOST_RATE_GOOD_MAX ? "#E65100" : "#2E7D32") }}>
-            {diag.lostRateCur === null ? "—" : `${diag.lostRateCur}%`}
-          </span>
+          <span style={{ color: "#bbb" }}>{lostText(diag.lostPrev)} → </span>
+          <span style={{ fontWeight: 700, color: lostColor(diag.lostCur) }}>{lostText(diag.lostCur)}</span>
         </span>
       </div>
       <div>
@@ -155,18 +168,19 @@ function GrowthList({ rows, cap, showAll, onToggleShowAll, expandedId, onToggleR
                     ในพื้นที่มือถือจริงมีแค่ ~300px) */}
                 <div style={{ minWidth: 0, maxWidth: "min(220px, 42vw)", flexShrink: 1, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</div>
                 <div style={{ fontSize: 11, color: "#999", flexShrink: 0, whiteSpace: "nowrap" }}>{r.prev}→{r.total}</div>
-                {/* ยอดเท่าเดิมเป๊ะ (ไม่ใช่ทั้งขึ้นและลง) ไม่ควรมีลูกศร ▲/▼ — เดิม total===prev
-                    ตกไปอยู่กลุ่ม "เพิ่มขึ้น" พร้อมป้าย ▲0% ซึ่งขัดกับความจริงตรงๆ */}
+                {/* ป้ายนี้ต้องนำด้วย "จำนวนคิว" ไม่ใช่ % — คำถามของผู้บริหารคือยอดหายไปกี่คิว ส่วน %
+                    เป็นบริบทรอง (หาย 204 คิว = -15% ของ Hifu สำคัญกว่าหาย 17 คิว = -94% ของ Oligio)
+                    เดิมโชว์ % อย่างเดียวจนเจ้าของระบบต้องนั่งลบเลข prev→total ในหัวเอง
+                    ยอดเท่าเดิมเป๊ะ (ไม่ใช่ทั้งขึ้นและลง) ไม่ควรมีลูกศร ▲/▼ — เดิม total===prev
+                    ตกไปอยู่กลุ่ม "เพิ่มขึ้น" พร้อมป้าย ▲0% ซึ่งขัดกับความจริงตรงๆ
+                    ฐานน้อยกว่า SMALL_BASE ไม่ต่อ % ท้าย — 1→2 ที่เขียนว่า "+100%" หลอกตามากกว่าบอกอะไร */}
                 {r.total === r.prev ? (
                   <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12, color: "#999", background: "#f0ebe8" }}>คงที่</span>
-                ) : baseTooSmall ? (
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12, color: "#8b7f76", background: "#f0ebe8" }}>
-                    {r.total >= r.prev ? "▲" : "▼"} {r.total - r.prev >= 0 ? "+" : ""}{r.total - r.prev} คิว
-                  </span>
                 ) : (
-                  <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 8px", borderRadius: 12,
-                    color: r.ch >= 0 ? "#2E7D32" : "#C62828", background: r.ch >= 0 ? "#E8F5E9" : "#FFEBEE" }}>
-                    {r.ch >= 0 ? "▲" : "▼"}{Math.abs(r.ch)}%
+                  <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 8px", borderRadius: 12, whiteSpace: "nowrap",
+                    color: r.total > r.prev ? "#2E7D32" : "#C62828", background: r.total > r.prev ? "#E8F5E9" : "#FFEBEE" }}>
+                    {r.total > r.prev ? "▲" : "▼"}{Math.abs(r.total - r.prev)} คิว
+                    {!baseTooSmall && <span style={{ fontWeight: 500, opacity: 0.75 }}> ({Math.abs(r.ch)}%)</span>}
                   </span>
                 )}
                 <span style={{ fontSize: 10, color: "#bbb", transform: isOpen ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s", display: "inline-block" }}>▾</span>
@@ -464,7 +478,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
 
       m[b.bid] = {
         cur: byCustomerType(cur), prev: byCustomerType(prev),
-        lostRateCur: lostRateOf(cur), lostRatePrev: lostRateOf(prev),
+        lostCur: lostStat(cur), lostPrev: lostStat(prev),
         movers,
       };
     });
@@ -506,7 +520,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
     Object.entries(procGroups).forEach(([id, g]) => {
       m[id] = {
         cur: byCustomerType(g.cur), prev: byCustomerType(g.prev),
-        lostRateCur: lostRateOf(g.cur), lostRatePrev: lostRateOf(g.prev),
+        lostCur: lostStat(g.cur), lostPrev: lostStat(g.prev),
         movers: topMovers(branchCounts(g.cur), branchCounts(g.prev), (bid) => branchMap[bid]?.name || bid),
       };
     });
@@ -739,7 +753,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
           กันไม่ให้การ์ดหดจนเหลือที่ว่างโล่งๆ ข้างๆ ดูเหมือนหน้าพัง */}
       <div style={{ marginBottom: 16, width: "100%" }}>
         <SectionCard title="🏢 สาขาเติบโต / ลดลง — ทำไมถึงเปลี่ยน">
-          <div style={{ fontSize: 11, color: "#999", marginBottom: 12 }}>เทียบยอดคิวช่วงนี้กับช่วงก่อนหน้าของแต่ละสาขา กดที่แถวสาขาเพื่อดูว่าเปลี่ยนเพราะอะไร (ลูกค้าใหม่/เก่า/คอร์ส, อัตรายกเลิก, โปรที่เปลี่ยนแปลง)</div>
+          <div style={{ fontSize: 11, color: "#999", marginBottom: 12 }}>เทียบยอดคิวช่วงนี้กับช่วงก่อนหน้าของแต่ละสาขา เรียงตามจำนวนคิวที่เปลี่ยนไปมากสุด กดที่แถวสาขาเพื่อดูว่าเปลี่ยนเพราะอะไร (ลูกค้าใหม่/เก่า/คอร์ส, อัตรายกเลิก, โปรที่เปลี่ยนแปลง)</div>
           <GrowthList
             rows={bGrowth}
             cap={LIST_CAP}
@@ -757,7 +771,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
       {/* 💉 หัตถการเติบโต / ลดลง — คู่กับโซนสาขา ตอบว่า "ของที่ขายเปลี่ยนไป" ไม่ใช่แค่ "ที่ไหนเปลี่ยน" */}
       <div style={{ marginBottom: 16, width: "100%" }}>
         <SectionCard title="💉 หัตถการเติบโต / ลดลง — ทำไมถึงเปลี่ยน">
-          <div style={{ fontSize: 11, color: "#999", marginBottom: 12 }}>เทียบยอดคิวช่วงนี้กับช่วงก่อนหน้าของแต่ละหัตถการ (นับทุกสาขารวมกัน) กดที่แถวเพื่อดูว่าเปลี่ยนเพราะอะไร (ลูกค้าใหม่/เก่า/คอร์ส, อัตรายกเลิก, สาขาที่เปลี่ยนแปลง)</div>
+          <div style={{ fontSize: 11, color: "#999", marginBottom: 12 }}>เทียบยอดคิวช่วงนี้กับช่วงก่อนหน้าของแต่ละหัตถการ (นับทุกสาขารวมกัน) เรียงตามจำนวนคิวที่เปลี่ยนไปมากสุด กดที่แถวเพื่อดูว่าเปลี่ยนเพราะอะไร (ลูกค้าใหม่/เก่า/คอร์ส, อัตรายกเลิก, สาขาที่เปลี่ยนแปลง)</div>
           <GrowthList
             rows={pGrowth}
             cap={LIST_CAP}
