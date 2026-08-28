@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { QUEUE_STATUSES } from "../utils/constants";
 import { getTodayStr, formatThaiDate, isoToLocalDateStr } from "../utils/helpers";
-import { SMALL_BASE, byCustomerType, lostStat, changePct, sortByChange, topMovers } from "../utils/growthCompare";
+import { SMALL_BASE, byCustomerType, lostStat, changePct, sorterFor, topMovers } from "../utils/growthCompare";
 
 const fmtNum = (n) => n.toLocaleString("en-US");
 // Wilson score lower bound (95%) — ใช้จัดอันดับ % ที่มาจากฐานตัวอย่างขนาดต่างกัน โดยไม่ให้ฐานเล็ก
@@ -134,10 +134,27 @@ function ChangeDetail({ diag, moversTitle }) {
   );
 }
 
+// ปุ่มสลับเกณฑ์เรียง — สองโหมดตอบคนละคำถาม ไม่มีอันไหนถูกกว่ากัน (ดู growthCompare.js)
+function SortToggle({ mode, onChange }) {
+  const btn = (key, label) => (
+    <button
+      onClick={() => onChange(key)}
+      style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20, border: "1px solid #e8e0dc",
+        cursor: "pointer", background: mode === key ? "#2d2a26" : "#fff", color: mode === key ? "#fff" : "#888" }}
+    >{label}</button>
+  );
+  return (
+    <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+      {btn("count", "📊 จำนวนคิวที่หาย/เพิ่ม")}
+      {btn("pct", "📉 % ที่ตกหนักสุด")}
+    </div>
+  );
+}
+
 // ─── ลิสต์ "เติบโต / ลดลง" — โครงเดียวกันทั้งโซนสาขาและโซนหัตถการ ───
 // เกณฑ์แสดงผลทุกข้อ (จัดกลุ่มลดลงก่อน, ฐาน <10 ไม่โชว์ %, ยอดเท่าเดิม = "คงที่") อยู่ที่เดียว
 // กันสองโซนในหน้าเดียวกันตัดสินคนละมาตรฐานเมื่อมีคนไปแก้ทีหลัง
-function GrowthList({ rows, cap, showAll, onToggleShowAll, expandedId, onToggleRow, diagnostics, moversTitle, moreLabel }) {
+function GrowthList({ rows, cap, showAll, onToggleShowAll, expandedId, onToggleRow, diagnostics, moversTitle, moreLabel, sortMode }) {
   if (rows.length === 0) return <div style={{ color: "#ccc", textAlign: "center", padding: 20 }}>ไม่มีข้อมูล</div>;
   const visible = showAll ? rows : rows.slice(0, cap);
   return (
@@ -179,8 +196,19 @@ function GrowthList({ rows, cap, showAll, onToggleShowAll, expandedId, onToggleR
                 ) : (
                   <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 8px", borderRadius: 12, whiteSpace: "nowrap",
                     color: r.total > r.prev ? "#2E7D32" : "#C62828", background: r.total > r.prev ? "#E8F5E9" : "#FFEBEE" }}>
-                    {r.total > r.prev ? "▲" : "▼"}{Math.abs(r.total - r.prev)} คิว
-                    {!baseTooSmall && <span style={{ fontWeight: 500, opacity: 0.75 }}> ({Math.abs(r.ch)}%)</span>}
+                    {/* เลขที่นำหน้าต้องเป็นตัวเดียวกับที่ใช้เรียง ไม่งั้นสายตากวาดแล้วงงว่าทำไม
+                        "▼115 คิว" ลอยอยู่เหนือ "▼245 คิว" (คำตอบคือกำลังเรียงด้วย % อยู่) */}
+                    {sortMode === "pct" && !baseTooSmall ? (
+                      <>
+                        {r.total > r.prev ? "▲" : "▼"}{Math.abs(r.ch)}%
+                        <span style={{ fontWeight: 500, opacity: 0.75 }}> ({Math.abs(r.total - r.prev)} คิว)</span>
+                      </>
+                    ) : (
+                      <>
+                        {r.total > r.prev ? "▲" : "▼"}{Math.abs(r.total - r.prev)} คิว
+                        {!baseTooSmall && <span style={{ fontWeight: 500, opacity: 0.75 }}> ({Math.abs(r.ch)}%)</span>}
+                      </>
+                    )}
                   </span>
                 )}
                 <span style={{ fontSize: 10, color: "#bbb", transform: isOpen ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s", display: "inline-block" }}>▾</span>
@@ -217,6 +245,8 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
   const [expandedBranchId, setExpandedBranchId] = useState(null);
   const [showAllBranchBreakdown, setShowAllBranchBreakdown] = useState(false);
   const [showAllBranchGrowth, setShowAllBranchGrowth] = useState(false);
+  const [branchSortMode, setBranchSortMode] = useState("count"); // "count" = จำนวนคิว, "pct" = % ตกหนัก
+  const [procSortMode, setProcSortMode] = useState("count");
   const [expandedProcId, setExpandedProcId] = useState(null);
   const [showAllProcGrowth, setShowAllProcGrowth] = useState(false);
   const [showAllAdminPerf, setShowAllAdminPerf] = useState(false);
@@ -440,9 +470,9 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
       const ch = changePct(b.total, prev);
       return {...b, bid, prev, ch};
     }).filter(b => b.total > 0 || b.prev > 0);
-    // เกณฑ์เรียงอยู่ที่ sortByChange ใน utils/growthCompare — ใช้ร่วมกับโซนหัตถการ
-    return rows.sort(sortByChange);
+    return rows;
   }, [bStats, prevDayQ]);
+  const bRows = useMemo(() => [...bGrowth].sort(sorterFor(branchSortMode)), [bGrowth, branchSortMode]);
 
   // ─── 4b. เจาะสาเหตุรายสาขา — new/old/course + อัตรา no-show/ยกเลิก + โปรที่เปลี่ยนแปลงมากสุด ───
   const branchDiagnostics = useMemo(() => {
@@ -506,7 +536,8 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
     // หัตถการที่ถูกลบไปแล้วแต่คิวเก่ายังอ้างถึงอยู่ — โชว์ป้ายกำกับไว้ ดีกว่าซ่อนแถวจนยอดไม่ครบ
     const name = procMap[id]?.name || "(หัตถการที่ถูกลบแล้ว)";
     return { id, name, total, prev, ch: changePct(total, prev) };
-  }).sort(sortByChange), [procGroups, procMap]);
+  }), [procGroups, procMap]);
+  const pRows = useMemo(() => [...pGrowth].sort(sorterFor(procSortMode)), [pGrowth, procSortMode]);
 
   // เจาะสาเหตุรายหัตถการ — new/old/course + อัตรายกเลิก/ไม่มา + "สาขาไหนทำให้เปลี่ยน"
   // (โซนสาขาโชว์โปรที่ขยับ ส่วนโซนนี้โชว์สาขาที่ขยับ — เป็นคำตอบตรงคำถามว่ายอดหัตถการนี้หายไปไหน)
@@ -753,9 +784,11 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
           กันไม่ให้การ์ดหดจนเหลือที่ว่างโล่งๆ ข้างๆ ดูเหมือนหน้าพัง */}
       <div style={{ marginBottom: 16, width: "100%" }}>
         <SectionCard title="🏢 สาขาเติบโต / ลดลง — ทำไมถึงเปลี่ยน">
-          <div style={{ fontSize: 11, color: "#999", marginBottom: 12 }}>เทียบยอดคิวช่วงนี้กับช่วงก่อนหน้าของแต่ละสาขา เรียงตามจำนวนคิวที่เปลี่ยนไปมากสุด กดที่แถวสาขาเพื่อดูว่าเปลี่ยนเพราะอะไร (ลูกค้าใหม่/เก่า/คอร์ส, อัตรายกเลิก, โปรที่เปลี่ยนแปลง)</div>
+          <div style={{ fontSize: 11, color: "#999", marginBottom: 12 }}>เทียบยอดคิวช่วงนี้กับช่วงก่อนหน้าของแต่ละสาขา กดที่แถวสาขาเพื่อดูว่าเปลี่ยนเพราะอะไร (ลูกค้าใหม่/เก่า/คอร์ส, อัตรายกเลิก, โปรที่เปลี่ยนแปลง)</div>
+          <SortToggle mode={branchSortMode} onChange={setBranchSortMode} />
           <GrowthList
-            rows={bGrowth}
+            sortMode={branchSortMode}
+            rows={bRows}
             cap={LIST_CAP}
             showAll={showAllBranchGrowth}
             onToggleShowAll={() => setShowAllBranchGrowth(v => !v)}
@@ -771,9 +804,11 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
       {/* 💉 หัตถการเติบโต / ลดลง — คู่กับโซนสาขา ตอบว่า "ของที่ขายเปลี่ยนไป" ไม่ใช่แค่ "ที่ไหนเปลี่ยน" */}
       <div style={{ marginBottom: 16, width: "100%" }}>
         <SectionCard title="💉 หัตถการเติบโต / ลดลง — ทำไมถึงเปลี่ยน">
-          <div style={{ fontSize: 11, color: "#999", marginBottom: 12 }}>เทียบยอดคิวช่วงนี้กับช่วงก่อนหน้าของแต่ละหัตถการ (นับทุกสาขารวมกัน) เรียงตามจำนวนคิวที่เปลี่ยนไปมากสุด กดที่แถวเพื่อดูว่าเปลี่ยนเพราะอะไร (ลูกค้าใหม่/เก่า/คอร์ส, อัตรายกเลิก, สาขาที่เปลี่ยนแปลง)</div>
+          <div style={{ fontSize: 11, color: "#999", marginBottom: 12 }}>เทียบยอดคิวช่วงนี้กับช่วงก่อนหน้าของแต่ละหัตถการ (นับทุกสาขารวมกัน) กดที่แถวเพื่อดูว่าเปลี่ยนเพราะอะไร (ลูกค้าใหม่/เก่า/คอร์ส, อัตรายกเลิก, สาขาที่เปลี่ยนแปลง)</div>
+          <SortToggle mode={procSortMode} onChange={setProcSortMode} />
           <GrowthList
-            rows={pGrowth}
+            sortMode={procSortMode}
+            rows={pRows}
             cap={LIST_CAP}
             showAll={showAllProcGrowth}
             onToggleShowAll={() => setShowAllProcGrowth(v => !v)}
