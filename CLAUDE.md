@@ -77,3 +77,12 @@ Before saving a queue, `App.jsx` fetches **fresh data from DB** (`fetchQueuesFor
 Must be set in `.env` (or Vercel/Netlify dashboard):
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
+
+Supabase Edge Function secrets (`supabase secrets set`):
+- `QLASS_SUPABASE_SECRET_KEY` (or legacy `SUPABASE_SERVICE_ROLE_KEY`)
+- `QLASS_ALLOWED_ORIGIN` / `QLASS_ALLOWED_ORIGINS` — browser-called functions only
+- `QLASS_EXTERNAL_API_KEY` — server-to-server key for `external-queue-stats`; must be ≥32 chars or the function fails closed
+
+### External read-only API
+
+`supabase/functions/external-queue-stats` exposes **aggregated queue counts** to other systems (e.g. an executive dashboard) without granting database access. It authenticates with `QLASS_EXTERNAL_API_KEY` (separate from staff login), aggregates inside SQL via the `public.external_queue_stats` RPC, and returns **no customer data and no `price`** — only counts per branch and per day. Deploy with `--no-verify-jwt` because the function checks the API key itself. See [`docs/EXTERNAL_QUEUE_STATS_API.md`](./docs/EXTERNAL_QUEUE_STATS_API.md).
