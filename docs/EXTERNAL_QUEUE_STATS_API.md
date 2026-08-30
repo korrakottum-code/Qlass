@@ -24,7 +24,10 @@ Header: Authorization: Bearer <QLASS_EXTERNAL_API_KEY>
       "cancelled": 70, "confirmed": 0, "pending": 0, "rescheduled": 0,
       "newCustomers": 280, "returningCustomers": 830, "courseCustomers": 70 }
   ],
-  "daily": [ { "date": "2026-08-01", "total": 640, "done": 520, "noShow": 60 } ]
+  "procedures": [ { "name": "Hifu", "total": 1252, "done": 980, "noShow": 190,
+                    "cancelled": 40, "newCustomers": 310, "courseCustomers": 620 } ],
+  "promos":     [ { "name": "โปรประจำเดือน", "total": 784, "done": 610, "newCustomers": 240 } ],
+  "daily":      [ { "date": "2026-08-01", "total": 640, "done": 520, "noShow": 60 } ]
 }
 ```
 
@@ -62,3 +65,5 @@ Header: Authorization: Bearer <QLASS_EXTERNAL_API_KEY>
 - รับเฉพาะ `GET` (อย่างอื่นตอบ `405`)
 - `status` ถูกจัดกลุ่มไว้แล้ว: `pending` รวม `pending` + `waiting_queue` + `follow1..3` · `rescheduled` รวม `rescheduled` + `rescheduled_in`
 - คิวที่ยังไม่ระบุสาขา (`branch_id` เป็น null) จะรวมอยู่ในรายการชื่อ `ไม่ระบุสาขา` ไม่ถูกทิ้งเงียบๆ
+- `procedures` คืนทุกหัตถการที่มีคิวในช่วงนั้น ส่วน `promos` คืนแค่ **40 อันดับแรก** เพราะมีโปรอยู่ ~284 รายการ ส่วนใหญ่มีไม่กี่คิว
+- คิวที่ไม่ได้ระบุหัตถการ/โปร รวมอยู่ในรายการชื่อ `ไม่ระบุหัตถการ` / `ไม่ระบุโปร`
