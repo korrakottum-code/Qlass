@@ -13,6 +13,11 @@ const sql = readFileSync(
   new URL("../supabase/migrations/20260829090000_external_queue_stats.sql", import.meta.url),
   "utf8"
 );
+// migration ล่าสุดเป็นตัวที่มีผลจริงบน production (create or replace ทับของเดิม)
+const sqlLatest = readFileSync(
+  new URL("../supabase/migrations/20260830090000_external_queue_stats_procedures.sql", import.meta.url),
+  "utf8"
+);
 
 // คอลัมน์ที่ห้ามหลุดออกจากระบบผ่าน API ภายนอกเด็ดขาด
 const FORBIDDEN_COLUMNS = ["name", "phone", "note", "status_note", "price", "recorded_by"];
@@ -87,4 +92,30 @@ test("Edge Function ไม่มีคำสั่งเขียนฐานข
 test("Edge Function ไม่ส่งข้อความ error ดิบจากฐานข้อมูลกลับไปให้ผู้เรียก", () => {
   assert.match(fn, /return response\(\{ error: "query_failed" \}, 500\);/);
   assert.ok(!/error: error\.message/.test(fnCode));
+});
+
+test("migration ที่เพิ่มรายหัตถการยังไม่อ่านคอลัมน์ข้อมูลส่วนบุคคล", () => {
+  assert.match(
+    sqlLatest,
+    /select q\.branch_id, q\.date, q\.status, q\.customer_type, q\.procedure_id, q\.promo_id\s+from public\.queues q/,
+    "scoped CTE ต้องเลือกเฉพาะ 6 คอลัมน์นี้"
+  );
+  for (const column of FORBIDDEN_COLUMNS) {
+    assert.ok(
+      !new RegExp(`q\\.${column}\\b`).test(sqlLatest),
+      `ต้องไม่อ่าน queues.${column}`
+    );
+  }
+  assert.ok(!/q\.id\b/.test(sqlLatest), "ต้องไม่ส่ง id ของคิวออกไป");
+});
+
+test("migration ล่าสุดยังล็อกสิทธิ์ไว้เหมือนเดิม", () => {
+  assert.match(sqlLatest, /security definer/);
+  assert.match(sqlLatest, /set search_path = ''/);
+  assert.match(sqlLatest, /revoke all on function public\.external_queue_stats\(date, date\) from anon;/);
+  assert.match(sqlLatest, /grant execute on function public\.external_queue_stats\(date, date\) to service_role;/);
+});
+
+test("รายโปรถูกจำกัดจำนวน ไม่ส่งทั้ง 284 รายการ", () => {
+  assert.match(sqlLatest, /limit 40/);
 });
