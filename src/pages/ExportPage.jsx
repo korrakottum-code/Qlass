@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { getTodayStr } from "../utils/helpers";
+import { pickDatePresets } from "../utils/datePresets";
 import {
   exportCommissionData,
   exportCommissionSummary,
@@ -9,64 +10,6 @@ import {
 } from "../utils/exportService";
 
 
-// ── Date preset helpers ─────────────────────────────────────
-
-function toDateStr(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function getPresets() {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const d = now.getDate();
-
-  // วันนี้
-  const today = toDateStr(now);
-
-  // เมื่อวาน
-  const yd = new Date(y, m, d - 1);
-  const yesterday = toDateStr(yd);
-
-  // สัปดาห์นี้ (จันทร์ - วันนี้)
-  const dayOfWeek = now.getDay(); // 0=Sun
-  const monday = new Date(y, m, d - ((dayOfWeek + 6) % 7));
-  const thisWeekStart = toDateStr(monday);
-
-  // สัปดาห์ที่แล้ว
-  const lastMonday = new Date(y, m, d - ((dayOfWeek + 6) % 7) - 7);
-  const lastSunday = new Date(y, m, d - ((dayOfWeek + 6) % 7) - 1);
-  const lastWeekStart = toDateStr(lastMonday);
-  const lastWeekEnd = toDateStr(lastSunday);
-
-  // เดือนนี้
-  const thisMonthStart = toDateStr(new Date(y, m, 1));
-  const thisMonthEnd = toDateStr(new Date(y, m + 1, 0));
-
-  // เดือนที่แล้ว
-  const lastMonthStart = toDateStr(new Date(y, m - 1, 1));
-  const lastMonthEnd = toDateStr(new Date(y, m, 0));
-
-  // ไตรมาสนี้
-  const qStart = Math.floor(m / 3) * 3;
-  const thisQStart = toDateStr(new Date(y, qStart, 1));
-  const thisQEnd = toDateStr(new Date(y, qStart + 3, 0));
-
-  // ปีนี้
-  const thisYearStart = toDateStr(new Date(y, 0, 1));
-  const thisYearEnd = toDateStr(new Date(y, 11, 31));
-
-  return [
-    { label: "วันนี้", start: today, end: today },
-    { label: "เมื่อวาน", start: yesterday, end: yesterday },
-    { label: "สัปดาห์นี้", start: thisWeekStart, end: today },
-    { label: "สัปดาห์ที่แล้ว", start: lastWeekStart, end: lastWeekEnd },
-    { label: "เดือนนี้", start: thisMonthStart, end: thisMonthEnd },
-    { label: "เดือนที่แล้ว", start: lastMonthStart, end: lastMonthEnd },
-    { label: "ไตรมาสนี้", start: thisQStart, end: thisQEnd },
-    { label: "ปีนี้", start: thisYearStart, end: thisYearEnd },
-  ];
-}
 
 // ── Main Component ──────────────────────────────────────────
 
@@ -85,7 +28,10 @@ export default function ExportPage({ queues, branches, rooms, procedures, promos
   }, [startDate, endDate, onRangeNeeded]);
   const [filterBranch, setFilterBranch] = useState("all");
 
-  const presets = getPresets();
+  const presets = pickDatePresets([
+    "today", "yesterday", "thisWeek", "lastWeek",
+    "thisMonth", "lastMonth", "thisQuarter", "thisYear",
+  ]);
 
   function applyPreset(preset) {
     setStartDate(preset.start);
