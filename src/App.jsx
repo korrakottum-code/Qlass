@@ -16,6 +16,7 @@ import {
   mapRoomScheduleRow, mapRoomProcedureRow, deleteBedSwitchClosures,
   createBranch, updateBranch, deleteBranch as deleteBranchDB,
   createProcedure, updateProcedure, deleteProcedure as deleteProcedureDB,
+  getAllProcedureAreas, createProcedureArea, updateProcedureArea, deleteProcedureArea as deleteProcedureAreaDB,
   createPromo, updatePromo, deletePromo as deletePromoDB,
   createRoom, updateRoom, deleteRoom as deleteRoomDB,
   createRoomSchedule, updateRoomSchedule, deleteRoomSchedule as deleteRoomScheduleDB,
@@ -38,6 +39,7 @@ import { reconcileRealtimeQueue, reconcileRealtimeById, reconcileRealtimeRoomPro
 import { getBedSwitchState, buildBedSwitchClosure, listQueuesOnBed, isSamePlacement } from "./utils/bedSwitch";
 import { buildRescheduledQueue } from "./utils/rescheduleQueue";
 import { buildRoomProcedureIndex, isProcedureAllowedInRoom, shouldEnforceOnSave, procedureRoomBlockMessage } from "./utils/roomProcedures";
+import { buildProcedureAreaIndex } from "./utils/procedureAreas";
 
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
@@ -84,6 +86,9 @@ export default function App() {
   // [{ roomId, procedureId }] — เตียงไหนรับหัตถการอะไร. เตียงที่ไม่มีแถวเลย = ยังไม่ตั้งค่า
   // ให้ใช้กติกาเดิม M/T (ดู src/utils/roomProcedures.js)
   const [roomProcedures, setRoomProcedures] = useState([]);
+  // [{ id, procedureId, name, blocks, ... }] — บริเวณของหัตถการ (Diode: รักแร้/แขน/ขา/hollywood)
+  // หัตถการที่ไม่มีแถวเลย = ยังไม่ตั้งค่า ต้องทำงานเหมือนเดิมทุกอย่าง (ดู src/utils/procedureAreas.js)
+  const [procedureAreas, setProcedureAreas] = useState([]);
   const [queues, setQueues] = useState([]);
   const [categories, setCategories] = useState(PROCEDURE_CATEGORIES);
   const [staff, setStaff] = useState([]);
@@ -175,7 +180,7 @@ export default function App() {
         since.setDate(since.getDate() - 30);
         const sinceDate = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, "0")}-${String(since.getDate()).padStart(2, "0")}`;
 
-        const [branchData, procedureData, promoData, roomData, scheduleData, recentQueues, categoryData, ticketData, roomProcedureData] = await Promise.all([
+        const [branchData, procedureData, promoData, roomData, scheduleData, recentQueues, categoryData, ticketData, roomProcedureData, procedureAreaData] = await Promise.all([
           getAllBranches(),
           getAllProcedures(),
           getAllPromos(),
@@ -187,6 +192,9 @@ export default function App() {
           // ล้มแล้วคืน [] = ทุกเตียงถือว่ายังไม่ตั้งค่า → กติกาเดิม M/T. ยอมให้ล็อกหลุด
           // ดีกว่าปล่อยให้ทั้งแอปโหลดไม่ขึ้นเพราะตารางเดียว
           getAllRoomProcedures().catch(() => []),
+          // ล้มแล้วคืน [] = ทุกหัตถการถือว่ายังไม่ตั้งค่าบริเวณ → ฟอร์มเหมือนเดิมเป๊ะ
+          // ยอมให้ฟีเจอร์บริเวณหายไปชั่วคราว ดีกว่าทั้งแอปโหลดไม่ขึ้นเพราะตารางเดียว
+          getAllProcedureAreas().catch(() => []),
         ]);
         setBranches(branchData || []);
         setProcedures(procedureData || []);
@@ -194,6 +202,7 @@ export default function App() {
         setRooms(roomData || []);
         setRoomSchedules(scheduleData || []);
         setRoomProcedures(roomProcedureData || []);
+        setProcedureAreas(procedureAreaData || []);
         setQueues(recentQueues || []);
         // Phase 2a ดึง sinceDate เป็นต้นไปโดยไม่จำกัดขอบบน → ครอบคลุมคิวล่วงหน้าทุกวันแล้ว
         const initialRange = [{ from: sinceDate, to: FUTURE_DATE }];
@@ -331,6 +340,12 @@ export default function App() {
   const roomProcedureIndex = useMemo(
     () => buildRoomProcedureIndex(roomProcedures),
     [roomProcedures]
+  );
+
+  // Map<procedureId, area[]> — หัตถการที่ไม่มี key = ยังไม่ตั้งค่าบริเวณ = พฤติกรรมเดิม
+  const procedureAreaIndex = useMemo(
+    () => buildProcedureAreaIndex(procedureAreas),
+    [procedureAreas]
   );
 
   const filteredRoomSchedules = useMemo(() => {
@@ -830,6 +845,50 @@ export default function App() {
     showToast("success", "บันทึกหัตถการเรียบร้อย");
   }, [showToast]);
 
+  // ─── บริเวณของหัตถการ ───
+  // ไม่แตะคิวที่ลงไปแล้ว: เวลาของคิวถูกตรึงไว้ในตัวคิวเองตั้งแต่ freeze_queue_duration
+  // แก้/ลบบริเวณจึงมีผลกับคิวที่ลงใหม่เท่านั้น
+  const saveProcedureArea = useCallback(async (data) => {
+    const blocks = Number(data.blocks);
+    if (!data.procedureId || !String(data.name || "").trim() || !(blocks >= 1 && blocks <= 48)) {
+      showToast("error", "กรอกชื่อบริเวณ และเวลา 5–240 นาที");
+      return false;
+    }
+    try {
+      if (data.id) {
+        const updated = await updateProcedureArea(data.id, { name: String(data.name).trim(), blocks });
+        setProcedureAreas((prev) => prev.map((a) => (a.id === data.id ? updated : a)));
+      } else {
+        const sortOrder = (procedureAreas.filter((a) => a.procedureId === data.procedureId).length + 1) * 10;
+        const created = await createProcedureArea({
+          procedureId: data.procedureId,
+          name: String(data.name).trim(),
+          blocks,
+          sortOrder,
+        });
+        setProcedureAreas((prev) => [...prev, created]);
+      }
+      showToast("success", "บันทึกบริเวณเรียบร้อย");
+      return true;
+    } catch (error) {
+      console.error("saveProcedureArea failed:", error);
+      showToast("error", error?.code === "23505" ? "มีบริเวณชื่อนี้ในหัตถการนี้แล้ว" : "บันทึกบริเวณไม่สำเร็จ");
+      // คืน false ให้หน้าเก็บสิ่งที่พิมพ์ไว้ — บันทึกไม่ผ่านแล้วยังต้องพิมพ์ใหม่คือของหาย
+      return false;
+    }
+  }, [procedureAreas, showToast]);
+
+  const deleteProcedureArea = useCallback(async (id) => {
+    try {
+      await deleteProcedureAreaDB(id);
+      setProcedureAreas((prev) => prev.filter((a) => a.id !== id));
+      showToast("success", "ลบบริเวณแล้ว");
+    } catch (error) {
+      console.error("deleteProcedureArea failed:", error);
+      showToast("error", "ลบบริเวณไม่สำเร็จ");
+    }
+  }, [showToast]);
+
   const savePromo = useCallback(async (data) => {
     if (data.id) {
       const updated = await updatePromo(data.id, data);
@@ -1026,6 +1085,8 @@ export default function App() {
   const deleteProcedure = useCallback(async (id) => {
     await deleteProcedureDB(id);
     setProcedures(prev => prev.filter(p => p.id !== id));
+    // DB ลบให้อยู่แล้วด้วย on delete cascade — ล้าง state ตามไม่ให้ค้างเป็นบริเวณกำพร้า
+    setProcedureAreas(prev => prev.filter(a => a.procedureId !== id));
     showToast("success", "ลบหัตถการแล้ว");
   }, [showToast]);
 
@@ -1286,6 +1347,7 @@ export default function App() {
                 promos={promos}
                 roomSchedules={filteredRoomSchedules}
                 roomProcedureIndex={roomProcedureIndex}
+                procedureAreaIndex={procedureAreaIndex}
                 queues={filteredQueues}
                 onSubmit={handleBookingSubmit}
                 onQuickAddPromo={quickAddPromo}
@@ -1378,6 +1440,9 @@ export default function App() {
                 onAdd={() => setModal({ type: "procedure", data: null })}
                 onEdit={(p) => setModal({ type: "procedure", data: p })}
                 onDelete={deleteProcedure}
+                procedureAreas={procedureAreas}
+                onSaveArea={saveProcedureArea}
+                onDeleteArea={deleteProcedureArea}
                 onAddCategory={addCategory}
                 onDeleteCategory={deleteCategory}
               />
