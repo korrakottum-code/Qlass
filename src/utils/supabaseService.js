@@ -3,6 +3,7 @@ import { fetchAllByUuidRanges, HISTORY_PAGE_SIZE } from "./queueHistoryPaginatio
 import { getServerSessionToken } from "./sessionAuth";
 import { buildQueueStatusUpdate } from "./queueStatusUpdate";
 import { lookupHnCustomers } from "./hnLookup";
+import { fetchAdsSpend } from "./adsSpend";
 
 // ═══════════════════════════════════════════════════════════
 // BRANCHES
@@ -1066,6 +1067,16 @@ export async function fetchAllHnCustomers() {
     if (data) allData.push(...data);
   }
   return allData;
+}
+
+export async function fetchAdsSpendRange(since, until) {
+  // ค่าโฆษณาผ่าน Edge Function เท่านั้น — token ของ Korrakot-DB อยู่ฝั่ง server (SPA bundle เปิดอ่านได้)
+  return fetchAdsSpend({
+    since,
+    until,
+    token: getServerSessionToken(),
+    invoke: (name, options) => supabase.functions.invoke(name, options),
+  });
 }
 
 export async function searchHnCustomers(query) {

@@ -1,109 +1,84 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { isoToLocalDateStr, getTodayStr } from "../utils/helpers";
+import { fetchAdsSpendRange } from "../utils/supabaseService";
+import { computeAdsRange, sumDaily, sumMonth, ADS_CHART_DAYS } from "../utils/adsSpend";
 
-// Public Google Sheet — sheet "Data รวมทุกสาขา"
-const SHEET_URL =
-  "https://docs.google.com/spreadsheets/d/1BSFAgdJHgIQ90TyNe3KAMB_vHJLpj9GwbJTQvZLfsbc/export?format=csv&gid=2109402447";
+const REFRESH_MS = 60 * 60 * 1000; // 1 ชม. — ปลายทางอัปเดตกับ Meta ไม่ถี่กว่านี้
 
-const REFRESH_MS = 60 * 60 * 1000; // 1 hour
-
-// ─── tiny CSV parser (handles quoted commas) ───
-function parseCSVLine(line) {
-  const out = [];
-  let cur = "";
-  let inQuote = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === '"') {
-      if (inQuote && line[i + 1] === '"') { cur += '"'; i++; }
-      else inQuote = !inQuote;
-    } else if (c === "," && !inQuote) {
-      out.push(cur);
-      cur = "";
-    } else {
-      cur += c;
-    }
-  }
-  out.push(cur);
-  return out;
-}
-
-// Parse CSV → [{ day: "YYYY-MM-DD", amount: number }]
-// Uses only column A (Day) + column C (Amount Spent)
-function parseSheet(text) {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) return [];
-  const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = parseCSVLine(lines[i]);
-    if (cols.length < 3) continue;
-    const day = (cols[0] || "").trim();
-    const amount = parseFloat((cols[2] || "").replace(/,/g, ""));
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || isNaN(amount)) continue;
-    rows.push({ day, amount });
-  }
-  return rows;
-}
+// ข้อความอ่านง่ายสำหรับ error code ที่ Edge Function ส่งกลับ
+const ERROR_LABELS = {
+  invalid_session: "เซสชันหมดอายุ ลองล็อกอินใหม่",
+  forbidden: "บัญชีนี้ไม่มีสิทธิ์ดูค่าโฆษณา",
+  ads_token_missing: "ยังไม่ได้ตั้งค่า token ฝั่งเซิร์ฟเวอร์",
+  rate_limited: "เรียกถี่เกินไป ลองใหม่อีกครั้ง",
+  upstream_error: "ระบบค่าโฆษณาปลายทางปฏิเสธ/ไม่ตอบ (ตรวจ token ฝั่งเซิร์ฟเวอร์)",
+  invalid_range: "ช่วงวันที่ไม่ถูกต้อง",
+};
 
 const fmtBaht = (n) =>
   "฿" + Math.round(n).toLocaleString("en-US");
 
 export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queues = [], staff = [] }) {
-  const [rows, setRows] = useState(null);
+  const [result, setResult] = useState(null);   // { spend, byDay, hasDaily, asOf } | null
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastFetched, setLastFetched] = useState(null);
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await fetch(SHEET_URL, { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
-      const parsed = parseSheet(text);
-      setRows(parsed);
-      setLastFetched(new Date());
-    } catch (e) {
-      setError(e.message || "โหลดข้อมูลไม่ได้");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const today = getTodayStr();
+  // ช่วงเดียวที่ครอบทุกตัวเลขในการ์ด → ยิง API ครั้งเดียวต่อการโหลด
+  const range = useMemo(
+    () => computeAdsRange({ dateRange, selectedDate, today }),
+    [dateRange, selectedDate, today]
+  );
+
+  // โหลดครั้งแรก + รีเฟรชอัตโนมัติ + ปุ่มรีเฟรชเอง ใช้ทางเดียวกัน
+  // เก็บ since/until เป็น primitive ใน deps เพื่อไม่ให้ effect วิ่งใหม่ทุก render
+  const since = range?.since ?? null;
+  const until = range?.until ?? null;
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    load();
-    const id = setInterval(load, REFRESH_MS);
-    return () => clearInterval(id);
-  }, [load]);
+    if (!since || !until) return undefined;
+    let alive = true;
+    const run = async () => {
+      const res = await fetchAdsSpendRange(since, until);
+      if (!alive) return;
+      if (res.ok) {
+        setResult(res);
+        setError(null);
+        setLastFetched(new Date());
+      } else {
+        setError(res.error);
+      }
+      setLoading(false);
+    };
+    run();
+    const id = setInterval(run, REFRESH_MS);
+    return () => { alive = false; clearInterval(id); };
+  }, [since, until, reloadKey]);
 
-  // ─── aggregate by day ───
-  const byDate = useMemo(() => {
-    const m = {};
-    (rows || []).forEach((r) => {
-      m[r.day] = (m[r.day] || 0) + r.amount;
-    });
-    return m;
-  }, [rows]);
+  const reload = useCallback(() => {
+    setLoading(true);
+    setReloadKey((k) => k + 1);
+  }, []);
 
+  const byDate = useMemo(() => result?.byDay || {}, [result]);
+  const hasDaily = result?.hasDaily === true;
+
+  // ยอดในช่วง: ถ้าไม่มีข้อมูลรายวัน ใช้ยอดรวมจาก API ได้ก็ต่อเมื่อช่วงที่ขอ = ช่วงที่เลือกพอดี
+  const rangeMatchesRequest = !!(range && dateRange && dateRange.start === range.since && dateRange.end === range.until);
   const rangeTotal = useMemo(() => {
     if (!dateRange) return 0;
-    let sum = 0;
-    for (const [day, amt] of Object.entries(byDate)) {
-      if (day >= dateRange.start && day <= dateRange.end) sum += amt;
-    }
-    return sum;
-  }, [byDate, dateRange]);
+    if (hasDaily) return sumDaily(byDate, dateRange.start, dateRange.end);
+    return rangeMatchesRequest ? (result?.spend || 0) : null; // null = บอกไม่ได้
+  }, [byDate, dateRange, hasDaily, rangeMatchesRequest, result]);
 
   const monthPrefix = (selectedDate || "").slice(0, 7);
-  const monthTotal = useMemo(() => {
-    if (!monthPrefix) return 0;
-    let sum = 0;
-    for (const [day, amt] of Object.entries(byDate)) {
-      if (day.startsWith(monthPrefix)) sum += amt;
-    }
-    return sum;
-  }, [byDate, monthPrefix]);
+  const monthTotal = useMemo(
+    () => (hasDaily ? sumMonth(byDate, monthPrefix) : null),
+    [byDate, monthPrefix, hasDaily]
+  );
+  const todayTotal = hasDaily ? (byDate[today] || 0) : null;
 
   // ─── Admin recorder IDs (role === "admin") ───
   const adminIds = useMemo(() => {
@@ -149,26 +124,26 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
     () => (monthPrefix ? sumAdminQueues((d) => d.startsWith(monthPrefix)) : 0),
     [sumAdminQueues, monthPrefix]
   );
-  const cpo = (amt, n) => (n > 0 ? amt / n : null);
+  const cpo = (amt, n) => (amt != null && n > 0 ? amt / n : null);
 
-  // last 14 days mini chart — use local date, not UTC (toISOString shifts by
-  // tz offset and attributes Thai-early-morning hours to the previous day)
+  // กราฟย้อนหลัง 14 วัน — ใช้วันที่แบบ local ไม่ใช่ UTC (toISOString เลื่อนวันตาม timezone)
   const chartData = useMemo(() => {
+    if (!hasDaily) return [];
     const arr = [];
-    const today = new Date();
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
+    const now = new Date();
+    for (let i = ADS_CHART_DAYS - 1; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
       const key = isoToLocalDateStr(d);
       const amount = byDate[key] || 0;
       const n = adminQueuesByDate[key] || 0;
       arr.push({ day: key, amount, adminQueues: n, cpo: n > 0 ? amount / n : null });
     }
     return arr;
-  }, [byDate, adminQueuesByDate]);
+  }, [byDate, adminQueuesByDate, hasDaily]);
 
   const chartMax = Math.max(...chartData.map((d) => d.amount), 1);
-  const todayKey = getTodayStr();
+  const todayKey = today;
 
   return (
     <div
@@ -187,7 +162,7 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <h3 style={{ margin: 0 }}>💰 ค่าโฆษณา (ทุกช่องทาง)</h3>
           <span style={{ fontSize: 11, color: "var(--text3)" }}>
-            จาก Google Sheet — รีเฟรชทุก 1 ชม.
+            จาก Meta Ads Dashboard — รีเฟรชทุก 1 ชม.
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -197,7 +172,7 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
             </span>
           )}
           <button
-            onClick={load}
+            onClick={reload}
             disabled={loading}
             style={{
               padding: "4px 10px",
@@ -219,7 +194,12 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
       <div style={{ padding: "12px 16px" }}>
         {error && (
           <div style={{ padding: "10px 14px", background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.3)", borderRadius: 8, color: "#dc2626", fontSize: 13, fontWeight: 600 }}>
-            ⚠️ โหลดข้อมูลไม่ได้: {error}
+            ⚠️ โหลดค่าโฆษณาไม่ได้ ({ERROR_LABELS[error] || error}) — ตัวเลขด้านล่างจึงยังไม่แสดง
+          </div>
+        )}
+        {!error && range?.truncated && (
+          <div style={{ padding: "8px 12px", marginBottom: 10, background: "rgba(234,88,12,0.08)", border: "1px solid rgba(234,88,12,0.3)", borderRadius: 8, color: "#c2410c", fontSize: 12, fontWeight: 600 }}>
+            ⚠️ ช่วงที่เลือกกว้างเกิน 1 ปี — ค่าโฆษณาแสดงเฉพาะ 365 วันล่าสุดของช่วง
           </div>
         )}
 
@@ -236,28 +216,34 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
             >
               <Stat
                 label={`ยอดในช่วง (${rangeLabel || "—"})`}
-                value={fmtBaht(rangeTotal)}
+                value={rangeTotal == null ? "—" : fmtBaht(rangeTotal)}
                 cpo={cpo(rangeTotal, rangeAdminQueues)}
                 queueCount={rangeAdminQueues}
                 accent="#16a34a"
               />
               <Stat
                 label={`รวมเดือน ${monthPrefix}`}
-                value={fmtBaht(monthTotal)}
+                value={monthTotal == null ? "—" : fmtBaht(monthTotal)}
                 cpo={cpo(monthTotal, monthAdminQueues)}
                 queueCount={monthAdminQueues}
                 accent="#2563eb"
               />
               <Stat
                 label="วันนี้"
-                value={fmtBaht(byDate[todayKey] || 0)}
-                cpo={cpo(byDate[todayKey] || 0, adminQueuesByDate[todayKey] || 0)}
+                value={todayTotal == null ? "—" : fmtBaht(todayTotal)}
+                cpo={cpo(todayTotal, adminQueuesByDate[todayKey] || 0)}
                 queueCount={adminQueuesByDate[todayKey] || 0}
                 accent="#7c3aed"
               />
             </div>
 
-            {/* 14-day mini chart */}
+            {/* 14-day mini chart — มีเฉพาะเมื่อ API ส่งยอดรายวันมา */}
+            {!hasDaily && !loading && (
+              <div style={{ fontSize: 12, color: "var(--text3)", fontStyle: "italic" }}>
+                * ยังไม่มีข้อมูลรายวันจากปลายทาง — กราฟย้อนหลังและ CPO รายวันจึงไม่แสดง
+              </div>
+            )}
+            {hasDaily && (
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text2)", marginBottom: 6 }}>
                 💸 ย้อนหลัง 14 วัน
@@ -298,11 +284,12 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
                 </div>
               </div>
               <div style={{ marginTop: 6, fontSize: 10, color: "var(--text3)", fontStyle: "italic" }}>
-                * CPO = Amount / คิวที่แอดมินบันทึก (ลูกค้าใหม่+เก่า)
+                * CPO = ค่าโฆษณา / คิวที่แอดมินบันทึก (ลูกค้าใหม่+เก่า)
               </div>
             </div>
+            )}
 
-            {loading && !rows && (
+            {loading && !result && (
               <div style={{ marginTop: 10, fontSize: 12, color: "var(--text3)" }}>กำลังโหลด...</div>
             )}
           </>
