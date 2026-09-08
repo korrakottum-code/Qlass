@@ -63,6 +63,10 @@ Branch filtering is applied in `App.jsx` via `filterByUserBranch()`: admin-level
 | `src/utils/exportService.js` | CSV export with Thai character support (xlsx library) |
 | `src/utils/queueHistoryPagination.js` | Pure keyset-pagination helpers (uuid ranges, partial-safe walk, count check) used by `fetchQueues` for the full-history load |
 | `src/utils/queueRanges.js` | Pure date-range helpers (`findUncoveredRanges`, `mergeRanges`, `addDays`) backing on-demand queue loading in App.jsx |
+| `src/manual/manualContent.js` | Thai user-manual content (pure data, no JSX) rendered by `pages/ManualPage.jsx` (menu `manual`, visible to every role). Sections carry a `pageId`; the page hides sections whose menu the current role cannot open |
+| `src/manual/testContent.js` | Practical UAT/staff test cases + comprehension quiz shown in the manual's test tabs; `test/manualContent.test.js` guards ids/roles/pageIds against `constants.js` |
+| `scripts/exportManual.mjs` | `npm run manual:docs` regenerates `docs/USER_MANUAL.md` and `docs/UAT_TEST_PLAN.md` from the same two content files — edit the content, not the docs |
+| `scripts/screenshot/` | Manual screenshots (`public/manual/*.jpg`, referenced by `img` blocks). `npm run manual:demo` starts Vite with an in-memory mock of `supabaseService`/`supabaseClient` (deterministic demo data, no network, demo PINs from the mock only); then `npm run manual:shots` drives the real UI with playwright-core + installed Chrome and rewrites every image. Re-run both after UI changes so pictures match the screen |
 
 ### Conflict detection
 

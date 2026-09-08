@@ -200,7 +200,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
           border: "1.5px solid #d97706", background: "rgba(217,119,6,0.12)",
           color: "#b45309", fontSize: 13, fontWeight: 700,
         }}>
-          ⚠️ {overdueCount} คิวยังไม่ยืนยัน เลยเวลา 12:00 แล้ว — กดที่ช่องคิว (สีเหลือง) เพื่อย้ายเข้าคิวรอ
+          ⚠️ {overdueCount} คิวยังไม่ยืนยัน เลยเวลา 12:00 แล้ว — กดที่ช่องคิว (สีส้ม) เพื่อย้ายเข้าคิวรอ
         </div>
       )}
 
