@@ -36,8 +36,10 @@ test("migration ต้องไม่ seed ข้อมูล — ลงแล�
     "ข้อมูลเปิดใช้ต้องอยู่ในไฟล์ seed แยก ไม่ใช่ใน migration");
 });
 
-test("ไฟล์ seed ผูกด้วยชื่อหัตถการ และรันซ้ำได้", () => {
-  assert.match(seed, /where p\.name = 'Diode'/);
+test("ไฟล์ seed ผูกด้วยชื่อหัตถการ ครอบทั้งสองตัวที่เปิดใช้จริง และรันซ้ำได้", () => {
+  // ของจริงบนโปรดักชันเปิดทั้ง Diode และ Go-Diode — ไฟล์ต้องตรงกับความจริง
+  // ไม่งั้นรันไฟล์นี้ตอนกู้คืนแล้วได้ไม่ครบ
+  assert.match(seed, /where p\.name in \('Diode', 'Go-Diode'\)/);
   assert.match(seed, /on conflict do nothing/i);
 });
 
