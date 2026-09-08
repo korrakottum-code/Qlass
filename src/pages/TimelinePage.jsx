@@ -4,11 +4,12 @@ import { getBedSwitchState } from "../utils/bedSwitch";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
 import { proceduresForRoom, roomLockLabel } from "../utils/roomProcedures";
+import { areasForProcedure, durationFromAreas, keepValidAreaIds } from "../utils/procedureAreas";
 
 // สถานะที่ยังถือว่า "ยังไม่ยืนยัน" — ปุ่มย้ายเข้าคิวรอใน popover ใช้ได้เฉพาะกลุ่มนี้
 const UNCONFIRMED_STATUSES = ["pending", "follow1", "follow2", "follow3"];
 
-export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], roomProcedureIndex, currentUser, onSubmitBooking, onAbandonDraft, onEditQueue, onMoveToWaitingQueue, onToggleBedSwitch, showToast, onRangeNeeded }) {
+export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], roomProcedureIndex, procedureAreaIndex, currentUser, onSubmitBooking, onAbandonDraft, onEditQueue, onMoveToWaitingQueue, onToggleBedSwitch, showToast, onRangeNeeded }) {
   const [date, setDate] = useState(getTodayStr());
   // เลื่อนไปวันเก่ากว่า 30 วัน → ขอให้ App โหลดวันนั้น
   useEffect(() => { if (date) onRangeNeeded?.(date, date); }, [date, onRangeNeeded]);
@@ -555,6 +556,25 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
           ? proceduresForRoom(roomProcedureIndex, room, procedures)
           : procedures;
         const selectedProc = procedures.find((p) => p.id === bookingForm.procedureId);
+        // บริเวณของหัตถการที่เลือก — หัตถการที่ยังไม่ตั้งค่า = [] = ป๊อปอัปหน้าตาเดิมทุกอย่าง
+        const bookingAreas = areasForProcedure(procedureAreaIndex, bookingForm.procedureId);
+        const bookingAreaIds = keepValidAreaIds(procedureAreaIndex, bookingForm.procedureId, bookingForm.areaIds);
+        const bookingDur = bookingForm.durationBlocks ?? selectedProc?.blocks ?? 1;
+        // กดบริเวณ = เขียนเวลารวมลง durationBlocks ที่ onSubmitBooking อ่านอยู่แล้ว
+        // (ทั้งตัวตรวจห้องปิดและตัวตรวจคิวชนใน App.jsx ใช้ค่านี้) ไม่เลือกเลย → null → ค่าปกติ
+        const toggleBookingArea = (areaId) => {
+          setBookingForm((f) => {
+            const current = keepValidAreaIds(procedureAreaIndex, f.procedureId, f.areaIds);
+            const next = current.includes(areaId)
+              ? current.filter((id) => id !== areaId)
+              : [...current, areaId];
+            return {
+              ...f,
+              areaIds: next,
+              durationBlocks: durationFromAreas(procedureAreaIndex, f.procedureId, next),
+            };
+          });
+        };
         const availablePromos = promos.filter((p) => !p.procedureId || p.procedureId === bookingForm.procedureId);
         // โน้ตรายวัน + ป้ายเครื่องของเตียงนี้ — หัวคอลัมน์โชว์ได้แค่บรรทัดเดียว ตรงนี้คือที่เดียวที่อ่านครบ
         const bookingRoomNotes = roomScheduleNotesByRoomId[bookingForm.roomId] || [];
@@ -631,11 +651,60 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                 <div>
                   <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>หัตถการ</label>
                   <select style={{ width: "100%", fontSize: 13 }} value={bookingForm.procedureId}
-                    onChange={(e) => setBookingForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "" }))}>
+                    onChange={(e) => setBookingForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "", areaIds: [], durationBlocks: null }))}>
                     <option value="">— เลือกหัตถการ —</option>
                     {roomProcs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </div>
+
+                {/* บริเวณที่ทำ — โผล่เฉพาะหัตถการที่ตั้งค่าบริเวณไว้ (ดู src/utils/procedureAreas.js)
+                    ต้องมีที่นี่ด้วย ไม่ใช่แค่หน้าบันทึกคิว เพราะแอดมินลงคิวจากหน้านี้เป็นหลัก */}
+                {bookingAreas.length > 0 && (
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>
+                      บริเวณที่ทำ <span style={{ color: "var(--text3)" }}>— เลือกได้หลายจุด ไม่เลือกก็ได้</span>
+                    </label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {bookingAreas.map((a) => {
+                        const on = bookingAreaIds.includes(a.id);
+                        return (
+                          <button
+                            key={a.id}
+                            type="button"
+                            onClick={() => toggleBookingArea(a.id)}
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 4,
+                              padding: "4px 9px", borderRadius: 20, cursor: "pointer",
+                              border: `1.5px solid ${on ? "var(--accent)" : "var(--border2)"}`,
+                              background: on ? "var(--accent)" : "var(--surface2)",
+                              color: on ? "#fff" : "var(--text)",
+                              fontSize: 12, fontWeight: 600, lineHeight: 1.4,
+                            }}
+                          >
+                            {on ? "✓ " : ""}{a.name}
+                            <span style={{ fontSize: 9, fontFamily: "var(--mono)", fontWeight: 700, opacity: 0.85 }}>
+                              {a.blocks * 5}น
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Timeline เป็นตารางช่องเวลา — ต้องเห็นว่าคิวนี้กินถึงกี่โมง ป๊อปอัปเดิมไม่เคยบอก */}
+                {selectedProc && bookingForm.timeBlock !== null && (
+                  <div style={{
+                    fontSize: 12, fontWeight: 700,
+                    color: bookingAreaIds.length > 0 ? "var(--accent)" : "var(--text3)",
+                    background: "var(--surface2)", borderRadius: 8, padding: "6px 10px",
+                  }}>
+                    ⏱ {blockToTime(bookingForm.timeBlock)}–{blockToTime(bookingForm.timeBlock + bookingDur)} ({bookingDur * 5} นาที)
+                    {bookingAreaIds.length > 0
+                      ? ` · ${bookingAreaIds.length} บริเวณ`
+                      : bookingAreas.length > 0 ? " · ค่าปกติ" : ""}
+                  </div>
+                )}
 
                 {availablePromos.length > 0 && (
                   <div>

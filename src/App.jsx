@@ -1506,6 +1506,7 @@ export default function App() {
                 promos={promos}
                 roomSchedules={filteredRoomSchedules}
                 roomProcedureIndex={roomProcedureIndex}
+                procedureAreaIndex={procedureAreaIndex}
                 currentUser={currentUser}
                 onToggleBedSwitch={(room, date) => setModal({ type: "bed-switch", data: { room, date } })}
                 showToast={showToast}
