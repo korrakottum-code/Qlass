@@ -75,7 +75,10 @@ test("payload maps the booking form to the create_queue_v1 contract", () => {
   // Empty-string price must reach the server as null, not "" (Goal 12 metadata
   // and the PR #119 regression both depend on optional fields staying null).
   assert.equal(buildServerQueuePayload({ price: "" }).price, null);
-  assert.equal(buildServerQueuePayload({}).customer_type, "new");
+  // ประเภทลูกค้าต้องไม่ถูกเดาให้ทั้งฝั่งนี้และฝั่งเซิร์ฟเวอร์ — ค่าที่ระบบเลือกให้ถูกกดผ่าน
+  // จนตัวเลข "ลูกค้าใหม่" เพี้ยน (22% ของคิวที่ไม่ใช่ครั้งแรก ยังติ๊กว่าใหม่)
+  assert.equal(buildServerQueuePayload({}).customer_type, "");
+  assert.equal(buildServerQueuePayload({ customerType: "course" }).customer_type, "course");
   // Goal 13b: status passes through as-is (the gate above already restricted
   // it to 'pending' or 'confirmed' before this is ever called) instead of
   // being silently forced to 'pending' regardless of the caller's intent.
