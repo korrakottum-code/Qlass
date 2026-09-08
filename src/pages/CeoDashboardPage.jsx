@@ -272,8 +272,11 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
       // จะได้ช่วงนี้ยาวกว่าช่วงก่อนอยู่ดี ทำให้ % เปลี่ยนแปลงเบี้ยวเป็นระบบทุกปี — หุบทั้งสองฝั่งด้วย
       // จำนวนวันเท่ากันเสมอ (ยอมให้ช่วง "เดือนนี้" ไม่รวมวันล่าสุด 1-3 วันในเคสหายากนี้ แลกกับการ
       // เทียบเปอร์เซ็นต์ที่แม่นเสมอ)
+      // จบช่วงที่ "เมื่อวาน" ไม่ใช่วันนี้ — วันนี้ยังไม่จบ คิวยังทยอยเข้าอยู่ ถ้ารวมเข้ามาเดือนนี้จะดู
+      // ต่ำกว่าจริงเสมอ (และ % เทียบเดือนก่อนก็ติดลบเทียม เพราะฝั่งเดือนก่อนเป็นวันที่จบแล้วเต็ม ๆ)
+      // วันที่ 1 ของเดือนยังไม่มีวันที่จบแล้วเลย — ตกมาที่วันที่ 1 (วันนี้) แทนช่วงว่าง
       const prevMonthDays = new Date(today.getFullYear(), today.getMonth(), 0).getDate();
-      const days = Math.min(today.getDate(), prevMonthDays);
+      const days = Math.max(1, Math.min(today.getDate() - 1, prevMonthDays));
       e = new Date(today.getFullYear(), today.getMonth(), days);
       pe = new Date(today.getFullYear(), today.getMonth() - 1, days);
       lbl = `เดือนนี้ (${today.getMonth() + 1}/${today.getFullYear()})`;
@@ -284,9 +287,11 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
       pe = new Date(today.getFullYear(), today.getMonth() - 1, 0);
       lbl = `เดือนที่แล้ว (${s.getMonth() + 1}/${s.getFullYear()})`;
     } else {
+      // นับถอยจาก "เมื่อวาน" ไม่ใช่วันนี้ ด้วยเหตุผลเดียวกับช่วง "เดือนนี้" — วันนี้คิวยังเข้าไม่ครบวัน
+      // ถ้าเอามารวมจะได้วันสุดท้ายที่บางกว่าวันอื่นเสมอ ทั้งยอดรวมและ % เทียบช่วงก่อนจะต่ำกว่าจริง
       const days = parseInt(rangeKey);
-      e = today;
-      s = new Date(today); s.setDate(today.getDate() - days + 1);
+      e = new Date(today); e.setDate(today.getDate() - 1);
+      s = new Date(e); s.setDate(e.getDate() - days + 1);
       pe = new Date(s); pe.setDate(s.getDate() - 1);
       ps = new Date(pe); ps.setDate(pe.getDate() - days + 1);
       lbl = `${days} วันล่าสุด`;
