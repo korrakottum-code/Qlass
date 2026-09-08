@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed, roleAtLeast } from "../utils/helpers";
+import { CUSTOMER_TYPES } from "../utils/constants";
 import { getBedSwitchState } from "../utils/bedSwitch";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
@@ -21,6 +22,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
     : (branches[0]?.id || "");
   const [popup, setPopup] = useState(null); // { q, room, block, x, y }
   const [bookingForm, setBookingForm] = useState(null); // mini booking popup form
+  // ค้น HN เจอ = ขึ้นคำใบ้ว่าเคยมีประวัติ แต่ไม่เลือกประเภทให้
+  const [hnMatched, setHnMatched] = useState(false);
   const { isSaving: saving, run: runBookingSubmit } = useSubmissionLock();
   const isMobile = typeof window !== "undefined" && window.innerWidth <= 640;
   const [outsideTapHint, setOutsideTapHint] = useState(false);
@@ -41,7 +44,9 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
     return Boolean(
       f.name?.trim() || f.phone?.trim() || f.procedureId || f.promoId ||
       f.note?.trim() || (f.price !== "" && f.price != null && Number(f.price) !== 0) ||
-      f.customerType !== "new"
+      // เดิมเทียบ !== "new" เพราะฟอร์มเปล่าเคยตั้ง "new" ไว้ให้ ตอนนี้ฟอร์มเปล่าเป็นค่าว่าง
+      // ถ้าไม่แก้ ป๊อปอัปที่เพิ่งเปิดจะถือว่า "กรอกไปแล้ว" ทุกครั้ง กดนอกกรอบปิดไม่ได้เลย
+      Boolean(f.customerType)
     );
   }
 
@@ -560,6 +565,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
         const bookingAreas = areasForProcedure(procedureAreaIndex, bookingForm.procedureId);
         const bookingAreaIds = keepValidAreaIds(procedureAreaIndex, bookingForm.procedureId, bookingForm.areaIds);
         const bookingDur = bookingForm.durationBlocks ?? selectedProc?.blocks ?? 1;
+        // เลือกประเภทลูกค้าแล้วหรือยัง — ตัวเปิด/ปิดส่วนที่เหลือของป๊อปอัป
+        const typeChosen = !!bookingForm.customerType;
         // กดบริเวณ = เขียนเวลารวมลง durationBlocks ที่ onSubmitBooking อ่านอยู่แล้ว
         // (ทั้งตัวตรวจห้องปิดและตัวตรวจคิวชนใน App.jsx ใช้ค่านี้) ไม่เลือกเลย → null → ค่าปกติ
         const toggleBookingArea = (areaId) => {
@@ -636,18 +643,65 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                       phone={bookingForm.phone}
                       name={bookingForm.name}
                       onSelect={(c) => {
+                        // ไม่เลือกประเภทให้ — กติกาเดียวกับหน้าบันทึกคิว คนมี HN แล้วมาใช้คอร์สก็เยอะ
                         const fullName = `${c.firstname} ${c.lastname}`.trim();
+                        setHnMatched(true);
                         setBookingForm((f) => ({
                           ...f,
                           name: fullName || f.name,
                           phone: c.telephone || f.phone,
-                          customerType: "old",
                         }));
                       }}
                     />
                   </div>
                 </div>
 
+                {/* ประเภทลูกค้า — ย้ายขึ้นมาไว้ตรงนี้และต้องเลือกเองเสมอ กติกาเดียวกับหน้าบันทึกคิว
+                    ส่วนที่เหลือของฟอร์มหุบอยู่จนกว่าจะเลือก */}
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>
+                    ประเภทลูกค้า *
+                    {!typeChosen && <span style={{ color: "var(--amber)", fontWeight: 700 }}> — ยังไม่ได้เลือก</span>}
+                  </label>
+                  {hnMatched && !typeChosen && (
+                    <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 4 }}>
+                      🔎 เบอร์นี้เคยมีประวัติ — เลือกเองว่าเป็น ลูกค้าเก่า หรือ ใช้คอร์ส
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {CUSTOMER_TYPES.map((ct) => {
+                      const on = bookingForm.customerType === ct.value;
+                      return (
+                        <button
+                          key={ct.value}
+                          type="button"
+                          onClick={() => setBookingForm((f) => ({ ...f, customerType: ct.value }))}
+                          style={{
+                            flex: 1, padding: "7px 4px", borderRadius: 8, cursor: "pointer",
+                            border: `1.5px solid ${on ? "var(--accent)" : "var(--border2)"}`,
+                            background: on ? "var(--accent)" : "var(--surface2)",
+                            color: on ? "#fff" : "var(--text)",
+                            fontSize: 12, fontWeight: 700, lineHeight: 1.3,
+                          }}
+                        >
+                          {ct.emoji} {ct.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {!typeChosen && (
+                  <div style={{
+                    border: "1.5px dashed var(--border2)", borderRadius: 8,
+                    background: "var(--surface2)", padding: "12px 14px", textAlign: "center",
+                    fontSize: 12.5, fontWeight: 700, color: "var(--text2)",
+                  }}>
+                    👆 เลือกประเภทลูกค้าก่อน แล้วส่วนที่เหลือจะเปิดให้กรอก
+                  </div>
+                )}
+
+                {typeChosen && (<>
                 <div>
                   <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>หัตถการ</label>
                   <select style={{ width: "100%", fontSize: 13 }} value={bookingForm.procedureId}
@@ -720,22 +774,11 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                   </div>
                 )}
 
-                <div style={{ display: "flex", gap: 8 }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>ราคา (บาท)</label>
-                    <input type="number" style={{ width: "100%", fontSize: 13 }} value={bookingForm.price}
-                      onChange={(e) => setBookingForm((f) => ({ ...f, price: e.target.value }))}
-                      placeholder="0" />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>ประเภทลูกค้า</label>
-                    <select style={{ width: "100%", fontSize: 13 }} value={bookingForm.customerType}
-                      onChange={(e) => setBookingForm((f) => ({ ...f, customerType: e.target.value }))}>
-                      <option value="new">ลูกค้าใหม่</option>
-                      <option value="old">ลูกค้าเก่า</option>
-                      <option value="course">ใช้คอร์ส</option>
-                    </select>
-                  </div>
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>ราคา (บาท)</label>
+                  <input type="number" style={{ width: "100%", fontSize: 13 }} value={bookingForm.price}
+                    onChange={(e) => setBookingForm((f) => ({ ...f, price: e.target.value }))}
+                    placeholder="0" />
                 </div>
 
                 <div>
@@ -744,6 +787,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                     onChange={(e) => setBookingForm((f) => ({ ...f, note: e.target.value }))}
                     placeholder="หมายเหตุ (ถ้ามี)" />
                 </div>
+                </>)}
               </div>
 
               {outsideTapHint && (
@@ -755,6 +799,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
               {/* Actions */}
               <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
                 <button className="btn btn-secondary" onClick={closeBookingForm}>ยกเลิก</button>
+                {typeChosen && (
                 <button
                   className="btn btn-primary"
                   disabled={saving || !bookingForm.name.trim() || !bookingForm.phone.trim()}
@@ -766,6 +811,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                 >
                   {saving ? "กำลังบันทึก..." : "✅ บันทึกคิว"}
                 </button>
+                )}
               </div>
             </div>
           </div>

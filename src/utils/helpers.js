@@ -80,7 +80,9 @@ export function getEmptyBookingForm() {
     promoId: "",
     price: "",
     note: "",
-    customerType: "new",
+    // ไม่เลือกประเภทให้ — ค่าที่ระบบเลือกให้ยังไงก็โดนกดผ่าน ฟอร์มจะหุบครึ่งล่างไว้
+    // จนกว่าแอดมินจะเลือกเอง (ดู typeChosen ใน BookingPage / TimelinePage)
+    customerType: "",
     date: getTodayStr(),
     timeBlock: null,
     durationBlocks: null,

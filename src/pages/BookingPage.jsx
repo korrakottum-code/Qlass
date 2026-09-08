@@ -30,6 +30,8 @@ export default function BookingPage({
   currentUser, showToast,
 }) {
   const [showQuickPromo, setShowQuickPromo] = useState(false);
+  // ค้น HN เจอ = ขึ้นคำใบ้ว่าเคยมีประวัติ แต่ไม่เลือกประเภทให้
+  const [hnMatched, setHnMatched] = useState(false);
   const [qpName, setQpName] = useState("");
   const [qpPrice, setQpPrice] = useState("");
   const [qpProcedureId, setQpProcedureId] = useState("");
@@ -104,6 +106,20 @@ export default function BookingPage({
     const p = procedures.find((x) => x.id === form.procedureId);
     return p ? p.blocks : 0;
   }, [form.procedureId, procedures]);
+
+  // เลือกประเภทลูกค้าแล้วหรือยัง — ตัวเปิด/ปิดครึ่งล่างของฟอร์มทั้งหมด
+  // คิวเก่าที่เปิดมาแก้มีประเภทครบทุกคิวอยู่แล้ว จึงกางให้เองโดยไม่ต้องกดซ้ำ
+  const typeChosen = !!form.customerType;
+
+  // ในส่วนที่หุบมีค่าอยู่แล้วหรือยัง — เกิดจากการวางข้อความให้ระบบแยกให้
+  // ถ้าไม่บอก แอดมินจะเห็นว่า "เติมข้อมูลให้ 8 ช่อง" แล้วมองไม่เห็นสักช่องเพราะโดนหุบ
+  // จงใจไม่บอกเป็นตัวเลข เพราะกล่องวิเคราะห์นับรวมชื่อ/เบอร์/วันที่ที่อยู่นอกส่วนที่หุบด้วย
+  // เลขสองที่จะไม่ตรงกัน แล้วคนอ่านจะสงสัยว่าอีกสองช่องหายไปไหน
+  const prefilledBelowCount = useMemo(() => {
+    const filled = [form.branchId, form.roomId, form.procedureId, form.promoId, form.note]
+      .filter((v) => v !== "" && v !== null && v !== undefined).length;
+    return filled + (form.timeBlock !== null ? 1 : 0) + (form.price !== "" && form.price != null ? 1 : 0);
+  }, [form.branchId, form.roomId, form.procedureId, form.promoId, form.note, form.timeBlock, form.price]);
 
   // ─── บริเวณของหัตถการ (Diode: รักแร้ / แขน / ขา / hollywood ...) ───
   // หัตถการที่ยังไม่ตั้งค่าบริเวณ → [] → ไม่มีอะไรโผล่ ฟอร์มเหมือนเดิมทุกอย่าง
@@ -334,19 +350,34 @@ export default function BookingPage({
                 name={form.name}
                 onSelect={(c) => {
                   const fullName = `${c.firstname} ${c.lastname}`.trim();
+                  // ไม่เลือกประเภทให้ — เคยเลือก "ลูกค้าเก่า" อัตโนมัติ แต่คนมี HN แล้วมาใช้คอร์ส
+                  // ก็เยอะ ค่าที่ระบบเลือกให้ยังไงก็โดนกดผ่าน (ข้อมูล มิ.ย.-ก.ย. 2026: คิวที่
+                  // ไม่ใช่ครั้งแรกของเบอร์นั้น 22% ยังติ๊กว่า "ลูกค้าใหม่") บอกใบ้ได้ แต่ห้ามเลือกแทน
+                  setHnMatched(true);
                   setForm((f) => ({
                     ...f,
                     name: fullName || f.name,
                     phone: c.telephone || f.phone,
-                    customerType: "old",
                   }));
                 }}
               />
             </div>
 
-            {/* ประเภทลูกค้า */}
+            {/* ประเภทลูกค้า — ต้องเลือกเองเสมอ ระบบไม่เลือกให้ ส่วนที่เหลือของฟอร์มหุบอยู่จนกว่าจะเลือก */}
             <div className="form-group full">
-              <label className="form-label">ประเภทลูกค้า</label>
+              <label className="form-label">
+                <span className="req">*</span> ประเภทลูกค้า
+                {!typeChosen && (
+                  <span style={{ fontWeight: 600, color: "var(--amber)", marginLeft: 6, fontSize: 11 }}>
+                    — ยังไม่ได้เลือก
+                  </span>
+                )}
+              </label>
+              {hnMatched && !typeChosen && (
+                <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 6 }}>
+                  🔎 เบอร์นี้เคยมีประวัติในระบบ — เลือกเองว่าเป็น ลูกค้าเก่า หรือ ใช้คอร์ส
+                </div>
+              )}
               <div className="type-options">
                 {CUSTOMER_TYPES.map((ct) => (
                   <button
@@ -360,6 +391,27 @@ export default function BookingPage({
               </div>
             </div>
 
+            {/* ─── ตั้งแต่ตรงนี้ลงไปหุบไว้จนกว่าจะเลือกประเภทลูกค้า ───
+                กันการรูดผ่านค่าที่ระบบเลือกให้ ซึ่งไปผูกกับเรตค่าคอมมิชชั่นและตัวเลข
+                "ต้นทุนต่อลูกค้าใหม่" ในหน้า CEO — เตือนตอนกดบันทึกไม่พอ เพราะกรอกจนจบ
+                แล้วค่อยโดนตีกลับคือเสียงานเปล่า ๆ */}
+            {!typeChosen && (
+              <div className="form-group full" style={{
+                border: "1.5px dashed var(--border2)", borderRadius: "var(--radius-sm)",
+                background: "var(--surface2)", padding: "14px 16px", textAlign: "center",
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text2)" }}>
+                  👆 เลือกประเภทลูกค้าก่อน แล้วส่วนที่เหลือจะเปิดให้กรอก
+                </div>
+                {prefilledBelowCount > 0 && (
+                  <div style={{ fontSize: 11, color: "var(--amber)", fontWeight: 600, marginTop: 6 }}>
+                    ข้อมูลที่กรอกไว้แล้วยังอยู่ครบ — เลือกประเภทเพื่อดูและแก้ไข
+                  </div>
+                )}
+              </div>
+            )}
+
+            {typeChosen && (<>
             {/* ลงคิวรอ (Waiting Queue) */}
             {waitingQueueToggleAllowed && (
               <div className="form-group full">
@@ -715,8 +767,10 @@ export default function BookingPage({
                 onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
               />
             </div>
+            </>)}
           </div>
 
+          {typeChosen && (
           <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
             {currentUser && !editingQueueId && (
               <span style={{ fontSize: 12, color: "var(--text2)", marginRight: "auto", display: "flex", alignItems: "center", gap: 5 }}>
@@ -731,6 +785,7 @@ export default function BookingPage({
               {editingQueueId ? "💾 บันทึกการแก้ไข" : "✅ บันทึกคิว"}
             </button>
           </div>
+          )}
         </div>
       </div>
 

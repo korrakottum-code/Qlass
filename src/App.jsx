@@ -1386,9 +1386,18 @@ export default function App() {
                   setLastParseSnapshot({ rawText, fields });
                 }}
                 onBulkBooking={async (allFields) => {
+                  // ประเภทลูกค้าต้องมาจากข้อความจริง ๆ เท่านั้น — แถวไหนตัวแยกอ่านไม่ออก
+                  // ให้ข้ามไป ไม่เดาเป็น "ลูกค้าใหม่" ให้ (เจ้าของเลือกแนวนี้ 2026-09-09)
+                  // ที่บันทึกไปแล้วจึงเชื่อถือได้ทุกแถว ส่วนที่ข้ามจะบอกจำนวนให้ไปลงเองทีละคิว
+                  const VALID_TYPES = ["new", "old", "course"];
                   let created = 0;
+                  let skippedNoType = 0;
                   for (const fields of allFields) {
                     if (!fields.name && !fields.phone) continue;
+                    if (!VALID_TYPES.includes(fields.customerType)) {
+                      skippedNoType++;
+                      continue;
+                    }
                     try {
                       await createQueue({
                         name: fields.name || "",
@@ -1399,7 +1408,7 @@ export default function App() {
                         promoId: fields.promoId || "",
                         price: fields.price || "",
                         note: fields.note || "",
-                        customerType: fields.customerType || "new",
+                        customerType: fields.customerType,
                         date: fields.date || getTodayStr(),
                         timeBlock: fields.timeBlock ?? null,
                         status: "waiting",
@@ -1412,8 +1421,12 @@ export default function App() {
                       console.error("Bulk booking error:", err);
                     }
                   }
-                  if (created > 0) {
+                  if (created > 0 && skippedNoType > 0) {
+                    showToast("success", `สร้าง ${created} คิว — ข้าม ${skippedNoType} คิวที่ไม่รู้ประเภทลูกค้า กรุณาลงเองทีละคิว`);
+                  } else if (created > 0) {
                     showToast("success", `สร้าง ${created} คิวเรียบร้อย!`);
+                  } else if (skippedNoType > 0) {
+                    showToast("error", `ไม่ได้สร้างสักคิว — ทั้ง ${skippedNoType} คิวไม่ได้ระบุประเภทลูกค้าในข้อความ (ลูกค้าใหม่ / เก่า / ใช้คอร์ส)`);
                   }
                 }}
                 todayStats={todayStats}
