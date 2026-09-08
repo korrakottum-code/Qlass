@@ -90,3 +90,28 @@ test("ปิดฉุกเฉินล้มบางแถวต้องบ�
   assert.match(app, /allSettled/);
   assert.match(app, /ปิดได้ \$\{goneIds\.size\} จาก \$\{targets\.length\} บริเวณ/);
 });
+
+// ─── ทุกหน้าที่ลงคิวได้ต้องมีปุ่มบริเวณ ───
+// เจอตอนเปิดใช้จริง: ทำแต่หน้าบันทึกคิว ลืมป๊อปอัปใน Timeline ซึ่งเป็นหน้าที่แอดมิน
+// ใช้ลงคิวเป็นหลัก ผลคือคิว Diode จาก Timeline ได้ 15 นาทีเสมอ เปลี่ยนไม่ได้เลย
+// ถ้ามีหน้าลงคิวเพิ่มในอนาคต ต้องเพิ่มเข้ามาในเทสต์นี้ด้วย
+
+const timelinePage = readFileSync(new URL("../src/pages/TimelinePage.jsx", import.meta.url), "utf8");
+const bookingPage = readFileSync(new URL("../src/pages/BookingPage.jsx", import.meta.url), "utf8");
+
+test("App ส่ง procedureAreaIndex ให้ทุกหน้าที่ลงคิวได้ ไม่ใช่แค่หน้าเดียว", () => {
+  const passes = app.match(/procedureAreaIndex=\{procedureAreaIndex\}/g) || [];
+  assert.ok(passes.length >= 2, `ส่งให้แค่ ${passes.length} หน้า — ต้องครบทั้งหน้าบันทึกคิวและ Timeline`);
+});
+
+for (const [label, source] of [["หน้าบันทึกคิว", bookingPage], ["ป๊อปอัป Timeline", timelinePage]]) {
+  test(`${label}: มีปุ่มบริเวณ และเขียนเวลารวมลง durationBlocks`, () => {
+    assert.match(source, /areasForProcedure/, "ต้องอ่านบริเวณของหัตถการที่เลือก");
+    assert.match(source, /durationBlocks: durationFromAreas\(/, "ต้องเขียนเวลารวมลงช่องเดิม");
+  });
+
+  test(`${label}: เปลี่ยนหัตถการแล้วบริเวณเก่าต้องหลุด ไม่ค้างเวลาผิด`, () => {
+    assert.match(source, /procedureId: e\.target\.value[^}]*areaIds: \[\]/);
+    assert.match(source, /keepValidAreaIds\(/);
+  });
+}
