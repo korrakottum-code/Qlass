@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { CUSTOMER_TYPES, ROOM_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
 import { WORK_BLOCKS, blockToTime, formatThaiDate, getEmptyBookingForm, getTodayStr, isActiveQueueStatus } from "../utils/helpers";
 import { proceduresForRoom, isRoomConfigured, roomLockLabel } from "../utils/roomProcedures";
+import { areasForProcedure, durationFromAreas, keepValidAreaIds } from "../utils/procedureAreas";
 import SmartParseBox from "../components/SmartParseBox";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
@@ -24,7 +25,7 @@ function StatusBadge({ status }) {
 export default function BookingPage({
   form, setForm, editingQueueId, setEditingQueueId, onAbandonDraft,
   branches, rooms, procedures, promos,
-  roomSchedules, queues, roomProcedureIndex,
+  roomSchedules, queues, roomProcedureIndex, procedureAreaIndex,
   onSubmit, onQuickAddPromo, onSmartApply, onBulkBooking, parseHints, todayStats,
   currentUser, showToast,
 }) {
@@ -103,6 +104,42 @@ export default function BookingPage({
     const p = procedures.find((x) => x.id === form.procedureId);
     return p ? p.blocks : 0;
   }, [form.procedureId, procedures]);
+
+  // ─── บริเวณของหัตถการ (Diode: รักแร้ / แขน / ขา / hollywood ...) ───
+  // หัตถการที่ยังไม่ตั้งค่าบริเวณ → [] → ไม่มีอะไรโผล่ ฟอร์มเหมือนเดิมทุกอย่าง
+  const selectedAreas = useMemo(
+    () => areasForProcedure(procedureAreaIndex, form.procedureId),
+    [procedureAreaIndex, form.procedureId]
+  );
+
+  // ตัดบริเวณของหัตถการเก่าที่ค้างในฟอร์มทิ้งเสมอ กันเวลาเพี้ยนตอนสลับหัตถการ
+  const pickedAreaIds = useMemo(
+    () => keepValidAreaIds(procedureAreaIndex, form.procedureId, form.areaIds),
+    [procedureAreaIndex, form.procedureId, form.areaIds]
+  );
+
+  // กดบริเวณ = เขียนเวลารวมลง durationBlocks ช่องเดิม (ช่องเดียวกับที่ปุ่ม +/- ใช้)
+  // ไม่เลือกบริเวณเลย → null → ตกไปใช้ค่าปกติของหัตถการเหมือนเดิม
+  function toggleArea(areaId) {
+    setForm((f) => {
+      const current = keepValidAreaIds(procedureAreaIndex, f.procedureId, f.areaIds);
+      const next = current.includes(areaId)
+        ? current.filter((id) => id !== areaId)
+        : [...current, areaId];
+      return {
+        ...f,
+        areaIds: next,
+        durationBlocks: durationFromAreas(procedureAreaIndex, f.procedureId, next),
+      };
+    });
+  }
+
+  // เวลารวมของบริเวณที่ติ๊กไว้ — แยกจาก activeDur เพราะแอดมินยังกด +/- ทับทีหลังได้
+  // ถ้าสองค่านี้ไม่ตรงกันแปลว่าปรับเอง ต้องบอกให้เห็น ไม่งั้นตัวเลขบนจอขัดกันเงียบ ๆ
+  const areaSumBlocks = useMemo(
+    () => durationFromAreas(procedureAreaIndex, form.procedureId, pickedAreaIds) ?? 0,
+    [procedureAreaIndex, form.procedureId, pickedAreaIds]
+  );
 
   // Effective duration (override หรือ default จาก procedure) — 0 เมื่อไม่มี procedure
   const activeDur = selectedProcBlocks > 0 ? (form.durationBlocks ?? selectedProcBlocks) : 0;
@@ -404,7 +441,7 @@ export default function BookingPage({
               <label className="form-label">หัตถการหลักที่สนใจ</label>
               <select
                 value={form.procedureId}
-                onChange={(e) => setForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "", durationBlocks: null, timeBlock: null }))}
+                onChange={(e) => setForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "", durationBlocks: null, areaIds: [], timeBlock: null }))}
               >
                 <option value="">-- เลือกหัตถการ --</option>
                 {filteredProcedures.map((p) => (
@@ -508,6 +545,55 @@ export default function BookingPage({
                 </div>
               )}
             </div>
+
+            {/* บริเวณที่ทำ — โผล่เฉพาะหัตถการที่ตั้งค่าบริเวณไว้แล้ว
+                หัตถการที่ยังไม่ตั้งค่า ฟอร์มเหมือนเดิมทุกอย่าง (ดู src/utils/procedureAreas.js) */}
+            {selectedAreas.length > 0 && (
+              <div className="form-group full">
+                <label className="form-label">
+                  บริเวณที่ทำ
+                  <span style={{ fontWeight: 400, color: "var(--text3)", marginLeft: 6, fontSize: 11 }}>
+                    เลือกได้หลายจุด ระบบบวกเวลาให้เอง — ไม่เลือกก็ได้ จะใช้เวลาปกติ {selectedProcBlocks * 5} นาที
+                  </span>
+                </label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {selectedAreas.map((a) => {
+                    const on = pickedAreaIds.includes(a.id);
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => toggleArea(a.id)}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 6,
+                          padding: "6px 12px", borderRadius: 20, cursor: "pointer",
+                          border: `1.5px solid ${on ? "var(--accent)" : "var(--border2)"}`,
+                          background: on ? "var(--accent)" : "var(--surface2)",
+                          color: on ? "#fff" : "var(--text)",
+                          fontSize: 13, fontWeight: 600,
+                        }}
+                      >
+                        {on ? "✓ " : ""}{a.name}
+                        <span style={{
+                          fontSize: 10, fontFamily: "var(--mono)", fontWeight: 700,
+                          opacity: 0.85,
+                        }}>
+                          {a.blocks * 5}น
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {pickedAreaIds.length > 0 && (
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)", marginTop: 6, display: "inline-block" }}>
+                    ⏱ รวม {areaSumBlocks * 5} นาที ({pickedAreaIds.length} บริเวณ)
+                    {areaSumBlocks !== activeDur && (
+                      <span style={{ color: "var(--amber)" }}> · ปรับเองเป็น {activeDur * 5} นาที</span>
+                    )}
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* ราคา + วันที่ */}
             <div className="form-group">

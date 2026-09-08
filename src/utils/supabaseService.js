@@ -127,6 +127,77 @@ export async function deleteProcedure(id) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// PROCEDURE AREAS — บริเวณของหัตถการ (Diode: รักแร้ / แขน / ขา / hollywood ...)
+// หัตถการที่ไม่มีแถวที่นี่ = ยังไม่ตั้งค่า ฝั่งแอปต้องทำงานเหมือนเดิม
+// กติกาทั้งหมดอยู่ใน src/utils/procedureAreas.js
+// ═══════════════════════════════════════════════════════════
+
+export function mapProcedureAreaRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    procedureId: row.procedure_id,
+    name: row.name || "",
+    blocks: row.blocks,
+    sortOrder: row.sort_order ?? 0,
+    active: row.active !== false,
+  };
+}
+
+export async function fetchProcedureAreas() {
+  const { data, error } = await supabase
+    .from("procedure_areas")
+    .select("*")
+    .order("sort_order", { ascending: true });
+
+  if (error) throw error;
+  return (data || []).map(mapProcedureAreaRow);
+}
+
+export async function createProcedureArea(area) {
+  const { data, error } = await supabase
+    .from("procedure_areas")
+    .insert([{
+      procedure_id: area.procedureId,
+      name: area.name,
+      blocks: area.blocks,
+      sort_order: area.sortOrder ?? 0,
+    }])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapProcedureAreaRow(data);
+}
+
+export async function updateProcedureArea(id, area) {
+  const payload = {};
+  if (area.name !== undefined) payload.name = area.name;
+  if (area.blocks !== undefined) payload.blocks = area.blocks;
+  if (area.sortOrder !== undefined) payload.sort_order = area.sortOrder;
+  if (area.active !== undefined) payload.active = area.active;
+
+  const { data, error } = await supabase
+    .from("procedure_areas")
+    .update(payload)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapProcedureAreaRow(data);
+}
+
+export async function deleteProcedureArea(id) {
+  const { error } = await supabase
+    .from("procedure_areas")
+    .delete()
+    .eq("id", id);
+
+  if (error) throw error;
+}
+
+// ═══════════════════════════════════════════════════════════
 // PROMOS
 // ═══════════════════════════════════════════════════════════
 
@@ -970,6 +1041,7 @@ export async function deleteCategory(name) {
 
 export const getAllBranches = fetchBranches;
 export const getAllProcedures = fetchProcedures;
+export const getAllProcedureAreas = fetchProcedureAreas;
 export const getAllPromos = fetchPromos;
 export const getAllRooms = fetchRooms;
 export const getAllRoomSchedules = fetchRoomSchedules;
