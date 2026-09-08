@@ -889,6 +889,29 @@ export default function App() {
     }
   }, [showToast]);
 
+  // สวิตช์ปิดฉุกเฉินของหัตถการหนึ่ง ๆ — ลบบริเวณทั้งชุดในคลิกเดียว
+  // ต้องมีเป็นปุ่มเดียว ไม่ใช่ให้ไล่กดกากบาททีละอัน: ตอนหน้าร้านมีปัญหาแล้วต้องรีบปิด
+  // การกด 9 ครั้งพร้อมยืนยัน 9 รอบคือของที่พังตอนที่ต้องใช้มากที่สุด
+  const disableProcedureAreas = useCallback(async (procedureId) => {
+    const targets = procedureAreas.filter((a) => a.procedureId === procedureId);
+    if (targets.length === 0) return;
+    try {
+      // ลบทีละแถวแต่ยิงพร้อมกัน — ล้มบางแถวก็ยังลบที่เหลือได้ ไม่ค้างครึ่ง ๆ กลาง ๆ แบบเงียบ
+      const results = await Promise.allSettled(targets.map((a) => deleteProcedureAreaDB(a.id)));
+      const goneIds = new Set(targets.filter((_, i) => results[i].status === "fulfilled").map((a) => a.id));
+      setProcedureAreas((prev) => prev.filter((a) => !goneIds.has(a.id)));
+      const failed = targets.length - goneIds.size;
+      if (failed > 0) {
+        showToast("error", `ปิดได้ ${goneIds.size} จาก ${targets.length} บริเวณ — ที่เหลือลองอีกครั้ง`);
+      } else {
+        showToast("success", "ปิดบริเวณทั้งหมดแล้ว หน้าลงคิวกลับไปใช้เวลาปกติทันที");
+      }
+    } catch (error) {
+      console.error("disableProcedureAreas failed:", error);
+      showToast("error", "ปิดบริเวณไม่สำเร็จ");
+    }
+  }, [procedureAreas, showToast]);
+
   const savePromo = useCallback(async (data) => {
     if (data.id) {
       const updated = await updatePromo(data.id, data);
@@ -1443,6 +1466,7 @@ export default function App() {
                 procedureAreas={procedureAreas}
                 onSaveArea={saveProcedureArea}
                 onDeleteArea={deleteProcedureArea}
+                onDisableAreas={disableProcedureAreas}
                 onAddCategory={addCategory}
                 onDeleteCategory={deleteCategory}
               />

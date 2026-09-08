@@ -60,3 +60,33 @@ test("ฝั่งแอปเขียนเวลาลงช่อง duratio
   assert.ok(!/area_ids|area_names|procedure_area_id/i.test(service),
     "ตาราง queues ต้องไม่มีฟิลด์บริเวณในเฟสนี้ — เวลาที่รวมได้ลง duration_blocks ช่องเดิม");
 });
+
+// ─── กันสวิตช์ฉุกเฉินหาย / ลบพลาดโดยไม่ถาม ───
+// เป็น text guard แบบเดียวกับ guard อื่นในโปรเจกต์ (ไม่มี test renderer ในนี้)
+
+const proceduresPage = readFileSync(new URL("../src/pages/ProceduresPage.jsx", import.meta.url), "utf8");
+const app = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+
+test("ลบบริเวณเดี่ยวต้องถามยืนยันก่อน ไม่ลบทันทีที่กด", () => {
+  assert.match(proceduresPage, /window\.confirm\([^)]*ลบบริเวณ[\s\S]{0,400}?onDeleteArea\?\.\(a\.id\)/);
+});
+
+test("ต้องมีสวิตช์ปิดฉุกเฉินแบบกดครั้งเดียว ไม่ใช่ไล่ลบทีละอัน", () => {
+  assert.match(proceduresPage, /ปิดบริเวณทั้งหมด/);
+  assert.match(proceduresPage, /onDisableAreas\?\.\(p\.id\)/);
+});
+
+test("สวิตช์ฉุกเฉินต้องถามยืนยัน และบอกว่าคิวที่ลงแล้วไม่ขยับ", () => {
+  // ข้อความยืนยันอยู่ "ก่อน" ประโยคนี้ในโค้ด จึงต้องมองย้อนขึ้นไป ไม่ใช่มองต่อจากมัน
+  const before = proceduresPage.slice(
+    Math.max(0, proceduresPage.indexOf("ปิดบริเวณทั้งหมดของ") - 200),
+    proceduresPage.indexOf("ปิดบริเวณทั้งหมดของ")
+  );
+  assert.match(before, /window\.confirm\(/);
+  assert.match(proceduresPage, /คิวที่ลงไปแล้วไม่ขยับ/);
+});
+
+test("ปิดฉุกเฉินล้มบางแถวต้องบอกจำนวนที่เหลือ ไม่เงียบ", () => {
+  assert.match(app, /allSettled/);
+  assert.match(app, /ปิดได้ \$\{goneIds\.size\} จาก \$\{targets\.length\} บริเวณ/);
+});

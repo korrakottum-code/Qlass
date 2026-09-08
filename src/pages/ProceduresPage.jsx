@@ -3,7 +3,7 @@ import { Fragment, useState } from "react";
 export default function ProceduresPage({
   procedures, categories,
   onAdd, onEdit, onDelete,
-  procedureAreas = [], onSaveArea, onDeleteArea,
+  procedureAreas = [], onSaveArea, onDeleteArea, onDisableAreas,
   onAddCategory, onDeleteCategory,
 }) {
   const [newCat, setNewCat] = useState("");
@@ -205,7 +205,11 @@ export default function ProceduresPage({
                           style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12, padding: "0 2px" }}
                         >✏️</button>
                         <button
-                          onClick={() => onDeleteArea?.(a.id)}
+                          onClick={() => {
+                            if (window.confirm(`ลบบริเวณ "${a.name}" (${a.blocks * 5} นาที) ออกจาก ${p.name}?\n\nคิวที่ลงไปแล้วไม่เปลี่ยน มีผลกับคิวที่ลงใหม่เท่านั้น`)) {
+                              onDeleteArea?.(a.id);
+                            }
+                          }}
                           title="ลบบริเวณนี้"
                           style={{ border: "none", background: "none", cursor: "pointer", color: "var(--text3)", fontSize: 14, lineHeight: 1, padding: "0 2px" }}
                         >×</button>
@@ -249,6 +253,29 @@ export default function ProceduresPage({
                       </button>
                     )}
                   </div>
+
+                  {areas.length > 0 && (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
+                      <button
+                        className="btn btn-sm btn-danger"
+                        onClick={() => {
+                          if (window.confirm(
+                            `ปิดบริเวณทั้งหมดของ ${p.name} (${areas.length} บริเวณ)?\n\n` +
+                            `ปุ่มบริเวณจะหายจากหน้าลงคิวทันทีทุกเครื่อง และกลับไปใช้เวลาปกติ ${p.blocks * 5} นาที\n` +
+                            `คิวที่ลงไปแล้วไม่ขยับ\n\n` +
+                            `ตั้งกลับได้ตลอด แต่ต้องพิมพ์ใหม่ทั้ง ${areas.length} บริเวณ`
+                          )) {
+                            onDisableAreas?.(p.id);
+                          }
+                        }}
+                      >
+                        🚨 ปิดบริเวณทั้งหมด (สวิตช์ฉุกเฉิน)
+                      </button>
+                      <span style={{ fontSize: 11, color: "var(--text3)", marginLeft: 8 }}>
+                        ใช้ตอนหน้าร้านมีปัญหาแล้วต้องรีบกลับไปเป็นแบบเดิม
+                      </span>
+                    </div>
+                  )}
 
                   <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 8, lineHeight: 1.6 }}>
                     หัตถการที่ยังไม่มีบริเวณ หน้าลงคิวจะเหมือนเดิมทุกอย่าง — ปุ่มบริเวณจะโผล่เฉพาะหัตถการที่ตั้งไว้แล้ว<br />
