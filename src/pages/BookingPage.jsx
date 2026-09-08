@@ -366,9 +366,12 @@ export default function BookingPage({
                 <button
                   type="button"
                   onClick={() => {
+                    // ล้างห้อง/เวลาเท่านั้น — ความยาวคิวคือสิ่งที่ลูกค้าจองไว้ ไม่ใช่ตำแหน่งบนตาราง
+                    // ล้างด้วยแล้วสลับกลับ คิวที่เลือกบริเวณไว้ 50 นาทีจะเหลือ 15 นาทีเงียบ ๆ
+                    // ทั้งที่ปุ่มบริเวณยังติ๊กค้างอยู่ (ดู moveToWaitingQueue ใน App.jsx — จุดเดียวกัน)
                     setForm((f) => f.status === "waiting_queue"
                       ? { ...f, status: "pending" }
-                      : { ...f, status: "waiting_queue", roomId: "", timeBlock: null, durationBlocks: null }
+                      : { ...f, status: "waiting_queue", roomId: "", timeBlock: null }
                     );
                   }}
                   style={{

@@ -659,6 +659,13 @@ export default function App() {
 
   // ย้ายคิวที่เลยเวลายืนยันเข้าคิวรอ (กดเอง ไม่ auto) — เคลียร์ห้อง/เวลาทิ้งเพื่อปล่อย slot ให้คิวอื่น
   // เก็บห้อง/เวลาเดิมไว้เป็นข้อความใน statusNote แทน ไม่เพิ่มคอลัมน์ใหม่
+  //
+  // ห้ามล้าง durationBlocks: สิ่งที่ปล่อย slot คือการล้างห้องกับเวลา ไม่ใช่ความยาวคิว
+  // ล้างแล้ว trigger ฝั่ง DB จะเติมค่าเริ่มต้นของหัตถการกลับมาแทน คิว Diode ที่ลูกค้า
+  // จอง Hollywood+ขา (50 นาที) จึงกลายเป็น 15 นาทีเงียบ ๆ พอเรียกกลับเข้ามา แอดมิน
+  // จับลงช่อง 15 นาที แล้วหน้างานทำจริง 50 นาที = ล้นไปชนคิวถัดไป
+  // ตอนไม่มีระบบบริเวณเรื่องนี้ไม่มีพิษภัยเพราะทุกคิวใช้ค่าเริ่มต้นเท่ากันหมด
+  // ความยาวที่ค้างอยู่บนคิวรอไม่กินที่ใคร — ทุกจุดที่นับ slot ข้ามคิวที่ timeBlock เป็น null
   const moveToWaitingQueue = useCallback(async (q) => {
     const room = rooms.find((r) => r.id === q.roomId);
     try {
@@ -667,7 +674,6 @@ export default function App() {
         status: "waiting_queue",
         roomId: "",
         timeBlock: null,
-        durationBlocks: null,
         statusNote: buildOverdueMoveNote(q, room),
       });
       setQueues((prev) => prev.map((x) => (x.id === q.id ? updated : x)));
