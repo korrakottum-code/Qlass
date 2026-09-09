@@ -689,6 +689,7 @@ export function mapQueueRow(q) {
     status: q.status,
     statusNote: q.status_note || "",
     recordedBy: q.recorded_by,
+    recordedNote: q.recorded_note || "",
     createdAt: q.created_at,
     statusUpdatedAt: q.status_updated_at,
   };
@@ -794,10 +795,11 @@ export async function createQueue(queue) {
       status: queue.status,
       status_note: queue.statusNote,
       recorded_by: queue.recordedBy || null,
+      recorded_note: queue.recordedNote || null,
     }])
     .select()
     .single();
-  
+
   if (error) throw error;
   return {
     id: data.id,
@@ -816,6 +818,7 @@ export async function createQueue(queue) {
     status: data.status,
     statusNote: data.status_note || "",
     recordedBy: data.recorded_by,
+    recordedNote: data.recorded_note || "",
     createdAt: data.created_at,
     statusUpdatedAt: data.status_updated_at,
   };
@@ -840,11 +843,14 @@ export async function updateQueue(id, queue) {
       status: queue.status,
       status_note: queue.statusNote,
       status_updated_at: new Date().toISOString(),
+      // ผู้บันทึก (recorded_by) ไม่เปลี่ยนตอนแก้ไข ยังคงเป็นบัญชีตอนสร้างคิวเสมอ —
+      // แก้ได้เฉพาะข้อความชื่อจริงที่พิมพ์เพิ่ม (recorded_note) เท่านั้น
+      recorded_note: queue.recordedNote || null,
     })
     .eq("id", id)
     .select()
     .single();
-  
+
   if (error) throw error;
   return {
     id: data.id,
@@ -863,6 +869,7 @@ export async function updateQueue(id, queue) {
     status: data.status,
     statusNote: data.status_note || "",
     recordedBy: data.recorded_by,
+    recordedNote: data.recorded_note || "",
     createdAt: data.created_at,
     statusUpdatedAt: data.status_updated_at,
   };

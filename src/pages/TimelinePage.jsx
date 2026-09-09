@@ -656,6 +656,20 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                   </div>
                 </div>
 
+                {/* บัญชีผู้จัดการสาขาใช้ร่วมกันหลายคนหน้าร้าน — บังคับพิมพ์ชื่อผู้บันทึกจริง
+                    ทุกครั้ง กติกาเดียวกับหน้าบันทึกคิว (ดู BookingPage.jsx) ไม่กระทบ
+                    ผู้ได้ค่าคอม/สถิติ — recordedBy ยังเป็นบัญชีผู้จัดการเหมือนเดิม */}
+                {currentUser?.role === "branch_manager" && (
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>
+                      ชื่อผู้บันทึกจริง * — บัญชีนี้ใช้ร่วมกันหลายคน
+                    </label>
+                    <input style={{ width: "100%", fontSize: 13 }} value={bookingForm.recordedNote || ""}
+                      onChange={(e) => setBookingForm((f) => ({ ...f, recordedNote: e.target.value }))}
+                      placeholder="เช่น โย" />
+                  </div>
+                )}
+
                 {/* ประเภทลูกค้า — ย้ายขึ้นมาไว้ตรงนี้และต้องเลือกเองเสมอ กติกาเดียวกับหน้าบันทึกคิว
                     ส่วนที่เหลือของฟอร์มหุบอยู่จนกว่าจะเลือก */}
                 <div>
@@ -802,7 +816,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                 {typeChosen && (
                 <button
                   className="btn btn-primary"
-                  disabled={saving || !bookingForm.name.trim() || !bookingForm.phone.trim()}
+                  disabled={saving || !bookingForm.name.trim() || !bookingForm.phone.trim()
+                    || (currentUser?.role === "branch_manager" && !bookingForm.recordedNote?.trim())}
                   onClick={async () => {
                     if (!onSubmitBooking) return;
                     const submission = await runBookingSubmit(() => onSubmitBooking(bookingForm));
