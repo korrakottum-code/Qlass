@@ -179,7 +179,9 @@ export default function ProceduresPage({
 
               {panelOpen && (
               <tr>
-                <td colSpan={8} style={{ background: "var(--surface2)", padding: "12px 16px" }}>
+                <td colSpan={8} style={{ background: "var(--surface2)", padding: 0 }}>
+                  {/* .area-panel: บนมือถือตรึงแผงไว้เต็มจอขณะตารางเลื่อนซ้ายขวา (CSS ใน index.css) */}
+                  <div className="area-panel" style={{ padding: "12px 16px" }}>
                   <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
                     📍 บริเวณของ {p.name}
                   </div>
@@ -282,6 +284,7 @@ export default function ProceduresPage({
                     หัตถการที่ยังไม่มีบริเวณ หน้าลงคิวจะเหมือนเดิมทุกอย่าง — ปุ่มบริเวณจะโผล่เฉพาะหัตถการที่ตั้งไว้แล้ว<br />
                     เลือกได้หลายบริเวณในคิวเดียว ระบบจะบวกเวลาให้เอง และแอดมินยังกด +/– แก้รายคิวได้เหมือนเดิม<br />
                     ลบบริเวณทั้งหมด = ปิดกลับเป็นแบบเดิมทันที คิวที่ลงไปแล้วไม่ขยับ
+                  </div>
                   </div>
                 </td>
               </tr>
