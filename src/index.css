@@ -377,6 +377,9 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
   .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
   .table-scroll>table{min-width:640px}
   .table-scroll th,.table-scroll .badge{white-space:nowrap}
+  /* แผงบริเวณในตารางหัตถการเป็นแถวหนึ่งของตาราง จึงเลื่อนตามไปด้วยจนข้อความ/ช่องกรอกโดนตัดขอบ
+     → ตรึงกล่องข้างในให้ชิดซ้ายและกว้างเท่าพื้นที่ที่มองเห็น (34px = padding .content 16×2 + ขอบการ์ด 2) */
+  .table-scroll .area-panel{position:sticky;left:0;width:calc(100vw - 34px)}
   .ceo-dashboard-page{padding:16px 14px!important;margin:-16px!important}
   .ceo-dashboard-range-buttons{gap:4px!important}
   .ceo-dashboard-range-buttons button{font-size:11px!important;padding:6px 10px!important}
