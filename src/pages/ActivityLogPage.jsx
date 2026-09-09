@@ -49,6 +49,7 @@ export default function ActivityLogPage({ rooms, procedures }) {
         </div>
       ) : (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+          <div className="table-scroll">
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "var(--surface2)", borderBottom: "2px solid var(--border2)" }}>
@@ -99,6 +100,7 @@ export default function ActivityLogPage({ rooms, procedures }) {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </>

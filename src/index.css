@@ -370,6 +370,13 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
   .form-grid{grid-template-columns:1fr}
   .stats-row{grid-template-columns:repeat(2,1fr)}
   .content{padding:16px}
+  /* ตารางในหน้าตั้งค่า (หัตถการ/โปร/ห้อง/ตารางห้อง/ประวัติการลบ) กว้างกว่าจอมือถือ — หน้าสาขามี 4 คอลัมน์พอดีจออยู่แล้วจึงไม่ครอบ
+     เดิม .card{overflow:hidden} ตัดคอลัมน์ขวาทิ้ง (ปุ่มแก้ไข/ลบหาย) และ body ก็ห้ามเลื่อนแนวนอน
+     → ครอบตารางด้วย .table-scroll ให้เลื่อนซ้ายขวาได้เฉพาะตาราง (หัวการ์ด/คำอธิบายอยู่กับที่)
+     และบังคับความกว้างขั้นต่ำเพื่อไม่ให้คอลัมน์ถูกบีบจนหักทีละตัวอักษร */
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .table-scroll>table{min-width:640px}
+  .table-scroll th,.table-scroll .badge{white-space:nowrap}
   .ceo-dashboard-page{padding:16px 14px!important;margin:-16px!important}
   .ceo-dashboard-range-buttons{gap:4px!important}
   .ceo-dashboard-range-buttons button{font-size:11px!important;padding:6px 10px!important}
