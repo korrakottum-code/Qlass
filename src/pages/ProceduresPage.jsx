@@ -116,6 +116,7 @@ export default function ProceduresPage({
         <button className="btn btn-primary" onClick={onAdd}>➕ เพิ่มหัตถการ</button>
       </div>
       <div className="card">
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -290,6 +291,7 @@ export default function ProceduresPage({
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </>
   );

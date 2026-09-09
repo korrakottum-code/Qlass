@@ -60,6 +60,7 @@ export default function RoomSchedulePage({ roomSchedules, rooms, branches, onAdd
           {filtered.length === 0 ? (
             <div className="empty"><p>ไม่พบรายการที่ตรงกัน</p></div>
           ) : (
+            <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
@@ -111,6 +112,7 @@ export default function RoomSchedulePage({ roomSchedules, rooms, branches, onAdd
                 })}
               </tbody>
             </table>
+            </div>
           )}
           {hasMore && (
             <div style={{ textAlign: "center", marginTop: 14 }}>
