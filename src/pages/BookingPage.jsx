@@ -294,18 +294,38 @@ export default function BookingPage({
   // ตัวเลือกช่อง "บันทึกโดย" — พนักงานที่ยังใช้งานอยู่ และตรงสาขาที่เลือก (บทบาทที่เห็นทุกสาขา
   // ไม่ต้องกรอง) ถ้าคนที่เลือกไว้เดิมหลุดเงื่อนไข (ปิดใช้งาน/ย้ายสาขาไปแล้ว) ยังโชว์ชื่อไว้ให้เห็น
   // ว่าเลือกใครอยู่ ไม่ใช่โชว์ค่าว่างเงียบ ๆ
+  //
+  // ชื่อเล่นซ้ำกันได้ (คนละสาขา, ข้อมูลจริงตอนนี้ยังไม่ชนแต่กันไว้ก่อน) — ถ้าไม่ต่อท้ายให้
+  // ต่างกัน แอดมินเลือก "แนน" แล้วมีสองคน จะไม่รู้ว่าเลือกคนไหนไป ค่าคอมไปลงผิดคนเงียบ ๆ
   const recordableStaff = useMemo(() => {
     const active = (staff || []).filter((s) => s.active);
-    const filtered = !form.branchId ? active : active.filter((s) => {
+    let list = !form.branchId ? active : active.filter((s) => {
       const role = ROLES.find((r) => r.value === s.role);
       return role?.branchScope === "all" || s.branchId === form.branchId;
     });
-    if (form.recordedBy && !filtered.some((s) => s.id === form.recordedBy)) {
+    if (form.recordedBy && !list.some((s) => s.id === form.recordedBy)) {
       const current = (staff || []).find((s) => s.id === form.recordedBy);
-      if (current) return [...filtered, current];
+      if (current) list = [...list, current];
     }
-    return filtered;
-  }, [staff, form.branchId, form.recordedBy]);
+    const nameCounts = {};
+    list.forEach((s) => {
+      const base = s.nickname || s.name;
+      nameCounts[base] = (nameCounts[base] || 0) + 1;
+    });
+    return list.map((s) => {
+      const base = s.nickname || s.name;
+      if (nameCounts[base] <= 1) return { ...s, recordLabel: base };
+      const branch = branches.find((b) => b.id === s.branchId);
+      return { ...s, recordLabel: `${base} — ${branch?.name || "ไม่มีสาขา"}` };
+    });
+  }, [staff, branches, form.branchId, form.recordedBy]);
+
+  // ชื่อ + ป้ายกันสับสน (ถ้าซ้ำ) ของคนที่เลือกไว้ในช่อง "บันทึกโดย" ตอนนี้ — ใช้แสดงซ้ำท้ายฟอร์ม
+  // ก่อนกดบันทึก (เดิมตรงนี้โชว์ชื่อบัญชีที่ล็อกอินตายตัว ขัดกับช่องด้านบนที่เปลี่ยนได้แล้ว)
+  const recordedByLabel = useMemo(() => {
+    const match = recordableStaff.find((s) => s.id === form.recordedBy);
+    return match?.recordLabel || null;
+  }, [recordableStaff, form.recordedBy]);
 
   // 5 รายการล่าสุดที่ account นี้เป็นคนบันทึก — ไว้เช็คว่าข้อมูลลงถูกมั้ยหลังกดบันทึก
   const myRecentQueues = useMemo(() => {
@@ -375,7 +395,7 @@ export default function BookingPage({
               >
                 <option value="">— ไม่ระบุ —</option>
                 {recordableStaff.map((s) => (
-                  <option key={s.id} value={s.id}>{s.nickname || s.name}</option>
+                  <option key={s.id} value={s.id}>{s.recordLabel}</option>
                 ))}
               </select>
             </div>
@@ -809,14 +829,14 @@ export default function BookingPage({
 
           {typeChosen && (
           <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
-            {currentUser && !editingQueueId && (
-              <span style={{ fontSize: 12, color: "var(--text2)", marginRight: "auto", display: "flex", alignItems: "center", gap: 5 }}>
-                📝 บันทึกโดย:
-                <span style={{ fontWeight: 700, color: "var(--accent)" }}>
-                  {currentUser.nickname || currentUser.name}
-                </span>
+            {/* สรุปซ้ำก่อนกดบันทึก — อ่านจากช่อง "บันทึกโดย" ด้านบน (เปลี่ยนได้แล้ว) ไม่ใช่บัญชี
+                ที่ล็อกอินตายตัวเหมือนเดิม กันขัดกันเองระหว่างสองจุดนี้ในฟอร์มเดียว */}
+            <span style={{ fontSize: 12, color: "var(--text2)", marginRight: "auto", display: "flex", alignItems: "center", gap: 5 }}>
+              📝 บันทึกโดย:
+              <span style={{ fontWeight: 700, color: recordedByLabel ? "var(--accent)" : "var(--text3)" }}>
+                {recordedByLabel || "ไม่ระบุ"}
               </span>
-            )}
+            </span>
             <button className="btn btn-secondary" onClick={handleClear} disabled={isBookingSaving}>ล้างฟอร์ม</button>
             <button className="btn btn-primary" onClick={() => setConfirmOpen(true)} disabled={isBookingSaving}>
               {editingQueueId ? "💾 บันทึกการแก้ไข" : "✅ บันทึกคิว"}
