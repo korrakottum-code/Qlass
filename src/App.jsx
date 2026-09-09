@@ -476,6 +476,14 @@ export default function App() {
       return;
     }
 
+    // ─── บัญชีผู้จัดการสาขาใช้ร่วมกันหลายคนหน้าร้าน (recorded_by ยังเป็นบัญชีเดิม
+    // เสมอ ไม่กระทบค่าคอม/สถิติ) — บังคับพิมพ์ชื่อผู้บันทึกจริงทุกครั้งที่บันทึก/แก้ไข
+    // เพื่อตรวจสอบย้อนหลังได้ว่าคิวนี้ใครเป็นคนทำจริง
+    if (currentUser?.role === "branch_manager" && !form.recordedNote?.trim()) {
+      showToast("error", "บัญชีนี้ใช้ร่วมกันหลายคน กรุณาระบุชื่อผู้บันทึกจริงก่อนบันทึก");
+      return;
+    }
+
     // ─── ตรวจสอบวันย้อนหลัง ───
     if (!editingQueueId && form.date < getTodayStr()) {
       showToast("error", "ไม่สามารถบันทึกคิวย้อนหลังได้");
@@ -1531,6 +1539,12 @@ export default function App() {
                 showToast={showToast}
                 onAbandonDraft={() => { timelineServerQueueRequestIdRef.current = null; }}
                 onSubmitBooking={async (bookingForm) => {
+                  // บัญชีผู้จัดการสาขาใช้ร่วมกันหลายคนหน้าร้าน — กันเผื่อ (ปุ่มฝั่ง UI
+                  // ก็ disabled ไว้แล้ว) กติกาเดียวกับหน้าบันทึกคิว ดู handleBookingSubmit
+                  if (currentUser?.role === "branch_manager" && !bookingForm.recordedNote?.trim()) {
+                    showToast("error", "บัญชีนี้ใช้ร่วมกันหลายคน กรุณาระบุชื่อผู้บันทึกจริงก่อนบันทึก");
+                    return false;
+                  }
                   // เตียงรับหัตถการนี้ไหม — Timeline สร้างคิวใหม่เสมอ จึงตรวจทุกครั้ง
                   if (bookingForm.roomId && bookingForm.procedureId) {
                     const roomObj = rooms.find((r) => r.id === bookingForm.roomId);

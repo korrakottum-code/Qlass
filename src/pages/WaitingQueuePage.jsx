@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { CUSTOMER_TYPES, QUEUE_STATUSES } from "../utils/constants";
-import { formatThaiDate, getCustomerBadgeClass, getTodayStr, isoToLocalDateStr, OVERDUE_MOVE_NOTE_PREFIX } from "../utils/helpers";
+import { formatRecorderLabel, formatThaiDate, getCustomerBadgeClass, getTodayStr, isoToLocalDateStr, OVERDUE_MOVE_NOTE_PREFIX } from "../utils/helpers";
 
 function StatusBadge({ status }) {
   const s = QUEUE_STATUSES.find((x) => x.value === (status || "pending"));
@@ -185,7 +185,7 @@ export default function WaitingQueuePage({
                       <td style={{ fontSize: 12 }}>
                         {recorder ? (
                           <span style={{ fontWeight: 600, color: "var(--text2)" }}>
-                            {recorder.nickname || recorder.name}
+                            {formatRecorderLabel(recorder, q.recordedNote)}
                           </span>
                         ) : <span style={{ color: "var(--text3)" }}>—</span>}
                       </td>

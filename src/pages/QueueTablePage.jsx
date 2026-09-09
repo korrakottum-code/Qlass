@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { CUSTOMER_TYPES, QUEUE_STATUSES } from "../utils/constants";
-import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass, isOverdueUnconfirmed } from "../utils/helpers";
+import { getTodayStr, formatThaiDate, blockToTime, formatRecorderLabel, getCustomerBadgeClass, isOverdueUnconfirmed } from "../utils/helpers";
 import { pickDatePresets, daySpan } from "../utils/datePresets";
 
 const ALL_ROOMS_TAB = "__all__";
@@ -111,7 +111,7 @@ function QueueDataTable({
                     const recorder = staff?.find((s) => s.id === q.recordedBy);
                     return recorder ? (
                       <span style={{ fontWeight: 600, color: "var(--text2)" }}>
-                        {recorder.nickname || recorder.name}
+                        {formatRecorderLabel(recorder, q.recordedNote)}
                       </span>
                     ) : <span style={{ color: "var(--text3)" }}>—</span>;
                   })()}

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { CUSTOMER_TYPES, ROOM_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
-import { WORK_BLOCKS, blockToTime, formatThaiDate, getEmptyBookingForm, getTodayStr, isActiveQueueStatus } from "../utils/helpers";
+import { WORK_BLOCKS, blockToTime, formatRecorderLabel, formatThaiDate, getEmptyBookingForm, getTodayStr, isActiveQueueStatus } from "../utils/helpers";
 import { proceduresForRoom, isRoomConfigured, roomLockLabel } from "../utils/roomProcedures";
 import { areasForProcedure, durationFromAreas, keepValidAreaIds } from "../utils/procedureAreas";
 import SmartParseBox from "../components/SmartParseBox";
@@ -342,6 +342,25 @@ export default function BookingPage({
                 onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
               />
             </div>
+
+            {/* บัญชีผู้จัดการสาขาใช้ร่วมกันหลายคนหน้าร้าน — บังคับพิมพ์ชื่อผู้บันทึกจริง
+                ทุกครั้ง (เห็นเฉพาะบทบาทนี้ บัญชีอื่นไม่มีช่องนี้ ไม่มีอะไรเปลี่ยน) ค่านี้
+                ไม่กระทบผู้ได้ค่าคอม/สถิติ — ยังนับรวมเป็นบัญชีผู้จัดการเหมือนเดิมทุกจุด */}
+            {currentUser?.role === "branch_manager" && (
+              <div className="form-group full">
+                <label className="form-label">
+                  <span className="req">*</span> ชื่อผู้บันทึกจริง
+                  <span style={{ fontWeight: 400, color: "var(--text3)", marginLeft: 6, fontSize: 11 }}>
+                    — บัญชีนี้ใช้ร่วมกันหลายคน ต้องระบุทุกครั้งว่าใครเป็นคนบันทึก
+                  </span>
+                </label>
+                <input
+                  placeholder="เช่น โย"
+                  value={form.recordedNote || ""}
+                  onChange={(e) => setForm((f) => ({ ...f, recordedNote: e.target.value }))}
+                />
+              </div>
+            )}
 
             {/* HN Lookup — full width row */}
             <div className="form-group full">
@@ -776,7 +795,7 @@ export default function BookingPage({
               <span style={{ fontSize: 12, color: "var(--text2)", marginRight: "auto", display: "flex", alignItems: "center", gap: 5 }}>
                 📝 บันทึกโดย:
                 <span style={{ fontWeight: 700, color: "var(--accent)" }}>
-                  {currentUser.nickname || currentUser.name}
+                  {formatRecorderLabel(currentUser, form.recordedNote)}
                 </span>
               </span>
             )}

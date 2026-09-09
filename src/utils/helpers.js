@@ -89,7 +89,21 @@ export function getEmptyBookingForm() {
     roomId: "",
     status: "pending",
     statusNote: "",
+    // ชื่อผู้บันทึกจริง — ใช้เมื่อบัญชีที่ล็อกอินเป็นบัญชีที่ใช้ร่วมกันหลายคน (บทบาท
+    // branch_manager) ไม่กระทบ recordedBy/ค่าคอม เป็นข้อความอิสระเพื่อตรวจสอบภายหลัง
+    recordedNote: "",
   };
+}
+
+// รวมชื่อผู้บันทึก (จากบัญชีที่ล็อกอิน/recordedBy) กับชื่อที่พิมพ์เพิ่ม (recordedNote)
+// เป็นข้อความเดียวสำหรับแสดงผลรายคิว เช่น บัญชี "หอกาญ" + พิมพ์ "โย" → "โย(หอกาญ)"
+// ไม่มี note ก็แสดงแค่ชื่อบัญชีเหมือนเดิมทุกจุด — ใช้ผลรวมยอด/ค่าคอมยังอิง recordedBy
+// ล้วน ๆ ไม่แตะฟังก์ชันนี้เลย
+export function formatRecorderLabel(recorder, note) {
+  const base = recorder ? (recorder.nickname || recorder.name) : "";
+  if (!base) return note ? note.trim() : "";
+  const trimmedNote = (note || "").trim();
+  return trimmedNote ? `${trimmedNote}(${base})` : base;
 }
 
 export function getCustomerBadgeClass(type) {
