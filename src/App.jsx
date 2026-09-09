@@ -129,7 +129,8 @@ export default function App() {
   const [refreshRequired, setRefreshRequired] = useState(false);
 
   // ─── Booking form ───
-  const [form, setForm] = useState(getEmptyBookingForm);
+  // recordedBy เริ่มต้น = คนที่ล็อกอินอยู่ตอนนี้ (เปลี่ยนได้ในฟอร์มก่อนบันทึก)
+  const [form, setForm] = useState(() => ({ ...getEmptyBookingForm(), recordedBy: currentUser?.id || "" }));
   const [editingQueueId, setEditingQueueId] = useState(null);
 
   // ─── Smart parser learning ───
@@ -151,6 +152,10 @@ export default function App() {
               const { user } = await restoreServerSession(token);
               staffData = await fetchAuthenticatedStaff(token);
               setCurrentUser(user);
+              // form ถูกสร้างตอน currentUser ยังเป็น null (useServerSession โหลด user ทีหลัง
+              // แบบ async) — เติม recordedBy ย้อนหลังตรงนี้ ไม่งั้นคิวแรกหลังรีเฟรชหน้าจะ
+              // ขึ้น "ไม่ระบุ" แทนที่จะเป็นคนที่ล็อกอินอยู่
+              setForm((f) => (f.recordedBy ? f : { ...f, recordedBy: user.id }));
             } catch {
               localStorage.removeItem("qlass_session");
               localStorage.removeItem("qlass_user");
@@ -436,6 +441,8 @@ export default function App() {
     }
     setCurrentUser(safeUser);
     localStorage.setItem('qlass_user', JSON.stringify(safeUser));
+    // ล็อกอินใหม่ = คนละคนแล้วแน่ ๆ ตั้งค่าเริ่มต้นของ "บันทึกโดย" กลับมาเป็นคนที่เพิ่งล็อกอินนี้
+    setForm((f) => ({ ...f, recordedBy: safeUser.id }));
     const pages = ROLES.find((r) => r.value === verifiedUser.role)?.pages || [];
     navigateTo(pages[0] || "queue-table");
     showToast("success", `ยินดีต้อนรับ ${verifiedUser.nickname || verifiedUser.name} 👋`);
@@ -604,7 +611,9 @@ export default function App() {
           newQueue = await createQueue({
             ...submitForm,
             createdAt: getTodayStr(),
-            recordedBy: currentUser?.id || null,
+            // เลือกจากฟอร์มก่อน (หน้าบันทึกคิวมีช่อง "บันทึกโดย" ให้เปลี่ยนได้) ถ้าไม่ได้เลือก
+            // ค่อย fallback เป็นคนที่ล็อกอินอยู่เหมือนเดิม
+            recordedBy: submitForm.recordedBy || currentUser?.id || null,
           });
         }
         // อัปเดต state ทันที ไม่รอ Realtime (ป้องกันคิวไม่ขึ้นถ้า Realtime ช้า)
@@ -623,7 +632,7 @@ export default function App() {
         setParseHints(updated);
         setLastParseSnapshot(null);
       }
-      setForm(getEmptyBookingForm());
+      setForm({ ...getEmptyBookingForm(), recordedBy: currentUser?.id || "" });
       recordClientDiagnostic("write_outcome", { outcome: "succeeded" });
       return true;
     } catch (error) {
@@ -1378,6 +1387,7 @@ export default function App() {
                 roomProcedureIndex={roomProcedureIndex}
                 procedureAreaIndex={procedureAreaIndex}
                 queues={filteredQueues}
+                staff={staff}
                 onSubmit={handleBookingSubmit}
                 onQuickAddPromo={quickAddPromo}
                 parseHints={parseHints || { branchAliases: {}, procedureAliases: {}, promoAliases: {}, roomAliases: {}, procedureToRoom: {} }}

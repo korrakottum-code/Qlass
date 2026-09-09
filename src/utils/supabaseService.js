@@ -840,11 +840,14 @@ export async function updateQueue(id, queue) {
       status: queue.status,
       status_note: queue.statusNote,
       status_updated_at: new Date().toISOString(),
+      // แก้ผู้บันทึกได้ตอนแก้ไขคิวด้วย (ก่อนหน้านี้ฟิลด์นี้ไม่เคยอัปเดตตอนแก้ไข)
+      // เพื่อให้ช่อง "บันทึกโดย" ในฟอร์มบันทึกคิวใช้แก้ของเดิมได้จริง ไม่ใช่ใช้ได้แค่ตอนสร้างใหม่
+      recorded_by: queue.recordedBy || null,
     })
     .eq("id", id)
     .select()
     .single();
-  
+
   if (error) throw error;
   return {
     id: data.id,

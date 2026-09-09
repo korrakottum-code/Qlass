@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { CUSTOMER_TYPES, ROOM_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
+import { CUSTOMER_TYPES, ROLES, ROOM_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
 import { WORK_BLOCKS, blockToTime, formatThaiDate, getEmptyBookingForm, getTodayStr, isActiveQueueStatus } from "../utils/helpers";
 import { proceduresForRoom, isRoomConfigured, roomLockLabel } from "../utils/roomProcedures";
 import { areasForProcedure, durationFromAreas, keepValidAreaIds } from "../utils/procedureAreas";
@@ -27,7 +27,7 @@ export default function BookingPage({
   branches, rooms, procedures, promos,
   roomSchedules, queues, roomProcedureIndex, procedureAreaIndex,
   onSubmit, onQuickAddPromo, onSmartApply, onBulkBooking, parseHints, todayStats,
-  currentUser, showToast,
+  currentUser, showToast, staff,
 }) {
   const [showQuickPromo, setShowQuickPromo] = useState(false);
   // ค้น HN เจอ = ขึ้นคำใบ้ว่าเคยมีประวัติ แต่ไม่เลือกประเภทให้
@@ -287,9 +287,25 @@ export default function BookingPage({
     // left over from a failed attempt must not be reused for whatever the
     // operator types next (see fix/goal13-request-id-reset-on-cancel).
     onAbandonDraft?.();
-    setForm(getEmptyBookingForm());
+    setForm({ ...getEmptyBookingForm(), recordedBy: currentUser?.id || "" });
     setEditingQueueId(null);
   }
+
+  // ตัวเลือกช่อง "บันทึกโดย" — พนักงานที่ยังใช้งานอยู่ และตรงสาขาที่เลือก (บทบาทที่เห็นทุกสาขา
+  // ไม่ต้องกรอง) ถ้าคนที่เลือกไว้เดิมหลุดเงื่อนไข (ปิดใช้งาน/ย้ายสาขาไปแล้ว) ยังโชว์ชื่อไว้ให้เห็น
+  // ว่าเลือกใครอยู่ ไม่ใช่โชว์ค่าว่างเงียบ ๆ
+  const recordableStaff = useMemo(() => {
+    const active = (staff || []).filter((s) => s.active);
+    const filtered = !form.branchId ? active : active.filter((s) => {
+      const role = ROLES.find((r) => r.value === s.role);
+      return role?.branchScope === "all" || s.branchId === form.branchId;
+    });
+    if (form.recordedBy && !filtered.some((s) => s.id === form.recordedBy)) {
+      const current = (staff || []).find((s) => s.id === form.recordedBy);
+      if (current) return [...filtered, current];
+    }
+    return filtered;
+  }, [staff, form.branchId, form.recordedBy]);
 
   // 5 รายการล่าสุดที่ account นี้เป็นคนบันทึก — ไว้เช็คว่าข้อมูลลงถูกมั้ยหลังกดบันทึก
   const myRecentQueues = useMemo(() => {
@@ -341,6 +357,27 @@ export default function BookingPage({
                 value={form.phone}
                 onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
               />
+            </div>
+
+            {/* บันทึกโดย — เริ่มต้นเป็นคนที่ล็อกอินอยู่เสมอ เปลี่ยนได้เฉพาะตอนบัญชีที่ล็อกอิน
+                ไม่ใช่คนที่ทำจริง (เช่น คอมหน้าร้านล็อกอินค้างด้วยบัญชีผู้จัดการบัญชีเดียว) —
+                ค่านี้ใช้คำนวณค่าคอมและกราฟผลงานพนักงานหลายหน้า เลือกผิดคนคือค่าคอมผิดคน */}
+            <div className="form-group full">
+              <label className="form-label">
+                บันทึกโดย
+                <span style={{ fontWeight: 400, color: "var(--text3)", marginLeft: 6, fontSize: 11 }}>
+                  — พนักงานที่ทำคิวนี้จริง ไม่ใช่บัญชีที่ล็อกอิน (ถ้าต่างกัน)
+                </span>
+              </label>
+              <select
+                value={form.recordedBy || ""}
+                onChange={(e) => setForm((f) => ({ ...f, recordedBy: e.target.value }))}
+              >
+                <option value="">— ไม่ระบุ —</option>
+                {recordableStaff.map((s) => (
+                  <option key={s.id} value={s.id}>{s.nickname || s.name}</option>
+                ))}
+              </select>
             </div>
 
             {/* HN Lookup — full width row */}
