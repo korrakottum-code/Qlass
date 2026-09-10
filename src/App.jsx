@@ -25,7 +25,7 @@ import {
   getAllCategories, createCategory as createCategoryDB, deleteCategory as deleteCategoryDB,
   fetchTickets, createTicketDB, updateTicketDB, deleteTicketDB,
   createActivityLog, fetchActivityLogs,
-  mapQueueRow, fetchQueuesForRoomDate
+  mapQueueRow, fetchQueuesForRoomDate, fetchWaitingQueues
 } from "./utils/supabaseService";
 import { supabase } from "./utils/supabaseClient";
 import { learnFromCorrection } from "./utils/smartParser";
@@ -745,6 +745,33 @@ export default function App() {
       await job;
     }
   }, [mergeFetchedQueues]);
+
+  // ─── คิวรอที่ค้างมานานกว่าหน้าต่าง 30 วันตอนเปิดแอป ───
+  // คิวรอไม่มีวันนัดจริง คอลัมน์ date คือวันที่ลงคิวไว้เฉย ๆ คนที่ลงคิวรอไว้เดือนก่อนจึงอยู่
+  // นอกหน้าต่างที่โหลดตอนเปิด แล้วค้นหาไม่เจอทั้งที่ยังรออยู่ — ตามมาทีหลังแบบไม่บล็อกหน้าจอ
+  // ไม่ mark loadedRanges: ก้อนนี้เลือกด้วยสถานะ ไม่ใช่ช่วงวัน คิวสถานะอื่นของวันเดียวกันยังไม่ได้โหลด
+  const loadWaitingBacklog = useCallback(async () => {
+    const key = "WAITING";
+    if (rangeInFlightRef.current.has(key)) return rangeInFlightRef.current.get(key);
+    const job = (async () => {
+      const deletedIds = deletedDuringHistoryLoadRef.current ?? new Set();
+      deletedDuringHistoryLoadRef.current = deletedIds;
+      try {
+        mergeFetchedQueues(await fetchWaitingQueues(), deletedIds);
+      } catch (error) {
+        // ล้มแล้วเงียบไว้: หน้าอื่นยังใช้ได้ครบ เสียแค่คิวรอเก่ากว่า 30 วันที่ยังค้นไม่เจอ
+        console.error("loadWaitingBacklog failed:", error);
+      } finally {
+        rangeInFlightRef.current.delete(key);
+        if (rangeInFlightRef.current.size === 0) deletedDuringHistoryLoadRef.current = null;
+      }
+    })();
+    rangeInFlightRef.current.set(key, job);
+    return job;
+  }, [mergeFetchedQueues]);
+
+  // ต้องรอให้ setQueues ของการโหลดหลักลงก่อน ไม่งั้นก้อนนั้นเขียนทับคิวรอที่ merge เข้ามาแล้ว
+  useEffect(() => { if (isDataReady) loadWaitingBacklog(); }, [isDataReady, loadWaitingBacklog]);
 
   // ปุ่ม Backup: โหลดทั้งตาราง (keyset) ตอนกดเท่านั้น แล้ว mark ว่ามีครบทุกช่วง
   const loadAllQueues = useCallback(async () => {

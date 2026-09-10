@@ -1,10 +1,12 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { CUSTOMER_TYPES, QUEUE_STATUSES } from "../utils/constants";
-import { getTodayStr, formatThaiDate, blockToTime, formatRecorderLabel, getCustomerBadgeClass, isOverdueUnconfirmed } from "../utils/helpers";
+import { getTodayStr, formatThaiDate, blockToTime, formatRecorderLabel, getCustomerBadgeClass, isOverdueUnconfirmed, isoToLocalDateStr } from "../utils/helpers";
 import { pickDatePresets, daySpan } from "../utils/datePresets";
 
 const ALL_ROOMS_TAB = "__all__";
-// คิวรอ (Waiting Queue) มีหน้าของตัวเองแล้ว — ไม่แสดงซ้ำในตารางนี้
+// แท็บคิวรอ อยู่แถวเดียวกับแท็บห้อง — คิวรอยังไม่มีห้อง/เวลา จึงเข้ากลุ่มห้องไหนไม่ได้
+const WAITING_TAB = "__waiting__";
+// ชิปสรุปสถานะไม่นับคิวรอ — คิวรอมีแท็บของตัวเองแล้ว และไม่ได้ผูกกับวันนัดเหมือนสถานะอื่น
 const TABLE_STATUSES = QUEUE_STATUSES.filter((s) => s.value !== "waiting_queue");
 // สถานะที่ยังถือว่า "ยังไม่ยืนยัน" — ปุ่ม "ย้ายเข้าคิวรอ" ใช้ได้เฉพาะกลุ่มนี้
 const UNCONFIRMED_STATUSES = ["pending", "follow1", "follow2", "follow3"];
@@ -33,7 +35,7 @@ function StatusBadge({ status }) {
 
 // ตารางคิว 1 ชุด — ใช้ทั้งโหมดวันเดียว (แยกตามแท็บห้อง) และโหมดหลายวัน (แยกตามวัน)
 function QueueDataTable({
-  items, showRoomCol, procedures, promos, staff,
+  items, showRoomCol, procedures, promos, staff, waitingMode = false,
   onUpdateStatus, onEdit, onAskMove, onAskDelete,
 }) {
   return (
@@ -52,7 +54,7 @@ function QueueDataTable({
         </colgroup>
         <thead>
           <tr>
-            <th style={{ whiteSpace: "nowrap" }}>เวลา</th>
+            <th style={{ whiteSpace: "nowrap" }}>{waitingMode ? "ลงคิวเมื่อ" : "เวลา"}</th>
             {showRoomCol && <th style={{ whiteSpace: "nowrap" }}>ห้อง</th>}
             <th>ชื่อลูกค้า</th>
             <th>หัตถการ</th>
@@ -79,7 +81,17 @@ function QueueDataTable({
                 borderLeft: isOverdue ? "3px solid #d97706" : undefined,
               }}>
                 <td style={{ fontFamily: "var(--mono)", fontWeight: 600, fontSize: 13 }}>
-                  {q.timeBlock !== null ? (
+                  {/* คิวรอยังไม่มีเวลานัด — ช่องนี้บอก "ลงคิวไว้เมื่อไหร่" แทน จะได้รู้ว่ารอมานานแค่ไหน */}
+                  {waitingMode ? (
+                    q.createdAt ? (
+                      <>
+                        <div style={{ fontSize: 12 }}>{formatThaiDate(isoToLocalDateStr(q.createdAt))}</div>
+                        <div style={{ fontSize: 10, color: "var(--text3)" }}>
+                          {new Date(q.createdAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                      </>
+                    ) : "—"
+                  ) : q.timeBlock !== null ? (
                     <>
                       {blockToTime(q.timeBlock)}
                       {proc && <div style={{ fontSize: 10, color: "var(--text3)" }}>–{blockToTime(q.timeBlock + (q.durationBlocks ?? proc.blocks))}</div>}
@@ -177,6 +189,46 @@ function QueueDataTable({
   );
 }
 
+// เนื้อในของแท็บคิวรอ — ใช้ทั้งโหมดวันเดียว (เป็นแท็บ) และโหมดหลายวัน (เป็นการ์ดแยก)
+//
+// ค่าเริ่มต้นโชว์เฉพาะคิวรอที่ลงไว้ในช่วงวันที่ที่เลือก จะได้รู้ว่ารอมาตั้งแต่วันไหน
+// ส่วนที่ลงไว้ก่อนหน้านั้นยังนับให้เห็นเสมอ แล้วกดกางดูได้ — คนที่รอมาหลายอาทิตย์
+// จะได้ไม่หายไปจากทั้งหน้าเพียงเพราะเปิดดูวันนี้
+function WaitingQueueBlock({ inRange, earlier, showAll, onToggleShowAll, tableProps }) {
+  const items = showAll ? [...inRange, ...earlier].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)) : inRange;
+  return (
+    <>
+      {earlier.length > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+          padding: "8px 14px", borderBottom: "1px solid var(--border)",
+          fontSize: 12, fontWeight: 600, color: "var(--text2)",
+        }}>
+          <span>⏳ ยังมีคนรออยู่ก่อนหน้าช่วงวันที่นี้อีก {earlier.length} คน</span>
+          <button
+            type="button"
+            onClick={onToggleShowAll}
+            style={{
+              background: "var(--surface2)", border: "1.5px solid var(--border)", borderRadius: 6,
+              padding: "2px 10px", fontSize: 11, fontWeight: 700, color: "var(--text2)",
+              cursor: "pointer", fontFamily: "var(--font)",
+            }}
+          >
+            {showAll ? "▸ ดูเฉพาะช่วงวันที่นี้" : "▾ ดูคนที่รอทั้งหมด"}
+          </button>
+        </div>
+      )}
+      {items.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "24px 0", color: "var(--text3)", fontSize: 13 }}>
+          ไม่มีคิวรอในช่วงวันที่นี้
+        </div>
+      ) : (
+        <QueueDataTable items={items} showRoomCol={false} waitingMode {...tableProps} />
+      )}
+    </>
+  );
+}
+
 export default function QueueTablePage({
   queues, branches, rooms, procedures, promos, staff, roomSchedules,
   onEdit, onDelete, onUpdateStatus, onMoveToWaitingQueue, onRangeNeeded,
@@ -193,6 +245,8 @@ export default function QueueTablePage({
   const [qfRecordedBy, setQfRecordedBy] = useState("all");
   // แท็บห้องที่เลือกไว้ ต่อสาขา — ไม่มี key = "ทั้งหมด" (ทุกห้องรวมกัน)
   const [activeRoomTabByBranch, setActiveRoomTabByBranch] = useState({});
+  // ในแท็บคิวรอ: กางดูคิวรอที่ค้างอยู่ทั้งหมด ไม่ใช่แค่ช่วงวันที่ที่เลือก — ต่อสาขา
+  const [waitingShowAllByBranch, setWaitingShowAllByBranch] = useState({});
   // หุบ/ขยายแต่ละสาขา — ไม่ได้ตั้งไว้เอง = ใช้ค่า default (หุบถ้าโชว์หลายสาขาพร้อมกัน, ขยายถ้าเลือกสาขาเดียว)
   const [branchCollapseOverride, setBranchCollapseOverride] = useState({});
   // วันที่เปิดอยู่ในโหมดหลายวัน — key = "branchId|date" — ไม่มีใน object = หุบ
@@ -245,6 +299,38 @@ export default function QueueTablePage({
     if (qfFrom && v < qfFrom) setQfFrom(v);
   }
 
+  const matchesSearch = useCallback((q) => {
+    if (!qfSearch) return true;
+    const s = qfSearch.toLowerCase();
+    const recorder = staff?.find((x) => x.id === q.recordedBy);
+    const recorderName = `${recorder?.nickname || ""} ${recorder?.name || ""}`.toLowerCase();
+    return q.name.toLowerCase().includes(s) || q.phone.includes(s) || recorderName.includes(s);
+  }, [qfSearch, staff]);
+
+  // ─── คิวรอ: ไม่กรองด้วยช่วงวันที่ตรงนี้ ───
+  // คิวรอไม่มีวันนัด — คอลัมน์ date คือวันที่ลงคิวไว้เฉย ๆ กรองทิ้งตั้งแต่ตรงนี้แล้วจะนับไม่ได้
+  // ว่ามีคนค้างอยู่นอกช่วงที่ดูอยู่กี่คน (แท็บคิวรอค่อยแบ่งเองว่าอันไหนอยู่ในช่วง อันไหนก่อนหน้า)
+  const waitingQueues = useMemo(() => {
+    if (needsBranch || (qfStatus !== "all" && qfStatus !== "waiting_queue")) return [];
+    return queues
+      .filter((q) => (q.status || "pending") === "waiting_queue")
+      .filter((q) => qfBranch === "all" || q.branchId === qfBranch)
+      .filter((q) => qfRecordedBy === "all" || q.recordedBy === qfRecordedBy)
+      .filter(matchesSearch)
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  }, [queues, qfBranch, qfRecordedBy, qfStatus, matchesSearch, needsBranch]);
+
+  const waitingByBranch = useMemo(() => {
+    const map = {};
+    waitingQueues.forEach((q) => {
+      const bId = q.branchId || "__none__";
+      if (!map[bId]) map[bId] = { inRange: [], earlier: [] };
+      const inRange = q.date && q.date >= rangeStart && q.date <= rangeEnd;
+      map[bId][inRange ? "inRange" : "earlier"].push(q);
+    });
+    return map;
+  }, [waitingQueues, rangeStart, rangeEnd]);
+
   const filteredQueues = useMemo(() => {
     if (needsBranch) return [];
     return queues
@@ -254,21 +340,12 @@ export default function QueueTablePage({
         if (!q.date || q.date < rangeStart || q.date > rangeEnd) return false;
         if (qfStatus !== "all" && (q.status || "pending") !== qfStatus) return false;
         if (qfRecordedBy !== "all" && q.recordedBy !== qfRecordedBy) return false;
-        if (qfSearch) {
-          const s = qfSearch.toLowerCase();
-          const recorder = staff?.find((x) => x.id === q.recordedBy);
-          const recorderName = `${recorder?.nickname || ""} ${recorder?.name || ""}`.toLowerCase();
-          if (
-            !q.name.toLowerCase().includes(s) &&
-            !q.phone.includes(s) &&
-            !recorderName.includes(s)
-          ) return false;
-        }
+        if (!matchesSearch(q)) return false;
         return true;
       })
       // เรียงตามวันก่อน แล้วค่อยเวลา — ไม่งั้นดูหลายวันแล้ว 11:00 ของทุกวันจะมากองรวมกัน
       .sort((a, b) => (a.date === b.date ? (a.timeBlock || 0) - (b.timeBlock || 0) : a.date.localeCompare(b.date)));
-  }, [queues, qfBranch, rangeStart, rangeEnd, qfSearch, qfStatus, qfRecordedBy, staff, needsBranch]);
+  }, [queues, qfBranch, rangeStart, rangeEnd, matchesSearch, qfStatus, qfRecordedBy, needsBranch]);
 
   // สถิติสถานะ (สำหรับช่วงที่เลือก ทุกสาขา)
   const statusStats = useMemo(() => {
@@ -327,12 +404,18 @@ export default function QueueTablePage({
       if (!branchMap[bId].days[q.date]) branchMap[bId].days[q.date] = { date: q.date, items: [] };
       branchMap[bId].days[q.date].items.push(item);
     });
-    return branches.filter((b) => branchMap[b.id]).map((b) => ({
-      ...branchMap[b.id],
-      rooms: Object.values(branchMap[b.id].rooms),
-      days: Object.values(branchMap[b.id].days).sort((x, y) => x.date.localeCompare(y.date)),
-    }));
-  }, [filteredQueues, branches, rooms]);
+    // สาขาที่มีแต่คิวรอ (ไม่มีคิวที่ลงห้อง/เวลาในช่วงนี้เลย) ต้องโผล่ด้วย ไม่งั้นแท็บคิวรอหายไปทั้งสาขา
+    return branches
+      .filter((b) => branchMap[b.id] || waitingByBranch[b.id])
+      .map((b) => {
+        const g = branchMap[b.id] || { branchId: b.id, branchName: b.name, rooms: {}, days: {} };
+        return {
+          ...g,
+          rooms: Object.values(g.rooms),
+          days: Object.values(g.days).sort((x, y) => x.date.localeCompare(y.date)),
+        };
+      });
+  }, [filteredQueues, branches, rooms, waitingByBranch]);
 
   const tableProps = {
     procedures, promos, staff, onUpdateStatus, onEdit,
@@ -456,7 +539,7 @@ export default function QueueTablePage({
             </p>
           </div>
         </div>
-      ) : filteredQueues.length === 0 ? (
+      ) : filteredQueues.length === 0 && waitingQueues.length === 0 ? (
         <div className="card">
           <div className="empty">
             <div className="e-icon">📭</div>
@@ -466,11 +549,17 @@ export default function QueueTablePage({
       ) : (
         groupedData.map(({ branchId, branchName, rooms: branchRooms, days }) => {
           const totalCount = branchRooms.reduce((sum, r) => sum + r.items.filter(q => q.status !== "rescheduled_in").length, 0);
+          const branchWaitingCount = (waitingByBranch[branchId]?.inRange.length || 0) + (waitingByBranch[branchId]?.earlier.length || 0);
           const activeTab = activeRoomTabByBranch[branchId] ?? ALL_ROOMS_TAB;
-          const activeRoom = activeTab === ALL_ROOMS_TAB ? null : branchRooms.find((r) => r.roomId === activeTab);
+          const branchWaiting = waitingByBranch[branchId] || { inRange: [], earlier: [] };
+          const waitingTotal = branchWaiting.inRange.length + branchWaiting.earlier.length;
+          const showAllWaiting = !!waitingShowAllByBranch[branchId];
+          const toggleShowAllWaiting = () => setWaitingShowAllByBranch((prev) => ({ ...prev, [branchId]: !showAllWaiting }));
+          const onWaitingTab = activeTab === WAITING_TAB && waitingTotal > 0;
+          const activeRoom = activeTab === ALL_ROOMS_TAB || activeTab === WAITING_TAB ? null : branchRooms.find((r) => r.roomId === activeTab);
           const showRoomCol = activeTab === ALL_ROOMS_TAB;
           // โหมดหลายวันไม่ใช้แท็บห้อง — ไม่ต้องเสียแรงรวม+เรียงทุกแถวทิ้ง
-          const activeItems = isRange
+          const activeItems = isRange || onWaitingTab
             ? []
             : showRoomCol
               ? branchRooms
@@ -499,6 +588,11 @@ export default function QueueTablePage({
               <span style={{ fontSize: 11, fontFamily: "var(--mono)", fontWeight: 600, background: "var(--surface3)", borderRadius: 10, padding: "1px 8px", color: "var(--text3)" }}>
                 {totalCount} คิว
               </span>
+              {branchWaitingCount > 0 && (
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#b45309", background: "rgba(217,119,6,0.12)", borderRadius: 10, padding: "1px 8px" }}>
+                  ⏳ คิวรอ {branchWaitingCount}
+                </span>
+              )}
               {isRange && (
                 <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text3)" }}>
                   {days.length} วันที่มีคิว
@@ -510,6 +604,21 @@ export default function QueueTablePage({
               isRange ? (
                 /* ── โหมดหลายวัน: แยกหัวข้อรายวัน ไม่ใช้แท็บห้อง (ห้องเดียวกันคนละวันต้องไม่ปนกัน) ── */
                 <>
+                {/* โหมดนี้ไม่มีแถบแท็บ คิวรอจึงมาเป็นการ์ดของตัวเองไว้บนสุด ไม่ใช่หายไปทั้งโหมด */}
+                {waitingTotal > 0 && (
+                  <div className="card" style={{ marginBottom: 10 }}>
+                    <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", fontSize: 13, fontWeight: 700, color: "#b45309" }}>
+                      ⏳ คิวรอ <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--text3)", marginLeft: 4 }}>{waitingTotal}</span>
+                    </div>
+                    <WaitingQueueBlock
+                      inRange={branchWaiting.inRange}
+                      earlier={branchWaiting.earlier}
+                      showAll={showAllWaiting}
+                      onToggleShowAll={toggleShowAllWaiting}
+                      tableProps={tableProps}
+                    />
+                  </div>
+                )}
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 8 }}>
                   <button
                     type="button"
@@ -606,6 +715,21 @@ export default function QueueTablePage({
                       </span>
                     </button>
                   ))}
+                  {waitingTotal > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveRoomTabByBranch((prev) => ({ ...prev, [branchId]: WAITING_TAB }))}
+                      style={{
+                        flex: "none", border: "none", background: "transparent", cursor: "pointer",
+                        fontFamily: "var(--font)", fontSize: 13, fontWeight: 700, padding: "9px 12px", whiteSpace: "nowrap",
+                        color: onWaitingTab ? "#b45309" : "var(--text3)",
+                        borderBottom: `2.5px solid ${onWaitingTab ? "#b45309" : "transparent"}`,
+                      }}
+                    >
+                      ⏳ คิวรอ
+                      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--text3)", marginLeft: 5 }}>{waitingTotal}</span>
+                    </button>
+                  )}
                 </div>
 
                 <div className="card" style={{ borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
@@ -618,7 +742,15 @@ export default function QueueTablePage({
                       ))}
                     </div>
                   )}
-                  {activeItems.length === 0 ? (
+                  {onWaitingTab ? (
+                    <WaitingQueueBlock
+                      inRange={branchWaiting.inRange}
+                      earlier={branchWaiting.earlier}
+                      showAll={showAllWaiting}
+                      onToggleShowAll={toggleShowAllWaiting}
+                      tableProps={tableProps}
+                    />
+                  ) : activeItems.length === 0 ? (
                     <div style={{ textAlign: "center", padding: "24px 0", color: "var(--text3)", fontSize: 13 }}>
                       ไม่มีคิวตรงเงื่อนไขในตอนนี้
                     </div>
@@ -635,7 +767,7 @@ export default function QueueTablePage({
       )}
 
       <div style={{ fontSize: 12, color: "var(--text3)", textAlign: "right", marginTop: 8 }}>
-        แสดง {filteredQueues.length} คิว • {rangeLabel}
+        แสดง {filteredQueues.length} คิว{waitingQueues.length > 0 ? ` + คิวรอ ${waitingQueues.length}` : ""} • {rangeLabel}
       </div>
 
       {/* ── Delete Confirm Modal ── */}
