@@ -154,6 +154,19 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
 .data-table tr:hover td{background:var(--accent-soft)}
 .data-table tr:last-child td{border-bottom:none}
 
+/* ─── ตารางรายงานการแอคทีฟสถานะคิว (หน้าสรุป) ───
+   8 คอลัมน์ในการ์ดเดียว — บีบตัวอักษรและ padding ลงเพื่อให้อ่านครบโดยไม่ต้องเลื่อนซ้ายขวาบนจอโน้ตบุ๊ก */
+.activation-table th{font-size:10px;padding:7px 6px;letter-spacing:0;text-transform:none;line-height:1.35}
+.activation-table td{padding:7px 6px;font-size:12px}
+/* แถวรายละเอียดคิวค้างเป็นแผงเต็มความกว้าง ไม่ใช่ข้อมูลในตาราง จึงไม่ต้องไฮไลต์ตอนชี้ */
+.activation-detail-row td,.activation-table tr:hover .activation-detail{background:transparent}
+.activation-detail-row:hover td{background:transparent!important}
+/* แผงรายละเอียดคิวค้างเป็นแถวในตารางที่เลื่อนซ้ายขวาได้ — ตรึงชิดซ้ายและกว้างเท่าพื้นที่ที่มองเห็น
+   --panel-w ตั้งจาก JS (ความกว้างจริงของกล่องที่เลื่อน) ถ้าไม่มีค่าให้ถอยไปใช้เต็มความกว้างตาราง */
+.activation-detail-panel{position:sticky;left:0;width:var(--panel-w,100%)}
+/* จอใหญ่ใช้ตาราง จอมือถือใช้การ์ดต่อสาขา — สลับกันด้วย media query ด้านล่าง */
+.activation-mobile{display:none}
+
 /* ─── Badges ─── */
 .badge{
   display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:12px;
@@ -376,6 +389,10 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
      และบังคับความกว้างขั้นต่ำเพื่อไม่ให้คอลัมน์ถูกบีบจนหักทีละตัวอักษร */
   .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
   .table-scroll>table{min-width:640px}
+  /* ตารางสรุปซ่อนไปเลยบนมือถือ — ไม่มีอะไรบอกผู้ใช้ว่าเลื่อนซ้ายขวาได้
+     ใช้การ์ดต่อสาขาแทน เห็นทุกตัวเลขในหน้าจอเดียว */
+  .activation-desktop{display:none}
+  .activation-mobile{display:block}
   .table-scroll th,.table-scroll .badge{white-space:nowrap}
   /* แผงบริเวณในตารางหัตถการเป็นแถวหนึ่งของตาราง จึงเลื่อนตามไปด้วยจนข้อความ/ช่องกรอกโดนตัดขอบ
      → ตรึงกล่องข้างในให้ชิดซ้ายและกว้างเท่าพื้นที่ที่มองเห็น (34px = padding .content 16×2 + ขอบการ์ด 2) */
