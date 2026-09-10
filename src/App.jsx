@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
 
-import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed, buildOverdueMoveNote, roleAtLeast, isActiveQueueStatus } from "./utils/helpers";
+import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed, buildOverdueMoveNote, roleAtLeast, isActiveQueueStatus, requiresRecorderNote } from "./utils/helpers";
 import { findUncoveredRanges, mergeRanges } from "./utils/queueRanges";
 
 // ขอบบนของช่วงที่ "ไม่มีวันหมด" — การโหลดที่ไม่ใส่ untilDate จะได้คิวล่วงหน้าทุกวันมาด้วย
@@ -477,9 +477,12 @@ export default function App() {
     }
 
     // ─── บัญชีผู้จัดการสาขาใช้ร่วมกันหลายคนหน้าร้าน (recorded_by ยังเป็นบัญชีเดิม
-    // เสมอ ไม่กระทบค่าคอม/สถิติ) — บังคับพิมพ์ชื่อผู้บันทึกจริงทุกครั้งที่บันทึก/แก้ไข
-    // เพื่อตรวจสอบย้อนหลังได้ว่าคิวนี้ใครเป็นคนทำจริง
-    if (currentUser?.role === "branch_manager" && !form.recordedNote?.trim()) {
+    // เสมอ ไม่กระทบค่าคอม/สถิติ) — บังคับพิมพ์ชื่อผู้บันทึกจริงตอนลงคิวใหม่ และตอนแก้
+    // คิวที่บัญชีตัวเองลงไว้เอง เพื่อตรวจสอบย้อนหลังได้ว่าคิวนี้ใครเป็นคนทำจริง
+    // แก้คิวที่บัญชีอื่นลงไว้ไม่ถาม (ดู requiresRecorderNote ใน helpers.js)
+    const editingOriginal = editingQueueId ? queues.find((q) => q.id === editingQueueId) : null;
+    const recorderNoteRequired = requiresRecorderNote(currentUser, editingOriginal);
+    if (recorderNoteRequired && !form.recordedNote?.trim()) {
       showToast("error", "บัญชีนี้ใช้ร่วมกันหลายคน กรุณาระบุชื่อผู้บันทึกจริงก่อนบันทึก");
       return;
     }
@@ -594,7 +597,11 @@ export default function App() {
     const useServerCreate = !editingQueueId && shouldUseServerQueueCreate(currentUser, submitForm);
     try {
       if (editingQueueId) {
-        await updateQueue(editingQueueId, submitForm);
+        // ชื่อผู้บันทึกจริงเป็นของคิว ไม่ใช่ของคนที่เปิดฟอร์ม — คนที่ไม่มีสิทธิ์แก้ช่องนี้
+        // (ดู requiresRecorderNote) ต้องส่งค่าเดิมกลับไปเสมอ ไม่ใช่ค่าว่างจากฟอร์ม
+        await updateQueue(editingQueueId, recorderNoteRequired
+          ? submitForm
+          : { ...submitForm, recordedNote: editingOriginal?.recordedNote || "" });
         showToast(
           revertedToWaitingQueue ? "error" : "success",
           revertedToWaitingQueue
@@ -1541,7 +1548,7 @@ export default function App() {
                 onSubmitBooking={async (bookingForm) => {
                   // บัญชีผู้จัดการสาขาใช้ร่วมกันหลายคนหน้าร้าน — กันเผื่อ (ปุ่มฝั่ง UI
                   // ก็ disabled ไว้แล้ว) กติกาเดียวกับหน้าบันทึกคิว ดู handleBookingSubmit
-                  if (currentUser?.role === "branch_manager" && !bookingForm.recordedNote?.trim()) {
+                  if (requiresRecorderNote(currentUser, null) && !bookingForm.recordedNote?.trim()) {
                     showToast("error", "บัญชีนี้ใช้ร่วมกันหลายคน กรุณาระบุชื่อผู้บันทึกจริงก่อนบันทึก");
                     return false;
                   }
