@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { CUSTOMER_TYPES, ROOM_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
-import { WORK_BLOCKS, blockToTime, formatRecorderLabel, formatThaiDate, getEmptyBookingForm, getTodayStr, isActiveQueueStatus } from "../utils/helpers";
+import { WORK_BLOCKS, blockToTime, formatRecorderLabel, formatThaiDate, getEmptyBookingForm, getTodayStr, isActiveQueueStatus, requiresRecorderNote } from "../utils/helpers";
 import { proceduresForRoom, isRoomConfigured, roomLockLabel } from "../utils/roomProcedures";
 import { areasForProcedure, durationFromAreas, keepValidAreaIds } from "../utils/procedureAreas";
 import SmartParseBox from "../components/SmartParseBox";
@@ -48,6 +48,9 @@ export default function BookingPage({
     setWaitingQueueToggleAllowed(!editingQueueId || form.status === "waiting_queue");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingQueueId]);
+  // ช่อง "ชื่อผู้บันทึกจริง" — ขึ้นเฉพาะคิวที่บัญชีนี้เป็นเจ้าของ (ลงใหม่ หรือแก้ของตัวเอง)
+  const editingOriginal = editingQueueId ? queues.find((q) => q.id === editingQueueId) : null;
+  const showRecorderNote = requiresRecorderNote(currentUser, editingOriginal);
   const { isSaving: isBookingSaving, run: runBookingSubmit } = useSubmissionLock();
   const { isSaving: isQuickPromoSaving, run: runQuickPromoSave } = useSubmissionLock();
   // Rooms for selected branch
@@ -344,9 +347,11 @@ export default function BookingPage({
             </div>
 
             {/* บัญชีผู้จัดการสาขาใช้ร่วมกันหลายคนหน้าร้าน — บังคับพิมพ์ชื่อผู้บันทึกจริง
-                ทุกครั้ง (เห็นเฉพาะบทบาทนี้ บัญชีอื่นไม่มีช่องนี้ ไม่มีอะไรเปลี่ยน) ค่านี้
-                ไม่กระทบผู้ได้ค่าคอม/สถิติ — ยังนับรวมเป็นบัญชีผู้จัดการเหมือนเดิมทุกจุด */}
-            {currentUser?.role === "branch_manager" && (
+                ตอนลงคิวใหม่ และตอนแก้คิวที่บัญชีตัวเองลงไว้เอง (เห็นเฉพาะบทบาทนี้ บัญชีอื่น
+                ไม่มีช่องนี้ ไม่มีอะไรเปลี่ยน) ค่านี้ไม่กระทบผู้ได้ค่าคอม/สถิติ — ยังนับรวม
+                เป็นบัญชีผู้จัดการเหมือนเดิมทุกจุด
+                แก้คิวที่บัญชีอื่นลงไว้จะไม่มีช่องนี้ และชื่อเดิมบนคิวไม่ถูกเขียนทับ */}
+            {showRecorderNote && (
               <div className="form-group full">
                 <label className="form-label">
                   <span className="req">*</span> ชื่อผู้บันทึกจริง

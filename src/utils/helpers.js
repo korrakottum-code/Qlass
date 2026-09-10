@@ -106,6 +106,19 @@ export function formatRecorderLabel(recorder, note) {
   return trimmedNote ? `${trimmedNote}(${base})` : base;
 }
 
+// ต้องพิมพ์ "ชื่อผู้บันทึกจริง" ไหม — เฉพาะบัญชีผู้จัดการสาขา (บัญชีเดียวใช้ร่วมกันหลายคน
+// หน้าร้าน) และเฉพาะคิวที่บัญชีนั้นเป็นเจ้าของ: ลงคิวใหม่ หรือแก้คิวที่บัญชีตัวเองลงไว้เอง
+//
+// แก้คิวที่บัญชีอื่นลงไว้ต้องไม่ถาม และต้องไม่เขียนทับชื่อเดิม: หน้าร้านเปิดคิวที่แอดมิน
+// ลงมาให้แล้วกดปิดเป็น "เสร็จแล้ว" เป็นงานประจำวัน ตอนบังคับกรอกทุกครั้ง ชื่อคนกดปิด
+// จะไปเกาะคิวของแอดมิน แล้วช่องผู้บันทึกขึ้นเป็น "เอมมี่(ยอน)" ซึ่งอ่านแล้วเหมือนเอมมี่
+// ลงคิวด้วยบัญชียอน ทั้งที่ยอนเป็นคนลงคิว เอมมี่แค่มาแก้ทีหลัง (เจอจริง 10 ก.ย. 2569)
+export function requiresRecorderNote(currentUser, originalQueue) {
+  if (currentUser?.role !== "branch_manager") return false;
+  if (!originalQueue) return true;
+  return originalQueue.recordedBy === currentUser.id;
+}
+
 export function getCustomerBadgeClass(type) {
   if (type === "new") return "badge-new";
   if (type === "old") return "badge-old";

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed, roleAtLeast } from "../utils/helpers";
+import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed, roleAtLeast, requiresRecorderNote } from "../utils/helpers";
 import { CUSTOMER_TYPES } from "../utils/constants";
 import { getBedSwitchState } from "../utils/bedSwitch";
 import HnLookup from "../components/HnLookup";
@@ -657,9 +657,10 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                 </div>
 
                 {/* บัญชีผู้จัดการสาขาใช้ร่วมกันหลายคนหน้าร้าน — บังคับพิมพ์ชื่อผู้บันทึกจริง
-                    ทุกครั้ง กติกาเดียวกับหน้าบันทึกคิว (ดู BookingPage.jsx) ไม่กระทบ
-                    ผู้ได้ค่าคอม/สถิติ — recordedBy ยังเป็นบัญชีผู้จัดการเหมือนเดิม */}
-                {currentUser?.role === "branch_manager" && (
+                    กติกาเดียวกับหน้าบันทึกคิว (ดู BookingPage.jsx) ป๊อปอัปนี้สร้างคิวใหม่
+                    เสมอ จึงถามทุกครั้ง ไม่กระทบผู้ได้ค่าคอม/สถิติ — recordedBy ยังเป็น
+                    บัญชีผู้จัดการเหมือนเดิม */}
+                {requiresRecorderNote(currentUser, null) && (
                   <div>
                     <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>
                       ชื่อผู้บันทึกจริง * — บัญชีนี้ใช้ร่วมกันหลายคน
@@ -817,7 +818,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                 <button
                   className="btn btn-primary"
                   disabled={saving || !bookingForm.name.trim() || !bookingForm.phone.trim()
-                    || (currentUser?.role === "branch_manager" && !bookingForm.recordedNote?.trim())}
+                    || (requiresRecorderNote(currentUser, null) && !bookingForm.recordedNote?.trim())}
                   onClick={async () => {
                     if (!onSubmitBooking) return;
                     const submission = await runBookingSubmit(() => onSubmitBooking(bookingForm));
