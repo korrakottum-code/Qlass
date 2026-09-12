@@ -196,17 +196,25 @@ function QueueDataTable({
 //
 // ส่วนคนที่อยู่นอกช่วง ยังบอกจำนวนไว้ในแท็บและกดกางดูได้ — คนที่รอมาหลายอาทิตย์
 // จะได้ไม่หายไปจากทั้งหน้าเพียงเพราะเปิดดูอีกเดือน
-function WaitingQueueBlock({ inRange, outside, showAll, onToggleShowAll, tableProps }) {
-  const items = showAll ? [...inRange, ...outside].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)) : inRange;
+function WaitingQueueBlock({ inRange, earlier, showAll, searching, onToggleShowAll, tableProps }) {
+  const items = showAll ? [...inRange, ...earlier].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)) : inRange;
   return (
     <>
-      {outside.length > 0 && (
+      {searching && inRange.length > 0 && (
+        <div style={{
+          padding: "8px 14px", borderBottom: "1px solid var(--border)",
+          fontSize: 12, fontWeight: 600, color: "var(--text2)",
+        }}>
+          🔍 กำลังค้นหา — แสดงคิวรอทุกช่วงวันที่ ไม่จำกัดเฉพาะวันที่ที่เลือก
+        </div>
+      )}
+      {!searching && earlier.length > 0 && (
         <div style={{
           display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
           padding: "8px 14px", borderBottom: "1px solid var(--border)",
           fontSize: 12, fontWeight: 600, color: "var(--text2)",
         }}>
-          <span>⏳ ยังมีคนรออยู่นอกช่วงวันที่นี้อีก {outside.length} คน</span>
+          <span>⏳ ยังมีคนรอค้างมาจากก่อนช่วงวันที่นี้อีก {earlier.length} คน</span>
           <button
             type="button"
             onClick={onToggleShowAll}
@@ -326,16 +334,26 @@ export default function QueueTablePage({
       .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   }, [queues, qfBranch, qfRecordedBy, qfStatus, matchesSearch, needsBranch]);
 
+  // ค้นหา = ตามหาคน ไม่ใช่ดูเดือน — พิมพ์ชื่อแล้วต้องเจอไม่ว่าคนนั้นจะรออยู่ของเดือนไหน
+  const searchingWaiting = !!qfSearch.trim();
+
   const waitingByBranch = useMemo(() => {
     const map = {};
     waitingQueues.forEach((q) => {
       const bId = q.branchId || "__none__";
-      if (!map[bId]) map[bId] = { inRange: [], outside: [] };
-      const inRange = q.date && q.date >= rangeStart && q.date <= rangeEnd;
-      map[bId][inRange ? "inRange" : "outside"].push(q);
+      if (!map[bId]) map[bId] = { inRange: [], earlier: [] };
+      if (searchingWaiting) { map[bId].inRange.push(q); return; }
+      if (q.date && q.date >= rangeStart && q.date <= rangeEnd) {
+        map[bId].inRange.push(q);
+      } else if (!q.date || q.date < rangeStart) {
+        // ค้างมาจากก่อนช่วงที่เลือก — ยังรออยู่จริง บอกจำนวนไว้แล้วกดกางดูได้
+        map[bId].earlier.push(q);
+      }
+      // ลงคิวไว้หลังช่วงที่เลือก = ของเดือนถัดไป ไม่ใช่ของช่วงนี้ — กดดูเดือนที่แล้ว
+      // แล้วคิวที่จองไว้เดือนนี้ต้องไม่โผล่มาปน จึงไม่นับและไม่แสดงเลย
     });
     return map;
-  }, [waitingQueues, rangeStart, rangeEnd]);
+  }, [waitingQueues, rangeStart, rangeEnd, searchingWaiting]);
 
   // ยอดคิวรอที่ "อยู่ในช่วงวันที่ที่เลือก" รวมทุกสาขา — ใช้กับบรรทัดสรุปล่างสุด
   const waitingInRangeTotal = useMemo(
@@ -563,10 +581,10 @@ export default function QueueTablePage({
           const totalCount = branchRooms.reduce((sum, r) => sum + r.items.filter(q => q.status !== "rescheduled_in").length, 0);
           const branchWaitingCount = waitingByBranch[branchId]?.inRange.length || 0;
           const activeTab = activeRoomTabByBranch[branchId] ?? ALL_ROOMS_TAB;
-          const branchWaiting = waitingByBranch[branchId] || { inRange: [], outside: [] };
+          const branchWaiting = waitingByBranch[branchId] || { inRange: [], earlier: [] };
           // ตัวเลขที่โชว์ = เฉพาะในช่วงวันที่ที่เลือก ส่วนคนนอกช่วงมีแท็บให้กดเข้าไปดูได้
           const waitingInRange = branchWaiting.inRange.length;
-          const waitingTabVisible = waitingInRange > 0 || branchWaiting.outside.length > 0;
+          const waitingTabVisible = waitingInRange > 0 || branchWaiting.earlier.length > 0;
           const showAllWaiting = !!waitingShowAllByBranch[branchId];
           const toggleShowAllWaiting = () => setWaitingShowAllByBranch((prev) => ({ ...prev, [branchId]: !showAllWaiting }));
           const onWaitingTab = activeTab === WAITING_TAB && waitingTabVisible;
@@ -630,7 +648,8 @@ export default function QueueTablePage({
                     </div>
                     <WaitingQueueBlock
                       inRange={branchWaiting.inRange}
-                      outside={branchWaiting.outside}
+                      earlier={branchWaiting.earlier}
+                      searching={searchingWaiting}
                       showAll={showAllWaiting}
                       onToggleShowAll={toggleShowAllWaiting}
                       tableProps={tableProps}
@@ -766,7 +785,8 @@ export default function QueueTablePage({
                   {onWaitingTab ? (
                     <WaitingQueueBlock
                       inRange={branchWaiting.inRange}
-                      outside={branchWaiting.outside}
+                      earlier={branchWaiting.earlier}
+                      searching={searchingWaiting}
                       showAll={showAllWaiting}
                       onToggleShowAll={toggleShowAllWaiting}
                       tableProps={tableProps}
