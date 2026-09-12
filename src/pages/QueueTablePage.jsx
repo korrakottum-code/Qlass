@@ -303,6 +303,9 @@ export default function QueueTablePage({
   // เก็บผลค้นหาคู่กับ "คำที่ค้น" เสมอ — ถ้าเก็บแต่ผล พอผู้ใช้พิมพ์คำใหม่ ผลของคำเก่าจะ
   // ค้างโชว์อยู่ชั่วครู่ ซึ่งอันตรายมากในหน้านี้: หน้าร้านอาจอ่านผลของคนอื่นแล้วตัดสินใจผิด
   const [globalSearch, setGlobalSearch] = useState({ term: "", rows: [], status: "idle" });
+  // คิวที่ผู้ใช้เพิ่งลบไป — ผลค้นหามาจากคนละก้อนกับ state หลัก ถ้าไม่จำไว้ แถวที่ลบแล้ว
+  // จะยังค้างอยู่ในผลค้นหาจนกว่าจะค้นใหม่ แล้วหน้าร้านจะเข้าใจว่าลบไม่สำเร็จ
+  const [deletedInSearch, setDeletedInSearch] = useState(() => new Set());
   const searchTerm = appliedSearch;
   const searching = isSearchable(searchTerm);
   const resultsFresh = globalSearch.term === searchTerm;
@@ -523,17 +526,26 @@ export default function QueueTablePage({
       byId.set(q.id, q);
     }
     for (const q of queues) if (matchesSearch(q)) byId.set(q.id, q);
+    for (const id of deletedInSearch) byId.delete(id);
     return Array.from(byId.values()).sort((a, b) => {
       if (a.date !== b.date) return (b.date || "").localeCompare(a.date || "");
       return (a.timeBlock ?? 0) - (b.timeBlock ?? 0);
     });
-  }, [searching, resultsFresh, globalSearch.rows, queues, matchesSearch, branches]);
+  }, [searching, resultsFresh, globalSearch.rows, queues, matchesSearch, branches, deletedInSearch]);
 
   const searchItems = useMemo(() => searchResults.map((q) => {
     const branch = branches.find((b) => b.id === q.branchId);
     const room = rooms.find((r) => r.id === q.roomId);
     return { ...q, __roomName: `${branch?.name || "ไม่ระบุสาขา"}${room ? ` · ${room.name}` : ""}` };
   }), [searchResults, branches, rooms]);
+
+  // ลบล้มเหลว = แถวยังอยู่ใน DB จริง ห้ามซ่อนจากผลค้นหา (App แจ้ง error ให้เองแล้ว)
+  function handleDelete(queue) {
+    setDeleteConfirm(null);
+    Promise.resolve(onDelete(queue.id, queue))
+      .then(() => setDeletedInSearch((prev) => new Set(prev).add(queue.id)))
+      .catch(() => {});
+  }
 
   // กดแล้วพาไปดูตารางของวันนั้น สาขานั้น แล้วล้างคำค้นทิ้ง — ปิดวงจร "เจอแล้วไปดูต่อ"
   function jumpToQueue(q) {
@@ -603,8 +615,10 @@ export default function QueueTablePage({
         </div>
       </div>
 
+      {/* ชิปสรุปสถานะ / แบนเนอร์เตือน — ทั้งหมดผูกกับช่วงวันที่ที่เลือก ซึ่งตอนค้นหาไม่ได้ใช้
+          ปล่อยไว้จะอ่านปนกัน เห็นเลขของช่วงวันที่แต่ตารางข้างล่างเป็นผลค้นหาทั้งระบบ */}
       {/* Status summary chips */}
-      {Object.keys(statusStats).length > 0 && (
+      {!searching && Object.keys(statusStats).length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "nowrap", overflowX: "auto", marginBottom: 12, paddingBottom: 2 }}>
           {TABLE_STATUSES.filter((s) => statusStats[s.value]).map((s) => (
             <button
@@ -631,7 +645,7 @@ export default function QueueTablePage({
         </div>
       )}
 
-      {overdueCount > 0 && (
+      {!searching && overdueCount > 0 && (
         <div style={{
           display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
           padding: "8px 14px", borderRadius: "var(--radius-sm)",
@@ -642,7 +656,7 @@ export default function QueueTablePage({
         </div>
       )}
 
-      {!needsBranch && filteredQueues.length > HEAVY_ROW_WARNING && (
+      {!searching && !needsBranch && filteredQueues.length > HEAVY_ROW_WARNING && (
         <div style={{
           display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
           padding: "8px 14px", borderRadius: "var(--radius-sm)",
@@ -661,7 +675,7 @@ export default function QueueTablePage({
             padding: "8px 14px", borderBottom: "1px solid var(--border)",
             fontSize: 12, fontWeight: 700, color: "var(--text2)",
           }}>
-            <span>🔍 ผลค้นหา "{searchTerm}" — ค้นทั้งระบบ ทุกวัน ทุกสาขา ไม่สนช่วงวันที่ด้านบน</span>
+            <span>🔍 ผลค้นหา "{searchTerm}" — ค้นทั้งระบบ ทุกวัน ทุกสาขา ทุกสถานะ (ตัวกรองด้านบนไม่ถูกใช้ตอนค้นหา)</span>
             {/* ยังพิมพ์ไม่หยุด = ที่เห็นอยู่ยังเป็นผลของคำก่อนหน้า ต้องบอก ไม่ใช่ปล่อยให้อ่านผิดคน */}
             {searchPending && (
               <span style={{ fontWeight: 600, color: "var(--text3)" }}>⏳ กำลังพิมพ์...</span>
@@ -986,8 +1000,7 @@ export default function QueueTablePage({
               onChange={(e) => setDeleteInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && deleteInput.trim() === deleteConfirm.queue.name.trim()) {
-                  onDelete(deleteConfirm.queue.id, deleteConfirm.queue);
-                  setDeleteConfirm(null);
+                  handleDelete(deleteConfirm.queue);
                 }
               }}
               placeholder="พิมพ์ชื่อลูกค้า..."
@@ -998,7 +1011,7 @@ export default function QueueTablePage({
               <button
                 className="btn btn-danger"
                 disabled={deleteInput.trim() !== deleteConfirm.queue.name.trim()}
-                onClick={() => { onDelete(deleteConfirm.queue.id, deleteConfirm.queue); setDeleteConfirm(null); }}
+                onClick={() => handleDelete(deleteConfirm.queue)}
               >ลบ</button>
             </div>
           </div>

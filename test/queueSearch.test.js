@@ -115,3 +115,23 @@ test("ยังพิมพ์ไม่หยุด ต้องบอกว่�
   assert.match(page, /const searchPending = qfSearch\.trim\(\) !== appliedSearch;/);
   assert.match(page, /กำลังพิมพ์/);
 });
+
+test("ลบคิวจากผลค้นหาแล้วแถวต้องหายทันที", () => {
+  // ผลค้นหามาจากคนละก้อนกับ state หลัก ถ้าไม่จำไว้ว่าลบอะไรไป แถวที่ลบแล้วจะยังค้างอยู่
+  // จนกว่าจะค้นใหม่ แล้วหน้าร้านจะเข้าใจว่าลบไม่สำเร็จ แล้วกดลบซ้ำ
+  assert.match(page, /const \[deletedInSearch, setDeletedInSearch\]/);
+  assert.match(page, /for \(const id of deletedInSearch\) byId\.delete\(id\);/);
+});
+
+test("ลบไม่สำเร็จต้องไม่ซ่อนแถว", () => {
+  // แถวยังอยู่ใน DB จริง ซ่อนไปแล้วหน้าร้านจะเข้าใจว่าลบสำเร็จ
+  assert.match(page, /\.then\(\(\) => setDeletedInSearch/);
+  assert.match(page, /\.catch\(\(\) => \{\}\)/);
+});
+
+test("ตอนค้นหาต้องซ่อนตัวเลขที่ผูกกับช่วงวันที่", () => {
+  // ชิปสรุปสถานะและแบนเนอร์เตือนนับตามช่วงวันที่ ซึ่งตอนค้นหาไม่ได้ใช้ — โชว์ไว้จะอ่านปนกัน
+  assert.match(page, /\{!searching && Object\.keys\(statusStats\)\.length > 0 && \(/);
+  assert.match(page, /\{!searching && overdueCount > 0 && \(/);
+  assert.match(page, /\{!searching && !needsBranch && filteredQueues\.length > HEAVY_ROW_WARNING && \(/);
+});
