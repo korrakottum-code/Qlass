@@ -1340,14 +1340,22 @@ export default function App() {
     return <LoginScreen staff={staff} onLogin={handleLogin} supabaseError={supabaseError} serverSessionEnabled={useServerSession} />;
   }
 
+  // เดือนปัจจุบันตามเวลาไทย ("YYYY-MM") — ใช้ร่วมกันทั้งสองตัวเลขข้างเมนู
+  const thisMonthPrefix = getTodayStr().slice(0, 7);
+
   return (
     <div className="app">
       <Sidebar
         currentPage={page}
         onNavigate={navigateTo}
         branchCount={filteredBranches.length}
-        queueCount={filteredQueues.filter(q => (q.status || "pending") !== "waiting_queue" && q.date?.startsWith(new Date().toISOString().slice(0, 7)) && ["new", "old"].includes(q.customerType)).length}
-        waitingQueueCount={filteredQueues.filter(q => (q.status || "pending") === "waiting_queue").length}
+        // ตัวเลขข้างเมนูทั้งสองอันนับ "เดือนนี้" เหมือนกัน จะได้อ่านเทียบกันได้
+        // ใช้ getTodayStr() (เวลาไทย) ไม่ใช่ toISOString() ที่เป็น UTC — ต้นเดือนก่อน 07:00
+        // ตามเวลาไทย UTC ยังเป็นเดือนก่อน ตัวเลขจะเพี้ยนไปทั้งวันโดยไม่มีใครรู้
+        queueCount={filteredQueues.filter(q => (q.status || "pending") !== "waiting_queue" && q.date?.startsWith(thisMonthPrefix) && ["new", "old"].includes(q.customerType)).length}
+        // คิวรอทั้งก้อนถูกโหลดมาครบตั้งแต่ #180 (รวมของเก่าหลายเดือน) — ตัวเลขตรงนี้จงใจ
+        // นับเฉพาะเดือนนี้ ไม่ใช่ยอดค้างทั้งหมด ส่วนยอดค้างทั้งหมดดูได้ในหน้าคิวรอ/ตารางคิว
+        waitingQueueCount={filteredQueues.filter(q => (q.status || "pending") === "waiting_queue" && q.date?.startsWith(thisMonthPrefix)).length}
         currentUser={currentUser}
         onLogout={handleLogout}
         collapsed={sidebarCollapsed}
