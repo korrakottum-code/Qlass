@@ -13,10 +13,18 @@ test("แยกคำ ตัดช่องว่างซ้ำและหั�
   assert.deepEqual(searchWords("   "), []);
 });
 
-test("ถอดอักขระที่ทำให้คำสั่งค้นหาพัง", () => {
-  // , และ ( ) เป็นตัวคั่นของ PostgREST ส่วน % _ \\ เป็น wildcard ของ ilike
+test("ถอดอักขระที่ทำให้คำสั่งค้นหาพังหรือค้นมั่ว", () => {
+  // , และ ( ) เป็นตัวคั่นของ PostgREST, * % _ เป็น wildcard ของ ilike, " ใช้ครอบค่า
   assert.deepEqual(searchWords("a,b(c)d"), ["a", "b", "c", "d"]);
   assert.deepEqual(searchWords("a%b_c\\d"), ["a", "b", "c", "d"]);
+  // พิมพ์ ก*ข แล้วเคยได้ "สมปรารถนา ปทักขินัง" เพราะ * กลายเป็นไวลด์การ์ด
+  assert.deepEqual(searchWords("ก*ข"), ["ก", "ข"]);
+  assert.deepEqual(searchWords('ก"ข'), ["ก", "ข"]);
+});
+
+test("จุดในชื่อต้องไม่โดนถอด — คำนำหน้าอย่าง น.ส. ใช้ค้นได้จริง", () => {
+  assert.deepEqual(searchWords("น.ส. สุดารัตน์"), ["น.ส.", "สุดารัตน์"]);
+  assert.equal(matchesQueueSearch({ name: "น.ส.กนกวรรณ บุญญวัตร", phone: "" }, "น.ส."), true);
 });
 
 test("จำกัดจำนวนคำ กันคนวางข้อความยาวลงช่องค้นหา", () => {
