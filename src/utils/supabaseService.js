@@ -1057,6 +1057,28 @@ export const getAllQueues = fetchQueues;
 
 // ─── ดึงคิวเฉพาะห้อง+วัน (สำหรับเช็ค conflict จาก DB สด ก่อน save) ───
 // query เล็กมาก (ห้องเดียว วันเดียว) เร็ว ไม่กระทบ performance
+// คิวรอทั้งหมดที่ยังค้างอยู่ ไม่จำกัดวันที่
+//
+// คิวรอไม่มี "วันนัด" จริง — คอลัมน์ date คือวันที่ลงคิวไว้เฉย ๆ คนที่ลงคิวรอไว้เมื่อเดือน
+// ที่แล้วจึงอยู่นอกหน้าต่าง 30 วันที่แอปโหลดตอนเปิด แล้วค้นหาในหน้าตารางคิว/คิวรอไม่เจอ
+// ทั้งที่ยังรออยู่จริง — ตารางนี้เล็ก (หลักร้อยแถว) โหลดทั้งก้อนได้ ไม่ต้องแบ่งช่วงวัน
+export async function fetchWaitingQueues() {
+  const PAGE_SIZE = 1000;
+  const rows = [];
+  for (let page = 0; ; page += 1) {
+    const { data, error } = await supabase
+      .from("queues").select("*")
+      .eq("status", "waiting_queue")
+      .order("id", { ascending: true })
+      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+    if (error) throw error;
+    const batch = data || [];
+    rows.push(...batch);
+    if (batch.length < PAGE_SIZE) break;
+  }
+  return rows.map(mapQueueRow);
+}
+
 export async function fetchQueuesForRoomDate(roomId, date) {
   if (!roomId || !date) return [];
   const { data, error } = await supabase

@@ -1,0 +1,92 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+// คิวรอต้องค้นหาเจอในหน้าตารางคิว
+//
+// คิวรอไม่มี "วันนัด" — คอลัมน์ date คือวันที่ลงคิวไว้เฉย ๆ คนที่ลงคิวรอไว้เมื่อเดือนก่อน
+// จึงอยู่นอกหน้าต่าง 30 วันที่แอปโหลดตอนเปิด และเดิมหน้าตารางคิวก็กรองคิวรอทิ้งทั้งหมด
+// ผลคือลูกค้าที่ยังรออยู่จริงหาไม่เจอเลยทั้งหน้า (เจ้าของแจ้ง 11 ก.ย. 2569)
+
+const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
+const page = read("../src/pages/QueueTablePage.jsx");
+const app = read("../src/App.jsx");
+const service = read("../src/utils/supabaseService.js");
+
+test("ดึงคิวรอต้องไม่ผูกกับช่วงวันที่", () => {
+  const start = service.indexOf("export async function fetchWaitingQueues");
+  assert.ok(start > 0, "หา fetchWaitingQueues ไม่เจอ");
+  const fn = service.slice(start, service.indexOf("\n}", start));
+  assert.match(fn, /\.eq\("status", "waiting_queue"\)/);
+  assert.ok(!/gte\("date"|lte\("date"/.test(fn),
+    "ห้ามกรองวันที่ ไม่งั้นคิวรอเก่ากว่า 30 วันจะยังหายเหมือนเดิม");
+  assert.match(fn, /range\(page \* PAGE_SIZE/, "ต้องแบ่งหน้า ไม่ใช่เชื่อ limit ปริยายของ Supabase");
+});
+
+test("โหลดคิวรอหลังก้อนหลักลงแล้ว ไม่ใช่พร้อมกัน", () => {
+  // setQueues ของการโหลดหลักเป็นการเขียนทับทั้งก้อน ยิงพร้อมกันแล้วคิวรอที่ merge ไว้จะโดนล้าง
+  assert.match(app, /if \(isDataReady\) loadWaitingBacklog\(\);/);
+});
+
+test("โหลดคิวรอต้องไม่ mark ว่าโหลดช่วงวันที่นั้นครบแล้ว", () => {
+  // ก้อนนี้เลือกด้วยสถานะ ไม่ใช่ช่วงวัน — mark แล้วคิวสถานะอื่นของวันเดียวกันจะไม่ถูกโหลดตามมา
+  const start = app.indexOf("const loadWaitingBacklog");
+  assert.ok(start > 0, "หา loadWaitingBacklog ไม่เจอ");
+  const fn = app.slice(start, app.indexOf("\n  }, [mergeFetchedQueues]);", start));
+  assert.ok(!/loadedRangesRef/.test(fn));
+  assert.match(fn, /mergeFetchedQueues\(await fetchWaitingQueues\(\), deletedIds\)/);
+});
+
+test("รายการคิวรอในหน้าตารางคิวต้องไม่ถูกกรองด้วยช่วงวันที่", () => {
+  const start = page.indexOf("const waitingQueues = useMemo");
+  assert.ok(start > 0, "หา waitingQueues ไม่เจอ");
+  const memo = page.slice(start, page.indexOf("const waitingByBranch", start));
+  assert.match(memo, /status \|\| "pending"\) === "waiting_queue"/);
+  assert.match(memo, /\.filter\(matchesSearch\)/, "ต้องค้นหาได้ ไม่งั้นแก้ไม่ตรงปัญหา");
+  assert.ok(!/rangeStart|rangeEnd/.test(memo),
+    "กรองวันที่ตรงนี้แล้วจะนับไม่ได้ว่ามีคนค้างอยู่ก่อนหน้ากี่คน");
+});
+
+test("กดดูเดือนที่แล้ว คิวรอที่จองไว้เดือนนี้ต้องไม่โผล่มาปน", () => {
+  // ของที่ลงไว้หลังช่วงที่เลือกเป็นของเดือนถัดไป ไม่ใช่ของช่วงที่กำลังดู ต้องไม่นับและไม่แสดง
+  assert.match(page, /q\.date >= rangeStart && q\.date <= rangeEnd/);
+  assert.match(page, /else if \(!q\.date \|\| q\.date < rangeStart\)/);
+  assert.ok(!/"inRange" : "outside"/.test(page),
+    "ห้ามเหมารวมทุกอย่างที่อยู่นอกช่วงเป็นก้อนเดียว ของเดือนถัดไปต้องหลุดออกไปเลย");
+});
+
+test("ค้างมาจากก่อนช่วงที่เลือก ยังบอกจำนวนและกดกางดูได้", () => {
+  assert.match(page, /ยังมีคนรอค้างมาจากก่อนช่วงวันที่นี้อีก \{earlier\.length\} คน/);
+  assert.match(page, /ดูคนที่รอทั้งหมด/, "ต้องกางดูคนที่ค้างมาก่อนได้ ไม่ใช่บอกจำนวนเฉย ๆ");
+});
+
+test("พิมพ์ค้นหาแล้วต้องเจอทุกช่วงวันที่", () => {
+  // ค้นหา = ตามหาคน ไม่ใช่ดูเดือน — ถ้ายังผูกช่วงวันที่ ปัญหาเดิม (หาคนในคิวรอไม่เจอ) จะกลับมา
+  assert.match(page, /const searchingWaiting = !!qfSearch\.trim\(\);/);
+  assert.match(page, /if \(searchingWaiting\) \{ map\[bId\]\.inRange\.push\(q\); return; \}/);
+  assert.match(page, /แสดงคิวรอทุกช่วงวันที่ ไม่จำกัดเฉพาะวันที่ที่เลือก/);
+});
+
+test("ตัวเลขคิวรอทุกจุดต้องนับเฉพาะช่วงวันที่ที่เลือก", () => {
+  // เลื่อนไปดูเดือนหน้าแล้วตัวเลขยังเป็นยอดรวมทั้งก้อน = อ่านแล้วเข้าใจผิดว่าเดือนนั้นมีคนรอ
+  assert.match(page, /const waitingInRange = branchWaiting\.inRange\.length;/);
+  assert.match(page, /const branchWaitingCount = waitingByBranch\[branchId\]\?\.inRange\.length \|\| 0;/);
+  assert.match(page, /waitingInRangeTotal > 0 \? ` \+ คิวรอ \$\{waitingInRangeTotal\}`/);
+  assert.ok(!/waitingTotal/.test(page), "ห้ามเหลือยอดรวมข้ามช่วงไว้ที่ไหนอีก");
+});
+
+test("เปลี่ยนช่วงวันที่แล้วปุ่มกางต้องหุบกลับเอง", () => {
+  // ไม่หุบ = เลื่อนไปเดือนหน้าแล้วคนที่รอมาตั้งแต่เดือนก่อนโผล่ตามไปด้วย
+  assert.match(page, /useEffect\(\(\) => \{ setWaitingShowAllByBranch\(\{\}\); \}, \[rangeStart, rangeEnd\]\);/);
+});
+
+test("สาขาที่มีแต่คิวรอต้องยังโผล่ในหน้า", () => {
+  // ไม่งั้นแท็บคิวรอหายทั้งสาขา เพราะเดิมคัดสาขาจากคิวที่ลงห้อง/เวลาแล้วเท่านั้น
+  assert.match(page, /branches\s*\n?\s*\.filter\(\(b\) => branchMap\[b\.id\] \|\| waitingByBranch\[b\.id\]\)/);
+  assert.match(page, /filteredQueues\.length === 0 && waitingQueues\.length === 0/);
+});
+
+test("แถวคิวรอต้องบอกวันที่ลงคิว ไม่ใช่ช่องเวลาว่าง", () => {
+  assert.match(page, /waitingMode \? "ลงคิวเมื่อ" : "เวลา"/);
+  assert.match(page, /waitingMode\b[\s\S]{0,400}isoToLocalDateStr\(q\.createdAt\)/);
+});
