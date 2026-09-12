@@ -1,6 +1,12 @@
 // ─── Smart Text Parser + Learning Engine (v2 — เทพ edition) ───
 import { isProcedureAllowedInRoom } from "./roomProcedures";
 
+// วันที่ตามเวลาเครื่อง (เวลาไทยสำหรับหน้าร้าน) — ห้ามใช้ toISOString() ที่เป็น UTC
+// ไม่ import จาก helpers.js เพื่อให้ไฟล์นี้ยัง import ตรง ๆ ใน unit test ได้เหมือนเดิม
+function toLocalDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function buddhistToAD(y) {
   if (y < 100) y += 2500; // 69 → 2569
   if (y >= 2500) y -= 543; // BE → AD
@@ -157,21 +163,26 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
     }
   }
   // พรุ่งนี้ / มะรืน / วันนี้
+  //
+  // ต้องอ่านวันจากเวลาไทยเท่านั้น — เดิมใช้ toISOString() ซึ่งเป็น UTC (ไทย = UTC+7)
+  // แอดมินที่พิมพ์ข้อความหลังเที่ยงคืนถึงเจ็ดโมงเช้าจะได้วันย้อนหลังไป 1 วันเงียบ ๆ
+  // "วันนี้" กลายเป็นเมื่อวาน (ระบบบล็อกตอนบันทึกเพราะห้ามลงย้อนหลัง งงกันทั้งคู่)
+  // ส่วน "พรุ่งนี้" กลายเป็นวันนี้ ซึ่งบันทึกผ่าน = คิวลงผิดวันโดยไม่มีใครรู้
   if (!result.date) {
     const today = new Date();
     for (let i = 0; i < lines.length; i++) {
       if (/พรุ่งนี้|พรุ่ง/.test(lines[i])) {
         const d = new Date(today); d.setDate(d.getDate() + 1);
-        result.date = d.toISOString().split("T")[0];
+        result.date = toLocalDateStr(d);
         confidence.date = "high"; usedLines.add(i); break;
       }
       if (/มะรืน/.test(lines[i])) {
         const d = new Date(today); d.setDate(d.getDate() + 2);
-        result.date = d.toISOString().split("T")[0];
+        result.date = toLocalDateStr(d);
         confidence.date = "high"; usedLines.add(i); break;
       }
       if (/วันนี้/.test(lines[i])) {
-        result.date = today.toISOString().split("T")[0];
+        result.date = toLocalDateStr(today);
         confidence.date = "high"; usedLines.add(i); break;
       }
     }
