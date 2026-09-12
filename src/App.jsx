@@ -1167,7 +1167,18 @@ export default function App() {
 
   // ─── Delete helpers ───
   const deleteBranch = useCallback(async (id) => {
-    await deleteBranchDB(id);
+    try {
+      await deleteBranchDB(id);
+    } catch (error) {
+      // ฐานข้อมูลห้ามลบสาขาที่ยังมีคิว/ห้องอยู่ (migration 20260912150000) — เดิมลบตามทอด
+      // คิวทั้งสาขาหายด้วยปุ่มเดียว ตอนนี้โดนปฏิเสธ ต้องบอกเหตุผลให้ชัด ไม่ใช่เงียบไปเฉย ๆ
+      if (error?.code === "23503") {
+        showToast("error", "ลบสาขานี้ไม่ได้ — ยังมีคิวหรือห้องผูกอยู่ ต้องย้าย/ลบของพวกนั้นก่อน");
+        return;
+      }
+      showToast("error", "ลบสาขาไม่สำเร็จ กรุณาลองอีกครั้ง");
+      throw error;
+    }
     setBranches(prev => prev.filter(b => b.id !== id));
     showToast("success", "ลบสาขาแล้ว");
   }, [showToast]);
