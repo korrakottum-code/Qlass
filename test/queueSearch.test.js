@@ -97,3 +97,21 @@ test("ผลค้นหาต้องผูกกับคำที่ค้�
   assert.match(page, /const resultsFresh = globalSearch\.term === searchTerm;/);
   assert.match(page, /resultsFresh \? globalSearch\.rows : \[\]/);
 });
+
+test("ต้องรอให้พิมพ์นิ่งก่อน ไม่กรอง/ไม่ยิงหาใหม่ทุกตัวอักษร", () => {
+  // พิมพ์หนึ่งตัวอักษรแล้วคำนวณตารางใหม่ทั้งหน้า (คิวหลักพันแถว จัดกลุ่มตามสาขา/ห้อง/วัน)
+  // ทำให้ช่องพิมพ์รู้สึกค้าง — หน้าร้านแจ้งเข้ามา 12 ก.ย. 2569
+  assert.match(page, /const \[appliedSearch, setAppliedSearch\] = useState\(""\);/);
+  assert.match(page, /setTimeout\(\(\) => setAppliedSearch\(qfSearch\.trim\(\)\), SEARCH_DEBOUNCE_MS\)/);
+  assert.match(page, /const searchTerm = appliedSearch;/,
+    "ทุกอย่างที่หนักต้องอิงคำที่นิ่งแล้ว ไม่ใช่คำที่กำลังพิมพ์");
+});
+
+test("ตัวอักษรเดียวยังไม่กรองอะไร", () => {
+  assert.match(page, /if \(!isSearchable\(appliedSearch\)\) return true;/);
+});
+
+test("ยังพิมพ์ไม่หยุด ต้องบอกว่าผลที่เห็นยังไม่ใช่ของคำล่าสุด", () => {
+  assert.match(page, /const searchPending = qfSearch\.trim\(\) !== appliedSearch;/);
+  assert.match(page, /กำลังพิมพ์/);
+});

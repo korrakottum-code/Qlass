@@ -19,6 +19,8 @@ const PRESET_KEYS = ["today", "tomorrow", "yesterday", "last7", "thisWeek", "mon
 const MAX_DAYS_ALL_BRANCHES = 7;
 // เกินกี่แถวแล้วขึ้นเตือนให้แคบช่วงลง (เตือนอย่างเดียว ไม่ตัดข้อมูลทิ้ง)
 const HEAVY_ROW_WARNING = 1500;
+// รอให้พิมพ์นิ่งก่อนค่อยกรอง/ค้น — สั้นกว่านี้แล้วยังกระตุก ยาวกว่านี้แล้วรู้สึกว่าไม่ตอบสนอง
+const SEARCH_DEBOUNCE_MS = 300;
 
 function StatusBadge({ status }) {
   const s = QUEUE_STATUSES.find((x) => x.value === (status || "pending"));
@@ -286,21 +288,34 @@ export default function QueueTablePage({
   // พิมพ์ชื่อแล้วยิงหาทั้งฐานข้อมูล ไม่ผูกช่วงวันที่และไม่ผูกสาขา เพราะหน้าร้านพิมพ์ชื่อ
   // ตอนลูกค้ามายืนอยู่ตรงหน้า ไม่ได้รู้ว่าลูกค้าจองวันไหนสาขาไหนไว้ ถ้าค้นแค่ในช่วงที่
   // เปิดดูอยู่ ระบบจะตอบว่า "ยังไม่มีคิว" ทั้งที่มี แล้วหน้าร้านจะลงคิวใหม่ทับของเดิม
+  // ─── พิมพ์แล้วต้องไม่หน่วง ───
+  // qfSearch = สิ่งที่พิมพ์อยู่ (ช่องข้อความต้องตอบสนองทันทีทุกตัวอักษร)
+  // appliedSearch = คำที่ "นิ่งแล้ว" ใช้กับทุกอย่างที่หนัก — กรองตาราง จัดกลุ่ม และยิงหาในฐานข้อมูล
+  //
+  // เดิมใช้คำที่พิมพ์ตรง ๆ ทุกที่ พิมพ์หนึ่งตัวอักษรจึงคำนวณตารางใหม่ทั้งหน้า (คิวหลักพันแถว
+  // จัดกลุ่มตามสาขา/ห้อง/วัน ใหม่ทั้งหมด) พิมพ์เร็ว ๆ แล้วรู้สึกค้าง — ปัญหาที่หน้าร้านเจอ
+  const [appliedSearch, setAppliedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setAppliedSearch(qfSearch.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [qfSearch]);
+
   // เก็บผลค้นหาคู่กับ "คำที่ค้น" เสมอ — ถ้าเก็บแต่ผล พอผู้ใช้พิมพ์คำใหม่ ผลของคำเก่าจะ
   // ค้างโชว์อยู่ชั่วครู่ ซึ่งอันตรายมากในหน้านี้: หน้าร้านอาจอ่านผลของคนอื่นแล้วตัดสินใจผิด
   const [globalSearch, setGlobalSearch] = useState({ term: "", rows: [], status: "idle" });
-  const searchTerm = qfSearch.trim();
-  const searching = isSearchable(qfSearch);
+  const searchTerm = appliedSearch;
+  const searching = isSearchable(searchTerm);
   const resultsFresh = globalSearch.term === searchTerm;
   const searchStatus = resultsFresh ? globalSearch.status : "loading";
+  // พิมพ์ค้างอยู่ = ผลที่เห็นยังเป็นของคำก่อนหน้า ต้องบอกให้รู้ ไม่ใช่ปล่อยให้อ่านผลเก่า
+  const searchPending = qfSearch.trim() !== appliedSearch;
 
   useEffect(() => {
     if (!searching || !onSearchQueues) return undefined;
     let cancelled = false;
-    // หน่วงก่อนยิง — ไม่งั้นพิมพ์ชื่อหนึ่งชื่อยิง query สิบกว่ารอบ
-    const timer = setTimeout(async () => {
-      if (cancelled) return;
-      setGlobalSearch((prev) => ({ ...prev, status: "loading" }));
+    // ห่อด้วย timeout 0 เพื่อไม่ให้ setState วิ่งพร้อม effect (กัน cascading render)
+    const kick = setTimeout(async () => {
+      setGlobalSearch((prev) => (prev.status === "loading" ? prev : { ...prev, status: "loading" }));
       try {
         const rows = await onSearchQueues(searchTerm);
         if (!cancelled) setGlobalSearch({ term: searchTerm, rows: rows || [], status: "done" });
@@ -308,8 +323,8 @@ export default function QueueTablePage({
         console.error("global queue search failed:", error);
         if (!cancelled) setGlobalSearch({ term: searchTerm, rows: [], status: "error" });
       }
-    }, 400);
-    return () => { cancelled = true; clearTimeout(timer); };
+    }, 0);
+    return () => { cancelled = true; clearTimeout(kick); };
   }, [searchTerm, searching, onSearchQueues]);
 
   const presets = useMemo(() => pickDatePresets(PRESET_KEYS), []);
@@ -363,10 +378,12 @@ export default function QueueTablePage({
   }
 
   // จับคู่ทีละคำ ไม่ใช่ทั้งประโยคเป็นก้อนเดียว — ดูเหตุผลใน queueSearch.js
+  // ตัวอักษรเดียวยังไม่กรองอะไรเลย (ได้ครึ่งคลินิกอยู่ดี แถมทำให้ตารางคำนวณใหม่ฟรี ๆ)
   const matchesSearch = useCallback((q) => {
+    if (!isSearchable(appliedSearch)) return true;
     const recorder = staff?.find((x) => x.id === q.recordedBy);
-    return matchesQueueSearch(q, qfSearch, `${recorder?.nickname || ""} ${recorder?.name || ""}`);
-  }, [qfSearch, staff]);
+    return matchesQueueSearch(q, appliedSearch, `${recorder?.nickname || ""} ${recorder?.name || ""}`);
+  }, [appliedSearch, staff]);
 
   // ─── คิวรอ: ไม่กรองด้วยช่วงวันที่ตรงนี้ ───
   // คิวรอไม่มีวันนัด — คอลัมน์ date คือวันที่ลงคิวไว้เฉย ๆ กรองทิ้งตั้งแต่ตรงนี้แล้วจะนับไม่ได้
@@ -644,7 +661,11 @@ export default function QueueTablePage({
             padding: "8px 14px", borderBottom: "1px solid var(--border)",
             fontSize: 12, fontWeight: 700, color: "var(--text2)",
           }}>
-            <span>🔍 ผลค้นหา "{qfSearch.trim()}" — ค้นทั้งระบบ ทุกวัน ทุกสาขา ไม่สนช่วงวันที่ด้านบน</span>
+            <span>🔍 ผลค้นหา "{searchTerm}" — ค้นทั้งระบบ ทุกวัน ทุกสาขา ไม่สนช่วงวันที่ด้านบน</span>
+            {/* ยังพิมพ์ไม่หยุด = ที่เห็นอยู่ยังเป็นผลของคำก่อนหน้า ต้องบอก ไม่ใช่ปล่อยให้อ่านผิดคน */}
+            {searchPending && (
+              <span style={{ fontWeight: 600, color: "var(--text3)" }}>⏳ กำลังพิมพ์...</span>
+            )}
             <button
               type="button"
               onClick={() => setQfSearch("")}
@@ -680,7 +701,7 @@ export default function QueueTablePage({
                ทับของเดิม ต้องบอกให้ชัดว่าค้นครบทั้งระบบแล้วจริง ๆ ถึงจะกล้าลงใหม่ */
             <div className="empty">
               <div className="e-icon">🔍</div>
-              <p>ไม่พบ "{qfSearch.trim()}" ในระบบเลย</p>
+              <p>ไม่พบ "{searchTerm}" ในระบบเลย</p>
               <p style={{ fontSize: 12, color: "var(--text3)", marginTop: 6, lineHeight: 1.7 }}>
                 ค้นครบทุกวันและทุกสาขาแล้ว ไม่จำกัดเฉพาะช่วงวันที่ด้านบน<br />
                 ถ้าสะกดชื่อไม่ตรง ลองพิมพ์แค่ชื่อต้นหรือเบอร์โทรแทน
