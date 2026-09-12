@@ -191,20 +191,22 @@ function QueueDataTable({
 
 // เนื้อในของแท็บคิวรอ — ใช้ทั้งโหมดวันเดียว (เป็นแท็บ) และโหมดหลายวัน (เป็นการ์ดแยก)
 //
-// ค่าเริ่มต้นโชว์เฉพาะคิวรอที่ลงไว้ในช่วงวันที่ที่เลือก จะได้รู้ว่ารอมาตั้งแต่วันไหน
-// ส่วนที่ลงไว้ก่อนหน้านั้นยังนับให้เห็นเสมอ แล้วกดกางดูได้ — คนที่รอมาหลายอาทิตย์
-// จะได้ไม่หายไปจากทั้งหน้าเพียงเพราะเปิดดูวันนี้
-function WaitingQueueBlock({ inRange, earlier, showAll, onToggleShowAll, tableProps }) {
-  const items = showAll ? [...inRange, ...earlier].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)) : inRange;
+// ทุกตัวเลขบนหน้า (หัวข้อสาขา, แท็บ, บรรทัดสรุปล่างสุด) นับเฉพาะคิวรอในช่วงวันที่ที่เลือก
+// เลื่อนไปดูเดือนหน้าจึงเห็นเฉพาะคิวรอของเดือนนั้น ไม่ใช่ยอดรวมทั้งก้อนตามไปทุกช่วง
+//
+// ส่วนคนที่อยู่นอกช่วง ยังบอกจำนวนไว้ในแท็บและกดกางดูได้ — คนที่รอมาหลายอาทิตย์
+// จะได้ไม่หายไปจากทั้งหน้าเพียงเพราะเปิดดูอีกเดือน
+function WaitingQueueBlock({ inRange, outside, showAll, onToggleShowAll, tableProps }) {
+  const items = showAll ? [...inRange, ...outside].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)) : inRange;
   return (
     <>
-      {earlier.length > 0 && (
+      {outside.length > 0 && (
         <div style={{
           display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
           padding: "8px 14px", borderBottom: "1px solid var(--border)",
           fontSize: 12, fontWeight: 600, color: "var(--text2)",
         }}>
-          <span>⏳ ยังมีคนรออยู่ก่อนหน้าช่วงวันที่นี้อีก {earlier.length} คน</span>
+          <span>⏳ ยังมีคนรออยู่นอกช่วงวันที่นี้อีก {outside.length} คน</span>
           <button
             type="button"
             onClick={onToggleShowAll}
@@ -277,6 +279,10 @@ export default function QueueTablePage({
   // เลือกวันเก่ากว่า 30 วัน → ขอให้ App โหลดช่วงนั้น (ช่วงที่มีอยู่แล้วจะไม่ยิงอะไร)
   useEffect(() => { onRangeNeeded?.(rangeStart, rangeEnd); }, [rangeStart, rangeEnd, onRangeNeeded]);
 
+  // เปลี่ยนช่วงวันที่ = เริ่มดูรอบใหม่ ต้องหุบ "ดูคนที่รอทั้งหมด" กลับเสมอ ไม่งั้นเลื่อนไปเดือนหน้า
+  // แล้วคนที่รอมาตั้งแต่เดือนก่อนจะโผล่ตามไปด้วย ทั้งที่ตั้งใจดูเฉพาะเดือนนั้น
+  useEffect(() => { setWaitingShowAllByBranch({}); }, [rangeStart, rangeEnd]);
+
   function applyPreset(p) {
     setQfFrom(p.start);
     setQfTo(p.end);
@@ -324,12 +330,18 @@ export default function QueueTablePage({
     const map = {};
     waitingQueues.forEach((q) => {
       const bId = q.branchId || "__none__";
-      if (!map[bId]) map[bId] = { inRange: [], earlier: [] };
+      if (!map[bId]) map[bId] = { inRange: [], outside: [] };
       const inRange = q.date && q.date >= rangeStart && q.date <= rangeEnd;
-      map[bId][inRange ? "inRange" : "earlier"].push(q);
+      map[bId][inRange ? "inRange" : "outside"].push(q);
     });
     return map;
   }, [waitingQueues, rangeStart, rangeEnd]);
+
+  // ยอดคิวรอที่ "อยู่ในช่วงวันที่ที่เลือก" รวมทุกสาขา — ใช้กับบรรทัดสรุปล่างสุด
+  const waitingInRangeTotal = useMemo(
+    () => Object.values(waitingByBranch).reduce((sum, g) => sum + g.inRange.length, 0),
+    [waitingByBranch]
+  );
 
   const filteredQueues = useMemo(() => {
     if (needsBranch) return [];
@@ -549,13 +561,15 @@ export default function QueueTablePage({
       ) : (
         groupedData.map(({ branchId, branchName, rooms: branchRooms, days }) => {
           const totalCount = branchRooms.reduce((sum, r) => sum + r.items.filter(q => q.status !== "rescheduled_in").length, 0);
-          const branchWaitingCount = (waitingByBranch[branchId]?.inRange.length || 0) + (waitingByBranch[branchId]?.earlier.length || 0);
+          const branchWaitingCount = waitingByBranch[branchId]?.inRange.length || 0;
           const activeTab = activeRoomTabByBranch[branchId] ?? ALL_ROOMS_TAB;
-          const branchWaiting = waitingByBranch[branchId] || { inRange: [], earlier: [] };
-          const waitingTotal = branchWaiting.inRange.length + branchWaiting.earlier.length;
+          const branchWaiting = waitingByBranch[branchId] || { inRange: [], outside: [] };
+          // ตัวเลขที่โชว์ = เฉพาะในช่วงวันที่ที่เลือก ส่วนคนนอกช่วงมีแท็บให้กดเข้าไปดูได้
+          const waitingInRange = branchWaiting.inRange.length;
+          const waitingTabVisible = waitingInRange > 0 || branchWaiting.outside.length > 0;
           const showAllWaiting = !!waitingShowAllByBranch[branchId];
           const toggleShowAllWaiting = () => setWaitingShowAllByBranch((prev) => ({ ...prev, [branchId]: !showAllWaiting }));
-          const onWaitingTab = activeTab === WAITING_TAB && waitingTotal > 0;
+          const onWaitingTab = activeTab === WAITING_TAB && waitingTabVisible;
           const activeRoom = activeTab === ALL_ROOMS_TAB || activeTab === WAITING_TAB ? null : branchRooms.find((r) => r.roomId === activeTab);
           const showRoomCol = activeTab === ALL_ROOMS_TAB;
           // โหมดหลายวันไม่ใช้แท็บห้อง — ไม่ต้องเสียแรงรวม+เรียงทุกแถวทิ้ง
@@ -605,14 +619,18 @@ export default function QueueTablePage({
                 /* ── โหมดหลายวัน: แยกหัวข้อรายวัน ไม่ใช้แท็บห้อง (ห้องเดียวกันคนละวันต้องไม่ปนกัน) ── */
                 <>
                 {/* โหมดนี้ไม่มีแถบแท็บ คิวรอจึงมาเป็นการ์ดของตัวเองไว้บนสุด ไม่ใช่หายไปทั้งโหมด */}
-                {waitingTotal > 0 && (
+                {waitingTabVisible && (
                   <div className="card" style={{ marginBottom: 10 }}>
                     <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)", fontSize: 13, fontWeight: 700, color: "#b45309" }}>
-                      ⏳ คิวรอ <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--text3)", marginLeft: 4 }}>{waitingTotal}</span>
+                      ⏳ คิวรอ
+                      {/* ไม่มีในช่วงนี้ = ไม่ต้องโชว์เลข 0 บรรทัดใต้หัวข้อบอกอยู่แล้วว่ามีคนรอนอกช่วงกี่คน */}
+                      {waitingInRange > 0 && (
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--text3)", marginLeft: 4 }}>{waitingInRange}</span>
+                      )}
                     </div>
                     <WaitingQueueBlock
                       inRange={branchWaiting.inRange}
-                      earlier={branchWaiting.earlier}
+                      outside={branchWaiting.outside}
                       showAll={showAllWaiting}
                       onToggleShowAll={toggleShowAllWaiting}
                       tableProps={tableProps}
@@ -715,7 +733,7 @@ export default function QueueTablePage({
                       </span>
                     </button>
                   ))}
-                  {waitingTotal > 0 && (
+                  {waitingTabVisible && (
                     <button
                       type="button"
                       onClick={() => setActiveRoomTabByBranch((prev) => ({ ...prev, [branchId]: WAITING_TAB }))}
@@ -727,7 +745,10 @@ export default function QueueTablePage({
                       }}
                     >
                       ⏳ คิวรอ
-                      <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--text3)", marginLeft: 5 }}>{waitingTotal}</span>
+                      {/* ไม่มีในช่วงนี้ = ไม่ต้องโชว์เลข 0 ให้สะดุดตา แท็บยังอยู่ให้กดเข้าไปดูคนนอกช่วงได้ */}
+                      {waitingInRange > 0 && (
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--text3)", marginLeft: 5 }}>{waitingInRange}</span>
+                      )}
                     </button>
                   )}
                 </div>
@@ -745,7 +766,7 @@ export default function QueueTablePage({
                   {onWaitingTab ? (
                     <WaitingQueueBlock
                       inRange={branchWaiting.inRange}
-                      earlier={branchWaiting.earlier}
+                      outside={branchWaiting.outside}
                       showAll={showAllWaiting}
                       onToggleShowAll={toggleShowAllWaiting}
                       tableProps={tableProps}
@@ -767,7 +788,7 @@ export default function QueueTablePage({
       )}
 
       <div style={{ fontSize: 12, color: "var(--text3)", textAlign: "right", marginTop: 8 }}>
-        แสดง {filteredQueues.length} คิว{waitingQueues.length > 0 ? ` + คิวรอ ${waitingQueues.length}` : ""} • {rangeLabel}
+        แสดง {filteredQueues.length} คิว{waitingInRangeTotal > 0 ? ` + คิวรอ ${waitingInRangeTotal}` : ""} • {rangeLabel}
       </div>
 
       {/* ── Delete Confirm Modal ── */}

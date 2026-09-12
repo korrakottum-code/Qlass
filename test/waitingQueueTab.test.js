@@ -47,10 +47,23 @@ test("รายการคิวรอในหน้าตารางคิ�
     "กรองวันที่ตรงนี้แล้วจะนับไม่ได้ว่ามีคนค้างอยู่ก่อนหน้ากี่คน");
 });
 
-test("แท็บคิวรอแบ่งเป็นในช่วงวันที่ กับที่ค้างมาก่อนหน้า", () => {
-  assert.match(page, /map\[bId\]\[inRange \? "inRange" : "earlier"\]\.push\(q\)/);
-  assert.match(page, /ยังมีคนรออยู่ก่อนหน้าช่วงวันที่นี้อีก \{earlier\.length\} คน/);
-  assert.match(page, /ดูคนที่รอทั้งหมด/, "ต้องกางดูคนที่รอมาก่อนหน้าได้ ไม่ใช่บอกจำนวนเฉย ๆ");
+test("แท็บคิวรอแบ่งเป็นในช่วงวันที่ กับที่อยู่นอกช่วง", () => {
+  assert.match(page, /map\[bId\]\[inRange \? "inRange" : "outside"\]\.push\(q\)/);
+  assert.match(page, /ยังมีคนรออยู่นอกช่วงวันที่นี้อีก \{outside\.length\} คน/);
+  assert.match(page, /ดูคนที่รอทั้งหมด/, "ต้องกางดูคนที่อยู่นอกช่วงได้ ไม่ใช่บอกจำนวนเฉย ๆ");
+});
+
+test("ตัวเลขคิวรอทุกจุดต้องนับเฉพาะช่วงวันที่ที่เลือก", () => {
+  // เลื่อนไปดูเดือนหน้าแล้วตัวเลขยังเป็นยอดรวมทั้งก้อน = อ่านแล้วเข้าใจผิดว่าเดือนนั้นมีคนรอ
+  assert.match(page, /const waitingInRange = branchWaiting\.inRange\.length;/);
+  assert.match(page, /const branchWaitingCount = waitingByBranch\[branchId\]\?\.inRange\.length \|\| 0;/);
+  assert.match(page, /waitingInRangeTotal > 0 \? ` \+ คิวรอ \$\{waitingInRangeTotal\}`/);
+  assert.ok(!/waitingTotal/.test(page), "ห้ามเหลือยอดรวมข้ามช่วงไว้ที่ไหนอีก");
+});
+
+test("เปลี่ยนช่วงวันที่แล้วปุ่มกางต้องหุบกลับเอง", () => {
+  // ไม่หุบ = เลื่อนไปเดือนหน้าแล้วคนที่รอมาตั้งแต่เดือนก่อนโผล่ตามไปด้วย
+  assert.match(page, /useEffect\(\(\) => \{ setWaitingShowAllByBranch\(\{\}\); \}, \[rangeStart, rangeEnd\]\);/);
 });
 
 test("สาขาที่มีแต่คิวรอต้องยังโผล่ในหน้า", () => {
