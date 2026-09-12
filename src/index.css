@@ -27,7 +27,7 @@ body{background:var(--bg);font-family:var(--font);color:var(--text);font-size:14
 .sidebar{
   width:220px;background:var(--text);color:#fff;
   display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:40;
-  transition:transform 0.3s ease;
+  transition:transform 0.3s ease, width 0.2s ease;
 }
 .sidebar.collapsed{width:72px}
 .sidebar-brand{padding:20px 16px 16px;border-bottom:1px solid rgba(255,255,255,0.08)}
@@ -55,7 +55,10 @@ body{background:var(--bg);font-family:var(--font);color:var(--text);font-size:14
   margin-left:220px;
   flex:1;
   min-width:0;
+  transition:margin-left 0.2s ease;
 }
+/* หุบไซด์บาร์แล้วเนื้อหาต้องขยายตาม ไม่งั้นเหลือช่องว่างเปล่า 148px ทางซ้าย */
+.main.sidebar-collapsed{margin-left:72px}
 .main-shell{
   width:100%;
 }
@@ -154,6 +157,19 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
 .data-table tr:hover td{background:var(--accent-soft)}
 .data-table tr:last-child td{border-bottom:none}
 
+/* ─── ตารางรายงานการแอคทีฟสถานะคิว (หน้าสรุป) ───
+   8 คอลัมน์ในการ์ดเดียว — บีบตัวอักษรและ padding ลงเพื่อให้อ่านครบโดยไม่ต้องเลื่อนซ้ายขวาบนจอโน้ตบุ๊ก */
+.activation-table th{font-size:10px;padding:7px 6px;letter-spacing:0;text-transform:none;line-height:1.35}
+.activation-table td{padding:7px 6px;font-size:12px}
+/* แถวรายละเอียดคิวค้างเป็นแผงเต็มความกว้าง ไม่ใช่ข้อมูลในตาราง จึงไม่ต้องไฮไลต์ตอนชี้ */
+.activation-detail-row td,.activation-table tr:hover .activation-detail{background:transparent}
+.activation-detail-row:hover td{background:transparent!important}
+/* แผงรายละเอียดคิวค้างเป็นแถวในตารางที่เลื่อนซ้ายขวาได้ — ตรึงชิดซ้ายและกว้างเท่าพื้นที่ที่มองเห็น
+   --panel-w ตั้งจาก JS (ความกว้างจริงของกล่องที่เลื่อน) ถ้าไม่มีค่าให้ถอยไปใช้เต็มความกว้างตาราง */
+.activation-detail-panel{position:sticky;left:0;width:var(--panel-w,100%)}
+/* จอใหญ่ใช้ตาราง จอมือถือใช้การ์ดต่อสาขา — สลับกันด้วย media query ด้านล่าง */
+.activation-mobile{display:none}
+
 /* ─── Badges ─── */
 .badge{
   display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:12px;
@@ -244,12 +260,12 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
 .ceo-quick-summary-item-detail{font-size:12px;line-height:1.45;color:#6f635a}
 .ceo-rank-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}
 .ceo-rank-list{display:flex;flex-direction:column;gap:8px}
-.ceo-rank-item{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:#faf7f5}
+.ceo-rank-item{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;padding:8px 10px;border-radius:10px;background:#faf7f5}
 .ceo-rank-item.good{background:#f2fbf6}
 .ceo-rank-item.bad{background:#fff5f5}
-.ceo-rank-badge{font-size:11px;font-weight:700;color:#8b7f76}
-.ceo-rank-name{font-size:12px;color:#2d2a26;font-weight:600;white-space:normal;overflow:visible;line-height:1.35;word-break:break-word}
-.ceo-rank-value{font-size:12px;color:#7a6f67;font-weight:700;white-space:nowrap}
+.ceo-rank-badge{flex:0 0 auto;min-width:26px;font-size:11px;font-weight:700;color:#8b7f76}
+.ceo-rank-name{flex:1 1 60%;min-width:0;font-size:12px;color:#2d2a26;font-weight:600;white-space:normal;overflow:visible;line-height:1.35;word-break:break-word}
+.ceo-rank-value{flex:0 0 auto;margin-left:auto;font-size:12px;color:#7a6f67;font-weight:700;white-space:nowrap}
 .ceo-dual-rank{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .ceo-dual-rank-title{font-size:11px;font-weight:700;color:#9b8f86;margin-bottom:6px}
 
@@ -320,6 +336,12 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
 .summary-chart-scroll.compact{max-height:360px}
 .summary-chart-scroll.detailed{max-height:620px}
 
+/* จอกลาง: พื้นที่จริงคือ viewport ลบไซด์บาร์ 220px — การ์ด 3 ใบคู่กับคอลัมน์ ดี/แย่ จะแคบจนชื่อสาขาแตกเป็นตัวอักษรละบรรทัด */
+@media(max-width:1500px){
+  .ceo-rank-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ceo-dual-rank{grid-template-columns:1fr}
+}
+
 @media(max-width:1100px){
   .ceo-grid-2,.ceo-grid-2-1{grid-template-columns:1fr}
   .ceo-quick-summary-grid{grid-template-columns:1fr}
@@ -364,7 +386,7 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
     transform:translateX(0);
   }
   .sidebar.collapsed{width:260px}
-  .main{margin-left:0}
+  .main,.main.sidebar-collapsed{margin-left:0}
   .main-shell{max-width:none}
   .top-bar{padding:12px 16px 12px 56px}
   .form-grid{grid-template-columns:1fr}
@@ -376,6 +398,10 @@ select{cursor:pointer;-webkit-appearance:none;appearance:none;
      และบังคับความกว้างขั้นต่ำเพื่อไม่ให้คอลัมน์ถูกบีบจนหักทีละตัวอักษร */
   .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
   .table-scroll>table{min-width:640px}
+  /* ตารางสรุปซ่อนไปเลยบนมือถือ — ไม่มีอะไรบอกผู้ใช้ว่าเลื่อนซ้ายขวาได้
+     ใช้การ์ดต่อสาขาแทน เห็นทุกตัวเลขในหน้าจอเดียว */
+  .activation-desktop{display:none}
+  .activation-mobile{display:block}
   .table-scroll th,.table-scroll .badge{white-space:nowrap}
   /* แผงบริเวณในตารางหัตถการเป็นแถวหนึ่งของตาราง จึงเลื่อนตามไปด้วยจนข้อความ/ช่องกรอกโดนตัดขอบ
      → ตรึงกล่องข้างในให้ชิดซ้ายและกว้างเท่าพื้นที่ที่มองเห็น (34px = padding .content 16×2 + ขอบการ์ด 2) */

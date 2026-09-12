@@ -104,6 +104,9 @@ export default function App() {
   });
 
   // ─── UI state ───
+  // สถานะหุบไซด์บาร์อยู่ที่นี่ ไม่ใช่ในไซด์บาร์ เพราะ .main ต้องรู้ด้วยว่าจะขยายเต็มพื้นที่เมื่อไหร่
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const toggleSidebar = useCallback(() => setSidebarCollapsed(v => !v), []);
   const [page, setPage] = useState(() => {
     try { return localStorage.getItem("qlass_page") || "booking"; } catch { return "booking"; }
   });
@@ -1347,9 +1350,11 @@ export default function App() {
         waitingQueueCount={filteredQueues.filter(q => (q.status || "pending") === "waiting_queue").length}
         currentUser={currentUser}
         onLogout={handleLogout}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={toggleSidebar}
       />
 
-      <div className="main">
+      <div className={`main${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
         <div className="main-shell">
           {refreshRequired && (
             <div role="status" style={{

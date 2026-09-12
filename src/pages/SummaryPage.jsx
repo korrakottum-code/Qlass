@@ -1,7 +1,8 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
-import { CUSTOMER_TYPES, ROLES } from "../utils/constants";
+import { useState, useMemo, useCallback, useEffect, Fragment } from "react";
+import { CUSTOMER_TYPES, ROLES, QUEUE_STATUSES } from "../utils/constants";
 import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass, canViewAllBranches, isoToLocalDateStr } from "../utils/helpers";
 import { buildPromoPriceIndex, queueBookedValue } from "../utils/promoValue";
+import { buildActivationReport, sortActivationRows, formatRate } from "../utils/statusActivation";
 import AdSpendCard from "../components/AdSpendCard";
 
 // ─── Date Distribution Bar Chart ───
@@ -375,6 +376,506 @@ function TopPromoRanking({ title, queues, promos, procedures }) {
   );
 }
 
+// ─── รายงานการแอคทีฟสถานะคิว (ใช้ประเมินสาขา) ───
+// กติกาอยู่ใน src/utils/statusActivation.js — การ์ดนี้แค่แสดงผล ไม่ตัดสินเองซ้ำ
+const OVERDUE_STATUS_ORDER = ["pending", "follow1", "follow2", "follow3", "confirmed", "rescheduled_in"];
+
+function statusMeta(value) {
+  return QUEUE_STATUSES.find((s) => s.value === value);
+}
+
+function rateColor(rate) {
+  if (rate == null) return "var(--text3)";
+  if (rate >= 0.95) return "var(--green)";
+  if (rate >= 0.8) return "var(--amber)";
+  return "#dc2626";
+}
+
+function RateCell({ rate, num, den }) {
+  return (
+    <td style={{ textAlign: "right" }}>
+      <div style={{ fontWeight: 800, fontFamily: "var(--mono)", color: rateColor(rate) }}>{formatRate(rate)}</div>
+      {rate != null && (
+        <div style={{ fontSize: 10, color: "var(--text3)", fontFamily: "var(--mono)" }}>{num}/{den}</div>
+      )}
+    </td>
+  );
+}
+
+// ช่อง "มา" กับ "ไม่มา" โชว์เปอร์เซ็นต์เป็นตัวหลักและจำนวนคิวเป็นตัวรอง
+// เพราะสาขาขนาดต่างกัน เทียบกันด้วยจำนวนดิบไม่ได้ · หัวคอลัมน์จึงเรียงตามเปอร์เซ็นต์
+const BRANCH_METRICS = [
+  { key: "total", label: "นัดทั้งหมด", short: "นัด", w: 46, sortKey: "total", pick: (r) => r.total, color: "var(--text)" },
+  { key: "done", label: "มาจริง", short: "มา", w: 34, sortKey: "showRate", pick: (r) => r.done, rate: (r) => r.showRate, color: "var(--green)" },
+  // ไม่มา 0% คือดีที่สุด อย่าย้อมแดงให้ดูเหมือนมีปัญหา
+  { key: "noShow", label: "ไม่มาตามนัด", short: "ไม่มา", w: 34, sortKey: "noShowRate", pick: (r) => r.noShow, rate: (r) => r.noShowRate, color: (r) => (r.noShow > 0 ? "#dc2626" : "var(--text3)") },
+  { key: "cancelled", label: "ยกเลิก", short: "ยกเลิก", w: 26, sortKey: "cancelled", pick: (r) => r.cancelled, color: "var(--text2)" },
+  { key: "rescheduled", label: "เลื่อนออก", short: "เลื่อน", w: 26, sortKey: "rescheduled", pick: (r) => r.rescheduled, color: "var(--text2)" },
+];
+// แถวมือถือโชว์แค่ นัด กับ % มาจริง — % ไม่มาอยู่ในแผงที่กางออก
+// (สองตัวนี้ไม่ได้บวกกันได้ 100 เพราะตัวหารรวมยกเลิก เลื่อนออก และคิวที่ยังค้างด้วย)
+const MOBILE_METRICS = BRANCH_METRICS.filter((m) => m.key === "total" || m.key === "done");
+const MOBILE_OVERDUE_WIDTH = 38;
+const MOBILE_RATE_WIDTH = 36;
+
+function sortArrow(sort, key) {
+  if (sort.key !== key) return "";
+  return sort.dir === "asc" ? " ▲" : " ▼";
+}
+
+// กดคอลัมน์เดิม = สลับขึ้น/ลง · กดคอลัมน์ใหม่ = เริ่มจากมากไปน้อย (ชื่อสาขาเริ่มจาก ก→ฮ)
+function nextSort(sort, key) {
+  if (sort.key === key) return { key, dir: sort.dir === "asc" ? "desc" : "asc" };
+  return { key, dir: key === "branchName" ? "asc" : "desc" };
+}
+
+function OverdueCell({ row, open, onToggle }) {
+  if (row.overdue === 0) {
+    return <td style={{ textAlign: "right", color: "var(--green)", fontWeight: 700, fontFamily: "var(--mono)" }}>0</td>;
+  }
+  return (
+    <td style={{ textAlign: "right" }}>
+      <button
+        onClick={onToggle}
+        title="กดเพื่อดูรายชื่อคิวที่ต้องไปกดปิดสถานะ"
+        style={{
+          border: "1.5px solid #dc2626", background: open ? "#dc2626" : "rgba(220,38,38,0.1)",
+          color: open ? "#fff" : "#dc2626", borderRadius: 7, padding: "2px 8px",
+          fontFamily: "var(--mono)", fontWeight: 800, fontSize: 12, cursor: "pointer",
+        }}
+      >
+        {row.overdue} {open ? "▾" : "▸"}
+      </button>
+    </td>
+  );
+}
+
+function metricColor(metric, row) {
+  return typeof metric.color === "function" ? metric.color(row) : metric.color;
+}
+
+// showCount=false ใช้กับแถวมือถือ — ซ้อนสองบรรทัดแล้วความกว้างของคอลัมน์
+// ถูกกำหนดโดยจำนวนคิว (ห้าหลักได้) ทำให้คอลัมน์เบี้ยวและแถวสูงไม่เท่ากัน
+// จำนวนดิบไปดูในแผงที่กางออกแทน ส่วนตารางจอใหญ่มีคอลัมน์จริงจึงซ้อนได้ไม่มีปัญหา
+function MetricValue({ metric, row, size = 12, bold = 700, showCount = true }) {
+  const count = metric.pick(row);
+  const color = metricColor(metric, row);
+  if (!metric.rate) {
+    return <span style={{ fontSize: size, fontWeight: bold, fontFamily: "var(--mono)", color }}>{count}</span>;
+  }
+  const rate = metric.rate(row);
+  if (!showCount) {
+    return <span style={{ fontSize: size, fontWeight: 800, fontFamily: "var(--mono)", color }}>{formatRate(rate)}</span>;
+  }
+  return (
+    <>
+      <div style={{ fontSize: size, fontWeight: 800, fontFamily: "var(--mono)", color, lineHeight: 1.2 }}>
+        {formatRate(rate)}
+      </div>
+      <div style={{ fontSize: 10, color: "var(--text3)", fontFamily: "var(--mono)", lineHeight: 1.2 }}>{count}</div>
+    </>
+  );
+}
+
+function SortTh({ sort, onSort, sortKey, align = "right", children }) {
+  const active = sort.key === sortKey;
+  return (
+    <th
+      onClick={() => onSort(sortKey)}
+      title="กดเพื่อเรียงลำดับ"
+      style={{ textAlign: align, cursor: "pointer", userSelect: "none", color: active ? "var(--accent)" : undefined }}
+    >
+      {children}{sortArrow(sort, sortKey)}
+    </th>
+  );
+}
+
+function SortHeader({ sort, onSort, sortKey, style, children }) {
+  const active = sort.key === sortKey;
+  return (
+    <button
+      onClick={() => onSort(sortKey)}
+      style={{
+        border: "none", background: "transparent", padding: 0, cursor: "pointer",
+        fontSize: 9.5, textAlign: "right", whiteSpace: "nowrap",
+        color: active ? "var(--accent)" : "var(--text3)", fontWeight: active ? 800 : 400,
+        ...style,
+      }}
+    >
+      {children}{sortArrow(sort, sortKey)}
+    </button>
+  );
+}
+
+function MobileRate({ label, rate, num, den }) {
+  return (
+    <div style={{ flex: 1 }}>
+      <div style={{ fontSize: 10, color: "var(--text3)" }}>{label}</div>
+      <div style={{ fontSize: 17, fontWeight: 800, fontFamily: "var(--mono)", color: rateColor(rate), lineHeight: 1.2 }}>
+        {formatRate(rate)}
+      </div>
+      {rate != null && (
+        <div style={{ fontSize: 10, color: "var(--text3)", fontFamily: "var(--mono)" }}>{num}/{den}</div>
+      )}
+    </div>
+  );
+}
+
+// มือถือไม่ใช้ตาราง — 9 คอลัมน์ต้องเลื่อนซ้ายขวา ซึ่งไม่มีอะไรบอกให้รู้ว่าเลื่อนได้
+// จึงย่อเหลือบรรทัดเดียวต่อสาขา (ชื่อ + คิวค้าง + % แอคทีฟ) ให้ทุกสาขาอยู่ในหน้าจอเดียว
+// รายละเอียดที่เหลือกางเมื่อกด จะได้ไม่ต้องเลื่อนยาว
+function MobileBranchCard({ row, isTotal = false, open, onToggle, procedures, rooms }) {
+  return (
+    <div style={{
+      border: "1px solid var(--border)", borderRadius: 9, marginBottom: 6,
+      background: isTotal ? "var(--surface2)" : "var(--surface)", overflow: "hidden",
+    }}>
+      <button
+        onClick={onToggle}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 5, padding: "9px 8px 9px 10px",
+          background: "transparent", border: "none", cursor: "pointer", textAlign: "left",
+        }}
+      >
+        <span style={{
+          flex: 1, minWidth: 0, fontSize: 12, fontWeight: isTotal ? 800 : 700,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>{row.branchName}</span>
+        {MOBILE_METRICS.map((m) => (
+          <span key={m.key} style={{ width: m.w, textAlign: "right", flexShrink: 0 }}>
+            <MetricValue metric={m} row={row} showCount={false} />
+          </span>
+        ))}
+        <span style={{ width: MOBILE_OVERDUE_WIDTH, textAlign: "right", flexShrink: 0 }}>
+          <span style={{
+            display: "inline-block", padding: "2px 7px", borderRadius: 10,
+            fontSize: 11, fontWeight: 800, fontFamily: "var(--mono)", whiteSpace: "nowrap",
+            background: row.overdue > 0 ? "rgba(220,38,38,0.12)" : "rgba(22,163,74,0.12)",
+            color: row.overdue > 0 ? "#dc2626" : "var(--green)",
+          }}>{row.overdue > 0 ? row.overdue : "✓"}</span>
+        </span>
+        <span style={{
+          fontSize: 12.5, fontWeight: 800, fontFamily: "var(--mono)", flexShrink: 0,
+          color: rateColor(row.activeRate), width: MOBILE_RATE_WIDTH, textAlign: "right",
+        }}>{formatRate(row.activeRate)}</span>
+        <span style={{
+          fontSize: 12, color: "var(--text3)", display: "inline-block", width: 11,
+          transform: open ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s",
+        }}>▾</span>
+      </button>
+
+      {open && (
+        <div style={{ padding: "0 10px 10px" }}>
+          <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, color: "var(--text3)" }}>% แอคทีฟ</div>
+              <div style={{ fontSize: 15, fontWeight: 800, fontFamily: "var(--mono)", color: rateColor(row.activeRate), lineHeight: 1.2 }}>
+                {formatRate(row.activeRate)}
+                {row.activeRate != null && (
+                  <span style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400, marginLeft: 5 }}>{row.dueActivated}/{row.dueTotal}</span>
+                )}
+              </div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, color: "var(--text3)" }}>% ไม่มา</div>
+              <div style={{ fontSize: 15, fontWeight: 800, fontFamily: "var(--mono)", color: row.noShow > 0 ? "#dc2626" : "var(--text3)", lineHeight: 1.2 }}>
+                {formatRate(row.noShowRate)}
+                {row.noShowRate != null && (
+                  <span style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400, marginLeft: 5 }}>{row.noShow}/{row.total}</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 5 }}>
+            {BRANCH_METRICS.map((m) => (
+              <div key={m.key} style={{ background: "var(--surface2)", borderRadius: 6, padding: "4px 7px" }}>
+                <div style={{ fontSize: 9.5, color: "var(--text3)", whiteSpace: "nowrap" }}>{m.label}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "var(--mono)", color: metricColor(m, row) }}>{m.pick(row)}</div>
+              </div>
+            ))}
+            <div style={{ background: "var(--surface2)", borderRadius: 6, padding: "4px 7px" }}>
+              <div style={{ fontSize: 9.5, color: "var(--text3)", whiteSpace: "nowrap" }}>ค้างไม่แอคทีฟ</div>
+              <div style={{ fontSize: 13, fontWeight: 800, fontFamily: "var(--mono)", color: row.overdue > 0 ? "#dc2626" : "var(--green)" }}>{row.overdue}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {open && !isTotal && row.overdue > 0 && <OverdueDetail row={row} procedures={procedures} rooms={rooms} />}
+    </div>
+  );
+}
+
+function OverdueDetail({ row, procedures, rooms }) {
+  return (
+    <div className="activation-detail" style={{ padding: 10, borderLeft: "3px solid #dc2626", background: "rgba(220,38,38,0.05)" }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: "#dc2626", marginBottom: 7 }}>
+        คิวค้างของ{row.branchName} — {row.overdue} รายการ ต้องไปกดปิดสถานะให้ครบ
+      </div>
+      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
+        {OVERDUE_STATUS_ORDER.filter((v) => row.overdueByStatus[v]).map((v) => {
+          const m = statusMeta(v);
+          return (
+            <span key={v} style={{
+              display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 12,
+              background: m?.bg || "var(--surface2)", color: m?.color || "var(--text2)",
+              fontSize: 11, fontWeight: 700, border: `1px solid ${m?.color || "var(--border)"}`,
+            }}>
+              {m?.emoji} {m?.label || v}
+              <strong style={{ fontFamily: "var(--mono)" }}>{row.overdueByStatus[v]}</strong>
+            </span>
+          );
+        })}
+      </div>
+      {/* มือถือ: รายการซ้อนแทนตาราง 6 คอลัมน์ */}
+      <div className="activation-mobile" style={{ maxHeight: 320, overflowY: "auto" }}>
+        {row.overdueQueues.map((q) => {
+          const proc = procedures.find((x) => x.id === q.procedureId);
+          const room = rooms.find((x) => x.id === q.roomId);
+          const m = statusMeta(q.status);
+          return (
+            <div key={q.id} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", marginBottom: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 11, color: "var(--text2)", fontWeight: 700, whiteSpace: "nowrap" }}>
+                  {q.date ? formatThaiDate(q.date) : "—"}
+                  {q.timeBlock !== null && q.timeBlock !== undefined && (
+                    <span style={{ fontFamily: "var(--mono)", marginLeft: 6 }}>{blockToTime(q.timeBlock)}</span>
+                  )}
+                </span>
+                <span style={{
+                  display: "inline-block", padding: "2px 8px", borderRadius: 10, fontSize: 10, fontWeight: 700, whiteSpace: "nowrap",
+                  background: m?.bg || "var(--surface2)", color: m?.color || "var(--text2)",
+                }}>{m?.emoji} {m?.label || q.status}</span>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{q.name}</div>
+              <div style={{ fontSize: 11, color: "var(--text3)" }}>{q.phone}</div>
+              <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 2 }}>
+                {proc?.name || "ไม่ระบุหัตถการ"}
+                {room && <span style={{ fontFamily: "var(--mono)", fontWeight: 700, color: room.type === "M" ? "var(--blue)" : "var(--green)" }}> · {room.name}</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="activation-desktop table-scroll" style={{ overflowX: "auto", maxHeight: 320, overflowY: "auto", background: "var(--surface)", borderRadius: 8 }}>
+        <table className="data-table activation-table">
+          <thead>
+            <tr>
+              <th>วันนัด</th>
+              <th>เวลา</th>
+              <th>ชื่อลูกค้า</th>
+              <th>หัตถการ</th>
+              <th>ห้อง</th>
+              <th>สถานะค้างอยู่</th>
+            </tr>
+          </thead>
+          <tbody>
+            {row.overdueQueues.map((q) => {
+              const proc = procedures.find((p) => p.id === q.procedureId);
+              const room = rooms.find((r) => r.id === q.roomId);
+              const m = statusMeta(q.status);
+              return (
+                <tr key={q.id}>
+                  <td style={{ fontSize: 12, whiteSpace: "nowrap" }}>{q.date ? formatThaiDate(q.date) : "—"}</td>
+                  <td style={{ fontFamily: "var(--mono)", fontWeight: 600, fontSize: 13 }}>
+                    {q.timeBlock !== null && q.timeBlock !== undefined ? blockToTime(q.timeBlock) : "—"}
+                  </td>
+                  <td>
+                    <div style={{ fontWeight: 600 }}>{q.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--text3)" }}>{q.phone}</div>
+                  </td>
+                  <td style={{ fontSize: 13 }}>{proc?.name || "—"}</td>
+                  <td style={{ fontFamily: "var(--mono)", fontSize: 12, fontWeight: 700, color: room?.type === "M" ? "var(--blue)" : "var(--green)" }}>
+                    {room?.name || "—"}
+                  </td>
+                  <td>
+                    <span style={{
+                      display: "inline-block", padding: "2px 9px", borderRadius: 10, fontSize: 11, fontWeight: 700,
+                      background: m?.bg || "var(--surface2)", color: m?.color || "var(--text2)",
+                    }}>{m?.emoji} {m?.label || q.status}</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ActivationReportCard({ queues, branches, procedures, rooms, rangeLabel, today }) {
+  const [openBranch, setOpenBranch] = useState(null);
+  const [showRule, setShowRule] = useState(false);
+  // ค่าเริ่มต้น = สาขาที่ค้างเยอะสุดขึ้นก่อน เหมือนที่ buildActivationReport เรียงมาให้
+  const [sort, setSort] = useState({ key: "overdue", dir: "desc" });
+  // ตาราง 9 คอลัมน์เลื่อนซ้ายขวาได้บนจอแคบ แผงรายละเอียดเป็นแถวหนึ่งของตารางจึงเลื่อนตามไปด้วยจนโดนตัดขอบ
+  // → ตรึงแผงไว้ชิดซ้าย (sticky) แล้วบังคับความกว้างเท่าพื้นที่ที่มองเห็นจริง วัดจากกล่องที่เลื่อน
+  // ใช้ callback ref ไม่ใช่ useRef+[] เพราะตารางยังไม่มีตอนการ์ดหุบอยู่หรือคิวยังโหลดไม่เสร็จ
+  // ถ้าวัดครั้งเดียวตอน mount จะได้ null ค้างไว้ แล้วแผงจะหดเหลือความกว้างคำเดียว
+  const [scrollEl, setScrollEl] = useState(null);
+  // เขียนความกว้างที่มองเห็นจริงลง CSS variable ตรง ๆ ไม่ผ่าน state — กันเรนเดอร์ซ้อน
+  // ต้องวัดใหม่ทุกครั้งที่กางแผงด้วย เพราะแผงทำให้หน้ายาวขึ้นจนสกรอลบาร์แนวตั้งโผล่
+  // แล้วกล่องตารางจะแคบลงจากที่วัดไว้ตอนแรก · rAF รอให้ layout รอบนั้นเสร็จก่อนค่อยวัด
+  useEffect(() => {
+    if (!scrollEl) return;
+    const sync = () => scrollEl.style.setProperty("--panel-w", `${scrollEl.clientWidth}px`);
+    sync();
+    const raf = requestAnimationFrame(sync);
+    window.addEventListener("resize", sync);
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(sync) : null;
+    ro?.observe(scrollEl);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", sync);
+      ro?.disconnect();
+    };
+  }, [scrollEl, openBranch]);
+  const { rows: unsortedRows, total } = useMemo(
+    () => buildActivationReport(queues, { today, branches }),
+    [queues, today, branches]
+  );
+  const rows = useMemo(() => sortActivationRows(unsortedRows, sort.key, sort.dir), [unsortedRows, sort]);
+  const toggleSort = useCallback((key) => setSort((prev) => nextSort(prev, key)), []);
+
+  return (
+    <CollapsibleCard
+      title={`📌 การแอคทีฟสถานะคิว — ${rangeLabel}`}
+      badge={
+        <span style={{
+          fontSize: 12, fontWeight: 700, fontFamily: "var(--mono)", borderRadius: 10, padding: "2px 10px", whiteSpace: "nowrap",
+          background: total.overdue > 0 ? "rgba(220,38,38,0.12)" : "rgba(22,163,74,0.12)",
+          color: total.overdue > 0 ? "#dc2626" : "var(--green)",
+        }}>
+          {total.overdue > 0 ? `ค้าง ${total.overdue} คิว` : "ไม่มีคิวค้าง"}
+        </span>
+      }
+      defaultOpen={false}
+    >
+      <button
+        onClick={() => setShowRule((v) => !v)}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 5, marginBottom: 10,
+          padding: "4px 10px", borderRadius: 8, border: "1px solid var(--border)",
+          background: "var(--surface2)", color: "var(--text2)", fontSize: 11, fontWeight: 700, cursor: "pointer",
+        }}
+      >
+        ℹ️ วิธีนับตัวเลขในรายงานนี้ <span style={{ color: "var(--text3)" }}>{showRule ? "▾" : "▸"}</span>
+      </button>
+      {showRule && (
+      <div style={{ fontSize: 11, color: "var(--text2)", lineHeight: 1.65, marginBottom: 10, padding: "8px 11px", background: "var(--surface2)", borderRadius: 8, border: "1px solid var(--border)" }}>
+        ทุกคิวที่วันนัดผ่านไปแล้วต้องถูกกดปิดเป็น <strong>มาแล้ว/เสร็จ</strong>, <strong>ไม่มาตามนัด</strong>, <strong>ยกเลิก</strong> หรือ <strong>เลื่อนออก</strong> อย่างใดอย่างหนึ่ง<br />
+        ถ้ายังค้างอยู่ที่ รอยืนยัน / โทรตาม / ยืนยันแล้ว / เลื่อนมา ถือว่ายังไม่แอคทีฟ<br />
+        ช่อง <strong>ค้างไม่แอคทีฟ</strong> และ <strong>% แอคทีฟ</strong> นับเฉพาะคิวที่วันนัดผ่านไปแล้ว (ก่อน {formatThaiDate(today)}) — คิวของวันนี้และวันข้างหน้าไม่นับเป็นความผิด · คิวรอ (Waiting) ไม่นับในรายงานนี้<br />
+        ตัวเลขทั้งหมดเป็นไปตามช่วงเวลาและตัวกรองด้านบนของหน้านี้
+      </div>
+      )}
+
+      {rows.length === 0 ? (
+        <div style={{ padding: "20px 0", textAlign: "center", color: "var(--text3)", fontSize: 13 }}>
+          ไม่มีคิวนัดในช่วงนี้
+        </div>
+      ) : (
+        <>
+          {/* มือถือ: การ์ดต่อสาขา เห็นครบในหน้าจอเดียว ไม่ต้องเลื่อนซ้ายขวา */}
+          <div className="activation-mobile">
+            {/* แถบหัว = ปุ่มเรียงลำดับ กดคอลัมน์ไหนก็เรียงตามคอลัมน์นั้น */}
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 5, padding: "0 8px 5px 10px" }}>
+              <SortHeader sort={sort} onSort={toggleSort} sortKey="branchName" style={{ flex: 1, textAlign: "left" }}>สาขา</SortHeader>
+              {MOBILE_METRICS.map((m) => (
+                <SortHeader key={m.key} sort={sort} onSort={toggleSort} sortKey={m.sortKey} style={{ width: m.w }}>{m.short}</SortHeader>
+              ))}
+              <SortHeader sort={sort} onSort={toggleSort} sortKey="overdue" style={{ width: MOBILE_OVERDUE_WIDTH }}>ค้าง</SortHeader>
+              <SortHeader sort={sort} onSort={toggleSort} sortKey="activeRate" style={{ width: MOBILE_RATE_WIDTH }}>%แอคทีฟ</SortHeader>
+              <span style={{ width: 11 }} />
+            </div>
+            {rows.map((r) => {
+              const key = r.branchId || "__none__";
+              const open = openBranch === key;
+              return (
+                <MobileBranchCard
+                  key={key}
+                  row={r}
+                  open={open}
+                  onToggle={() => setOpenBranch(open ? null : key)}
+                  procedures={procedures}
+                  rooms={rooms}
+                />
+              );
+            })}
+            {rows.length > 1 && (
+              <MobileBranchCard
+                row={total}
+                isTotal
+                open={openBranch === "__total__"}
+                onToggle={() => setOpenBranch(openBranch === "__total__" ? null : "__total__")}
+              />
+            )}
+          </div>
+
+          <div className="activation-desktop table-scroll" ref={setScrollEl} style={{ overflowX: "auto" }}>
+            <table className="data-table activation-table">
+              <thead>
+                <tr>
+                  <SortTh sort={sort} onSort={toggleSort} sortKey="branchName" align="left">สาขา</SortTh>
+                  {BRANCH_METRICS.map((m) => (
+                    <SortTh key={m.key} sort={sort} onSort={toggleSort} sortKey={m.sortKey}>{m.label}</SortTh>
+                  ))}
+                  <SortTh sort={sort} onSort={toggleSort} sortKey="overdue">ค้างไม่แอคทีฟ</SortTh>
+                  <SortTh sort={sort} onSort={toggleSort} sortKey="activeRate">% แอคทีฟ</SortTh>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => {
+                  const key = r.branchId || "__none__";
+                  const open = openBranch === key;
+                  return (
+                    <Fragment key={key}>
+                    <tr style={open ? { background: "rgba(220,38,38,0.06)" } : undefined}>
+                      <td style={{ fontWeight: 600 }}>{r.branchName}</td>
+                      {BRANCH_METRICS.map((m) => (
+                        <td key={m.key} style={{ textAlign: "right" }}><MetricValue metric={m} row={r} /></td>
+                      ))}
+                      <OverdueCell row={r} open={open} onToggle={() => setOpenBranch(open ? null : key)} />
+                      <RateCell rate={r.activeRate} num={r.dueActivated} den={r.dueTotal} />
+                    </tr>
+                    {/* รายละเอียดคิวค้างแทรกใต้แถวสาขาของตัวเอง ไม่ไปกองรวมท้ายตาราง
+                        .area-panel ตรึงกล่องไว้ชิดซ้ายบนมือถือ ไม่ให้เลื่อนตามตารางจนโดนตัดขอบ */}
+                    {open && (
+                      <tr className="activation-detail-row">
+                        <td colSpan={8} style={{ padding: 0 }}>
+                          <div className="activation-detail-panel">
+                            <OverdueDetail row={r} procedures={procedures} rooms={rooms} />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+              {rows.length > 1 && (
+                <tfoot>
+                  <tr style={{ borderTop: "2px solid var(--border)", fontWeight: 800 }}>
+                    <td style={{ fontWeight: 800 }}>{total.branchName}</td>
+                    {BRANCH_METRICS.map((m) => (
+                      <td key={m.key} style={{ textAlign: "right" }}><MetricValue metric={m} row={total} /></td>
+                    ))}
+                    <td style={{ textAlign: "right", fontFamily: "var(--mono)", fontWeight: 800, color: total.overdue > 0 ? "#dc2626" : "var(--green)" }}>{total.overdue}</td>
+                    <RateCell rate={total.activeRate} num={total.dueActivated} den={total.dueTotal} />
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </>
+      )}
+    </CollapsibleCard>
+  );
+}
+
 export default function SummaryPage({ queues, allQueues, branches, allBranches, rooms, procedures, promos, staff, currentUser, onRangeNeeded }) {
   const [viewMode, setViewMode] = useState("day"); // day | week | month
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
@@ -740,7 +1241,7 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
             {appointmentQueues.length} รายการ
           </span>
         }
-        defaultOpen={true}
+        defaultOpen={false}
       >
         <SectionStats queues={appointmentQueues} procedures={procedures} promoPriceIndex={promoPriceIndex} showStatus={true} />
         {advanceBookings.length > 0 && (
@@ -761,6 +1262,16 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
           </>
         )}
       </CollapsibleCard>
+
+      {/* รายงานการแอคทีฟสถานะคิว — Area manager ใช้ประเมินสาขา */}
+      <ActivationReportCard
+        queues={appointmentQueues}
+        branches={branches}
+        procedures={procedures}
+        rooms={rooms}
+        rangeLabel={rangeLabel}
+        today={todayStr}
+      />
     </>
   );
 }
