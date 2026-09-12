@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient";
+import { searchWords } from "./queueSearch";
 import { fetchAllByUuidRanges, HISTORY_PAGE_SIZE } from "./queueHistoryPagination";
 import { getServerSessionToken } from "./sessionAuth";
 import { buildQueueStatusUpdate } from "./queueStatusUpdate";
@@ -1077,6 +1078,28 @@ export async function fetchWaitingQueues() {
     if (batch.length < PAGE_SIZE) break;
   }
   return rows.map(mapQueueRow);
+}
+
+// ค้นหาคิวด้วยชื่อ/เบอร์ ทั้งตาราง ไม่จำกัดวันที่และสาขา
+//
+// พนักงานหน้าร้านพิมพ์ชื่อลูกค้าเพื่อ "ตามหาคน" ไม่ใช่ "กรองตารางของวันนี้" — ถ้าค้นแค่
+// ในช่วงวันที่ที่เปิดดูอยู่ ลูกค้าที่จองไว้วันอื่นจะหาไม่เจอ แล้วหน้าร้านจะเชื่อว่าไม่มีคิว
+// แล้วลงใหม่ทับของเดิม (เจอจริงหน้าร้าน 12 ก.ย. 2569)
+//
+// วัดบนข้อมูลจริง 179,000 แถว หลังมีดัชนี trigram (migration 20260912090000):
+// ค้นชื่อ+นามสกุล 0.84ms, ไม่เจอเลย 0.33ms, คำสั้น 3 ตัวอักษร ~68ms (สั้นเกินใช้ดัชนี)
+// ก่อนมีดัชนีคือ 337ms / 288ms และโตตามจำนวนแถว — อย่าถอดดัชนีออก
+// เรียกแบบ debounce ตอนพิมพ์ ไม่ได้ยิงทุกตัวอักษร
+export async function searchQueues(term, { limit = 200 } = {}) {
+  const words = searchWords(term);
+  if (words.length === 0) return [];
+  // ทีละคำ AND กัน (PostgREST: .or() หลายครั้ง = AND ระหว่างก้อน) พิมพ์ "ชื่อ นามสกุล"
+  // จึงเจอแม้ในฐานข้อมูลเว้นวรรคไม่เท่ากัน ดูเหตุผลที่ searchWords
+  let query = supabase.from("queues").select("*");
+  for (const w of words) query = query.or(`name.ilike.%${w}%,phone.ilike.%${w}%`);
+  const { data, error } = await query.order("date", { ascending: false }).limit(limit);
+  if (error) throw error;
+  return (data || []).map(mapQueueRow);
 }
 
 export async function fetchQueuesForRoomDate(roomId, date) {

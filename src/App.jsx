@@ -25,7 +25,7 @@ import {
   getAllCategories, createCategory as createCategoryDB, deleteCategory as deleteCategoryDB,
   fetchTickets, createTicketDB, updateTicketDB, deleteTicketDB,
   createActivityLog, fetchActivityLogs,
-  mapQueueRow, fetchQueuesForRoomDate, fetchWaitingQueues
+  mapQueueRow, fetchQueuesForRoomDate, fetchWaitingQueues, searchQueues
 } from "./utils/supabaseService";
 import { supabase } from "./utils/supabaseClient";
 import { learnFromCorrection } from "./utils/smartParser";
@@ -776,6 +776,14 @@ export default function App() {
   // ต้องรอให้ setQueues ของการโหลดหลักลงก่อน ไม่งั้นก้อนนั้นเขียนทับคิวรอที่ merge เข้ามาแล้ว
   useEffect(() => { if (isDataReady) loadWaitingBacklog(); }, [isDataReady, loadWaitingBacklog]);
 
+  // ค้นหาคิวด้วยชื่อ/เบอร์ ทั้งตาราง ไม่ผูกช่วงวันที่ที่หน้าจอเปิดอยู่
+  // ไม่ merge เข้า state หลัก — ผลค้นหาเป็นของชั่วคราวสำหรับหน้าที่เรียกเท่านั้น
+  // กรองตามสิทธิ์สาขาก่อนส่งคืนเสมอ (ฐานข้อมูลคืนมาทุกสาขา)
+  const searchQueuesForUser = useCallback(async (term) => {
+    const rows = await searchQueues(term);
+    return filterByUserBranch(rows, currentUser);
+  }, [currentUser]);
+
   // ปุ่ม Backup: โหลดทั้งตาราง (keyset) ตอนกดเท่านั้น แล้ว mark ว่ามีครบทุกช่วง
   const loadAllQueues = useCallback(async () => {
     const key = "ALL";
@@ -1504,6 +1512,7 @@ export default function App() {
                 onUpdateStatus={(q) => setModal({ type: "status", data: q })}
                 onMoveToWaitingQueue={moveToWaitingQueue}
                 onRangeNeeded={ensureQueueRange}
+                onSearchQueues={searchQueuesForUser}
               />
             )}
 

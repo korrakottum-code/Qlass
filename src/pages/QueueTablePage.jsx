@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, memo } from "react";
 import { CUSTOMER_TYPES, QUEUE_STATUSES } from "../utils/constants";
 import { getTodayStr, formatThaiDate, blockToTime, formatRecorderLabel, getCustomerBadgeClass, isOverdueUnconfirmed, isoToLocalDateStr } from "../utils/helpers";
 import { pickDatePresets, daySpan } from "../utils/datePresets";
+import { isSearchable, matchesQueueSearch, sortSearchResults } from "../utils/queueSearch";
 
 const ALL_ROOMS_TAB = "__all__";
 // แท็บคิวรอ อยู่แถวเดียวกับแท็บห้อง — คิวรอยังไม่มีห้อง/เวลา จึงเข้ากลุ่มห้องไหนไม่ได้
@@ -18,6 +19,10 @@ const PRESET_KEYS = ["today", "tomorrow", "yesterday", "last7", "thisWeek", "mon
 const MAX_DAYS_ALL_BRANCHES = 7;
 // เกินกี่แถวแล้วขึ้นเตือนให้แคบช่วงลง (เตือนอย่างเดียว ไม่ตัดข้อมูลทิ้ง)
 const HEAVY_ROW_WARNING = 1500;
+// รอให้พิมพ์นิ่งก่อนค่อยกรอง/ค้น — สั้นกว่านี้แล้วยังกระตุก ยาวกว่านี้แล้วรู้สึกว่าไม่ตอบสนอง
+const SEARCH_DEBOUNCE_MS = 300;
+// แสดงผลค้นหาทีละกี่แถว — มากกว่านี้หน้าหน่วงและคนอ่านก็ไล่ไม่ไหว
+const SEARCH_PAGE_SIZE = 50;
 
 function StatusBadge({ status }) {
   const s = QUEUE_STATUSES.find((x) => x.value === (status || "pending"));
@@ -35,8 +40,8 @@ function StatusBadge({ status }) {
 
 // ตารางคิว 1 ชุด — ใช้ทั้งโหมดวันเดียว (แยกตามแท็บห้อง) และโหมดหลายวัน (แยกตามวัน)
 function QueueDataTable({
-  items, showRoomCol, procedures, promos, staff, waitingMode = false,
-  onUpdateStatus, onEdit, onAskMove, onAskDelete,
+  items, showRoomCol, procedures, promos, staff, waitingMode = false, searchMode = false,
+  onUpdateStatus, onEdit, onAskMove, onAskDelete, onJumpToDate,
 }) {
   return (
     <div style={{ overflowX: "auto" }}>
@@ -54,7 +59,7 @@ function QueueDataTable({
         </colgroup>
         <thead>
           <tr>
-            <th style={{ whiteSpace: "nowrap" }}>{waitingMode ? "ลงคิวเมื่อ" : "เวลา"}</th>
+            <th style={{ whiteSpace: "nowrap" }}>{searchMode ? "วันที่" : waitingMode ? "ลงคิวเมื่อ" : "เวลา"}</th>
             {showRoomCol && <th style={{ whiteSpace: "nowrap" }}>ห้อง</th>}
             <th>ชื่อลูกค้า</th>
             <th>หัตถการ</th>
@@ -81,8 +86,16 @@ function QueueDataTable({
                 borderLeft: isOverdue ? "3px solid #d97706" : undefined,
               }}>
                 <td style={{ fontFamily: "var(--mono)", fontWeight: 600, fontSize: 13 }}>
-                  {/* คิวรอยังไม่มีเวลานัด — ช่องนี้บอก "ลงคิวไว้เมื่อไหร่" แทน จะได้รู้ว่ารอมานานแค่ไหน */}
-                  {waitingMode ? (
+                  {/* ผลค้นหามาจากทุกวัน ต้องบอกวันที่มาด้วย ไม่งั้นเห็นแต่เวลาแล้วเข้าใจว่าเป็นวันนี้ */}
+                  {searchMode ? (
+                    <>
+                      <div style={{ fontSize: 12 }}>{formatThaiDate(q.date)}</div>
+                      <div style={{ fontSize: 10, color: "var(--text3)" }}>
+                        {q.timeBlock !== null ? blockToTime(q.timeBlock) : "ไม่ระบุเวลา"}
+                      </div>
+                    </>
+                  ) : /* คิวรอยังไม่มีเวลานัด — ช่องนี้บอก "ลงคิวไว้เมื่อไหร่" แทน จะได้รู้ว่ารอมานานแค่ไหน */
+                  waitingMode ? (
                     q.createdAt ? (
                       <>
                         <div style={{ fontSize: 12 }}>{formatThaiDate(isoToLocalDateStr(q.createdAt))}</div>
@@ -160,6 +173,16 @@ function QueueDataTable({
                         ✏️ แก้ไข
                       </button>
                     </div>
+                    {searchMode && onJumpToDate && (
+                      <button
+                        className="btn btn-sm"
+                        title="เปิดตารางของวันนั้น สาขานั้น"
+                        onClick={() => onJumpToDate(q)}
+                        style={{ background: "var(--surface3)", border: "1.5px solid var(--border2)", borderRadius: 6, padding: "3px 6px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        📅 ไปที่วันนั้น
+                      </button>
+                    )}
                     {UNCONFIRMED_STATUSES.includes(qStatus) && q.roomId && (
                       <button
                         className="btn btn-sm"
@@ -188,6 +211,10 @@ function QueueDataTable({
     </div>
   );
 }
+
+// ตารางนี้มีได้ถึงหลายสิบแถว แถวละ 4-5 ปุ่ม — ถ้า re-render ทุกครั้งที่กดแป้นในช่องค้นหา
+// จะรู้สึกหน่วงทันที ห่อ memo ไว้ แล้วส่ง props ที่ identity คงที่ (ดู tableProps ข้างล่าง)
+const QueueDataTableMemo = memo(QueueDataTable);
 
 // เนื้อในของแท็บคิวรอ — ใช้ทั้งโหมดวันเดียว (เป็นแท็บ) และโหมดหลายวัน (เป็นการ์ดแยก)
 //
@@ -233,7 +260,7 @@ function WaitingQueueBlock({ inRange, earlier, showAll, searching, onToggleShowA
           ไม่มีคิวรอในช่วงวันที่นี้
         </div>
       ) : (
-        <QueueDataTable items={items} showRoomCol={false} waitingMode {...tableProps} />
+        <QueueDataTableMemo items={items} showRoomCol={false} waitingMode {...tableProps} />
       )}
     </>
   );
@@ -241,7 +268,7 @@ function WaitingQueueBlock({ inRange, earlier, showAll, searching, onToggleShowA
 
 export default function QueueTablePage({
   queues, branches, rooms, procedures, promos, staff, roomSchedules,
-  onEdit, onDelete, onUpdateStatus, onMoveToWaitingQueue, onRangeNeeded,
+  onEdit, onDelete, onUpdateStatus, onMoveToWaitingQueue, onRangeNeeded, onSearchQueues,
 }) {
   const [qfBranch, setQfBranch] = useState("all");
   // ช่วงวันที่ — ค่าเริ่มต้นคือ "วันนี้" ทั้งคู่ (จาก=ถึง) เพื่อให้คนที่เปิดดูทุกวันเห็นเหมือนเดิมทุกอย่าง
@@ -262,6 +289,52 @@ export default function QueueTablePage({
   // วันที่เปิดอยู่ในโหมดหลายวัน — key = "branchId|date" — ไม่มีใน object = หุบ
   // หุบไว้ก่อนเสมอ: เลือกทั้งเดือนแล้วกางทุกวันคือคิวพันกว่าแถวใน DOM เดียว หน้าจะหน่วงทันที
   const [openDays, setOpenDays] = useState({});
+
+  // ─── ค้นหา = ตามหาคน ไม่ใช่กรองตารางของวันนี้ ───
+  // พิมพ์ชื่อแล้วยิงหาทั้งฐานข้อมูล ไม่ผูกช่วงวันที่และไม่ผูกสาขา เพราะหน้าร้านพิมพ์ชื่อ
+  // ตอนลูกค้ามายืนอยู่ตรงหน้า ไม่ได้รู้ว่าลูกค้าจองวันไหนสาขาไหนไว้ ถ้าค้นแค่ในช่วงที่
+  // เปิดดูอยู่ ระบบจะตอบว่า "ยังไม่มีคิว" ทั้งที่มี แล้วหน้าร้านจะลงคิวใหม่ทับของเดิม
+  // ─── พิมพ์แล้วต้องไม่หน่วง ───
+  // qfSearch = สิ่งที่พิมพ์อยู่ (ช่องข้อความต้องตอบสนองทันทีทุกตัวอักษร)
+  // appliedSearch = คำที่ "นิ่งแล้ว" ใช้กับทุกอย่างที่หนัก — กรองตาราง จัดกลุ่ม และยิงหาในฐานข้อมูล
+  //
+  // เดิมใช้คำที่พิมพ์ตรง ๆ ทุกที่ พิมพ์หนึ่งตัวอักษรจึงคำนวณตารางใหม่ทั้งหน้า (คิวหลักพันแถว
+  // จัดกลุ่มตามสาขา/ห้อง/วัน ใหม่ทั้งหมด) พิมพ์เร็ว ๆ แล้วรู้สึกค้าง — ปัญหาที่หน้าร้านเจอ
+  const [appliedSearch, setAppliedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setAppliedSearch(qfSearch.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [qfSearch]);
+
+  // เก็บผลค้นหาคู่กับ "คำที่ค้น" เสมอ — ถ้าเก็บแต่ผล พอผู้ใช้พิมพ์คำใหม่ ผลของคำเก่าจะ
+  // ค้างโชว์อยู่ชั่วครู่ ซึ่งอันตรายมากในหน้านี้: หน้าร้านอาจอ่านผลของคนอื่นแล้วตัดสินใจผิด
+  const [globalSearch, setGlobalSearch] = useState({ term: "", rows: [], status: "idle" });
+  // คิวที่ผู้ใช้เพิ่งลบไป — ผลค้นหามาจากคนละก้อนกับ state หลัก ถ้าไม่จำไว้ แถวที่ลบแล้ว
+  // จะยังค้างอยู่ในผลค้นหาจนกว่าจะค้นใหม่ แล้วหน้าร้านจะเข้าใจว่าลบไม่สำเร็จ
+  const [deletedInSearch, setDeletedInSearch] = useState(() => new Set());
+  const searchTerm = appliedSearch;
+  const searching = isSearchable(searchTerm);
+  const resultsFresh = globalSearch.term === searchTerm;
+  const searchStatus = resultsFresh ? globalSearch.status : "loading";
+  // พิมพ์ค้างอยู่ = ผลที่เห็นยังเป็นของคำก่อนหน้า ต้องบอกให้รู้ ไม่ใช่ปล่อยให้อ่านผลเก่า
+  const searchPending = qfSearch.trim() !== appliedSearch;
+
+  useEffect(() => {
+    if (!searching || !onSearchQueues) return undefined;
+    let cancelled = false;
+    // ห่อด้วย timeout 0 เพื่อไม่ให้ setState วิ่งพร้อม effect (กัน cascading render)
+    const kick = setTimeout(async () => {
+      setGlobalSearch((prev) => (prev.status === "loading" ? prev : { ...prev, status: "loading" }));
+      try {
+        const rows = await onSearchQueues(searchTerm);
+        if (!cancelled) setGlobalSearch({ term: searchTerm, rows: rows || [], status: "done" });
+      } catch (error) {
+        console.error("global queue search failed:", error);
+        if (!cancelled) setGlobalSearch({ term: searchTerm, rows: [], status: "error" });
+      }
+    }, 0);
+    return () => { cancelled = true; clearTimeout(kick); };
+  }, [searchTerm, searching, onSearchQueues]);
 
   const presets = useMemo(() => pickDatePresets(PRESET_KEYS), []);
 
@@ -313,13 +386,13 @@ export default function QueueTablePage({
     if (qfFrom && v < qfFrom) setQfFrom(v);
   }
 
+  // จับคู่ทีละคำ ไม่ใช่ทั้งประโยคเป็นก้อนเดียว — ดูเหตุผลใน queueSearch.js
+  // ตัวอักษรเดียวยังไม่กรองอะไรเลย (ได้ครึ่งคลินิกอยู่ดี แถมทำให้ตารางคำนวณใหม่ฟรี ๆ)
   const matchesSearch = useCallback((q) => {
-    if (!qfSearch) return true;
-    const s = qfSearch.toLowerCase();
+    if (!isSearchable(appliedSearch)) return true;
     const recorder = staff?.find((x) => x.id === q.recordedBy);
-    const recorderName = `${recorder?.nickname || ""} ${recorder?.name || ""}`.toLowerCase();
-    return q.name.toLowerCase().includes(s) || q.phone.includes(s) || recorderName.includes(s);
-  }, [qfSearch, staff]);
+    return matchesQueueSearch(q, appliedSearch, `${recorder?.nickname || ""} ${recorder?.name || ""}`);
+  }, [appliedSearch, staff]);
 
   // ─── คิวรอ: ไม่กรองด้วยช่วงวันที่ตรงนี้ ───
   // คิวรอไม่มีวันนัด — คอลัมน์ date คือวันที่ลงคิวไว้เฉย ๆ กรองทิ้งตั้งแต่ตรงนี้แล้วจะนับไม่ได้
@@ -447,11 +520,52 @@ export default function QueueTablePage({
       });
   }, [filteredQueues, branches, rooms, waitingByBranch]);
 
-  const tableProps = {
+  // ผลค้นหา = ที่ได้จากฐานข้อมูล (ชื่อ/เบอร์ ทุกวัน ทุกสาขา) รวมกับที่โหลดมาแล้วในเครื่อง
+  // (ครอบคลุมการค้นด้วยชื่อแอดมินผู้บันทึก ซึ่งฝั่งฐานข้อมูลค้นไม่ได้เพราะเก็บเป็น id)
+  const searchResults = useMemo(() => {
+    if (!searching) return [];
+    const byId = new Map();
+    const visibleBranchIds = new Set(branches.map((b) => b.id));
+    for (const q of (resultsFresh ? globalSearch.rows : [])) {
+      // กันข้อมูลข้ามสาขาที่บัญชีนี้ไม่มีสิทธิ์เห็น (ฐานข้อมูลคืนมาทุกสาขา)
+      if (!visibleBranchIds.has(q.branchId)) continue;
+      byId.set(q.id, q);
+    }
+    for (const q of queues) if (matchesSearch(q)) byId.set(q.id, q);
+    for (const id of deletedInSearch) byId.delete(id);
+    // เรียงให้ที่ตรงกว่าขึ้นก่อน — พิมพ์ "สุดา" ต้องได้ "สุดารัตน์" ก่อน "เชษฐ์สุดา"
+    return sortSearchResults(Array.from(byId.values()), searchTerm);
+  }, [searching, resultsFresh, globalSearch.rows, queues, matchesSearch, branches, deletedInSearch, searchTerm]);
+
+  // แสดงทีละไม่เกิน SEARCH_PAGE_SIZE แถว — เจอ 200 คนแล้ววาดทั้งหมดคือหน้าหน่วง
+  // และคนอ่านก็ไล่ไม่ไหวอยู่ดี ที่ตรงที่สุดอยู่บนสุดแล้วจากการเรียงข้างบน
+  const searchItems = useMemo(() => searchResults.slice(0, SEARCH_PAGE_SIZE).map((q) => {
+    const branch = branches.find((b) => b.id === q.branchId);
+    const room = rooms.find((r) => r.id === q.roomId);
+    return { ...q, __roomName: `${branch?.name || "ไม่ระบุสาขา"}${room ? ` · ${room.name}` : ""}` };
+  }), [searchResults, branches, rooms]);
+
+  // ลบล้มเหลว = แถวยังอยู่ใน DB จริง ห้ามซ่อนจากผลค้นหา (App แจ้ง error ให้เองแล้ว)
+  function handleDelete(queue) {
+    setDeleteConfirm(null);
+    Promise.resolve(onDelete(queue.id, queue))
+      .then(() => setDeletedInSearch((prev) => new Set(prev).add(queue.id)))
+      .catch(() => {});
+  }
+
+  // กดแล้วพาไปดูตารางของวันนั้น สาขานั้น แล้วล้างคำค้นทิ้ง — ปิดวงจร "เจอแล้วไปดูต่อ"
+  function jumpToQueue(q) {
+    if (q.branchId) setQfBranch(q.branchId);
+    if (q.date) { setQfFrom(q.date); setQfTo(q.date); }
+    setQfSearch("");
+  }
+
+  const askMove = useCallback((q) => setMoveConfirm({ queue: q }), []);
+  const askDelete = useCallback((q) => { setDeleteConfirm({ queue: q }); setDeleteInput(""); }, []);
+  const tableProps = useMemo(() => ({
     procedures, promos, staff, onUpdateStatus, onEdit,
-    onAskMove: (q) => setMoveConfirm({ queue: q }),
-    onAskDelete: (q) => { setDeleteConfirm({ queue: q }); setDeleteInput(""); },
-  };
+    onAskMove: askMove, onAskDelete: askDelete,
+  }), [procedures, promos, staff, onUpdateStatus, onEdit, askMove, askDelete]);
 
   const rangeLabel = isRange
     ? `${formatThaiDate(rangeStart)} – ${formatThaiDate(rangeEnd)} (${spanDays} วัน)`
@@ -508,8 +622,10 @@ export default function QueueTablePage({
         </div>
       </div>
 
+      {/* ชิปสรุปสถานะ / แบนเนอร์เตือน — ทั้งหมดผูกกับช่วงวันที่ที่เลือก ซึ่งตอนค้นหาไม่ได้ใช้
+          ปล่อยไว้จะอ่านปนกัน เห็นเลขของช่วงวันที่แต่ตารางข้างล่างเป็นผลค้นหาทั้งระบบ */}
       {/* Status summary chips */}
-      {Object.keys(statusStats).length > 0 && (
+      {!searching && Object.keys(statusStats).length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "nowrap", overflowX: "auto", marginBottom: 12, paddingBottom: 2 }}>
           {TABLE_STATUSES.filter((s) => statusStats[s.value]).map((s) => (
             <button
@@ -536,7 +652,7 @@ export default function QueueTablePage({
         </div>
       )}
 
-      {overdueCount > 0 && (
+      {!searching && overdueCount > 0 && (
         <div style={{
           display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
           padding: "8px 14px", borderRadius: "var(--radius-sm)",
@@ -547,7 +663,7 @@ export default function QueueTablePage({
         </div>
       )}
 
-      {!needsBranch && filteredQueues.length > HEAVY_ROW_WARNING && (
+      {!searching && !needsBranch && filteredQueues.length > HEAVY_ROW_WARNING && (
         <div style={{
           display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
           padding: "8px 14px", borderRadius: "var(--radius-sm)",
@@ -558,14 +674,82 @@ export default function QueueTablePage({
         </div>
       )}
 
-      {needsBranch ? (
+      {searching ? (
+        /* ── โหมดค้นหา: แทนที่มุมมองรายวันทั้งหมด ── */
+        <div className="card">
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+            padding: "8px 14px", borderBottom: "1px solid var(--border)",
+            fontSize: 12, fontWeight: 700, color: "var(--text2)",
+          }}>
+            <span>🔍 ผลค้นหา "{searchTerm}" — ค้นทั้งระบบ ทุกวัน ทุกสาขา ทุกสถานะ (ตัวกรองด้านบนไม่ถูกใช้ตอนค้นหา)</span>
+            {/* ยังพิมพ์ไม่หยุด = ที่เห็นอยู่ยังเป็นผลของคำก่อนหน้า ต้องบอก ไม่ใช่ปล่อยให้อ่านผิดคน */}
+            {searchPending && (
+              <span style={{ fontWeight: 600, color: "var(--text3)" }}>⏳ กำลังพิมพ์...</span>
+            )}
+            <button
+              type="button"
+              onClick={() => setQfSearch("")}
+              style={{
+                marginLeft: "auto", background: "var(--surface2)", border: "1.5px solid var(--border)",
+                borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700,
+                color: "var(--text2)", cursor: "pointer", fontFamily: "var(--font)",
+              }}
+            >
+              ✕ ล้างคำค้น
+            </button>
+          </div>
+          {searchResults.length > 0 ? (
+            <>
+              <QueueDataTableMemo items={searchItems} showRoomCol searchMode {...tableProps} onJumpToDate={jumpToQueue} />
+              {searchResults.length > searchItems.length && (
+                <div style={{ padding: "8px 14px", borderTop: "1px solid var(--border)", fontSize: 12, color: "var(--text2)", fontWeight: 600 }}>
+                  แสดง {searchItems.length} จากที่เจอทั้งหมด {searchResults.length} คิว — เรียงจากที่ตรงกับคำค้นมากที่สุด
+                  <span style={{ fontWeight: 400, color: "var(--text3)" }}> · พิมพ์ชื่อให้ยาวขึ้นหรือใส่นามสกุล/เบอร์โทร เพื่อให้แคบลง</span>
+                </div>
+              )}
+              {searchStatus === "loading" && (
+                <div style={{ padding: "8px 14px", fontSize: 12, color: "var(--text3)" }}>⏳ กำลังค้นเพิ่มจากทั้งระบบ...</div>
+              )}
+            </>
+          ) : searchStatus === "loading" ? (
+            <div className="empty"><div className="e-icon">🔍</div><p>กำลังค้นหา...</p></div>
+          ) : searchStatus === "error" ? (
+            <div className="empty">
+              <div className="e-icon">⚠️</div>
+              <p>ค้นหาไม่สำเร็จ</p>
+              <p style={{ fontSize: 12, color: "var(--text3)", marginTop: 6, lineHeight: 1.7 }}>
+                ยังบอกไม่ได้ว่าลูกค้ารายนี้มีคิวหรือไม่ — กรุณาลองใหม่อีกครั้งก่อนตัดสินใจลงคิวใหม่
+              </p>
+            </div>
+          ) : (
+            /* ข้อความตรงนี้สำคัญ: ห้ามพูดว่า "ยังไม่มีคิว ไปบันทึกคิวก่อนเลย" เหมือนมุมมองรายวัน
+               เพราะตอนค้นหา คำตอบนั้นจะถูกอ่านว่า "ลูกค้าคนนี้ไม่มีคิว" แล้วหน้าร้านจะลงใหม่
+               ทับของเดิม ต้องบอกให้ชัดว่าค้นครบทั้งระบบแล้วจริง ๆ ถึงจะกล้าลงใหม่ */
+            <div className="empty">
+              <div className="e-icon">🔍</div>
+              <p>ไม่พบ "{searchTerm}" ในระบบเลย</p>
+              <p style={{ fontSize: 12, color: "var(--text3)", marginTop: 6, lineHeight: 1.7 }}>
+                ค้นครบทุกวันและทุกสาขาแล้ว ไม่จำกัดเฉพาะช่วงวันที่ด้านบน<br />
+                ถ้าสะกดชื่อไม่ตรง ลองพิมพ์แค่ชื่อต้นหรือเบอร์โทรแทน
+              </p>
+            </div>
+          )}
+        </div>
+      ) : needsBranch ? (
         <div className="card">
           <div className="empty">
             <div className="e-icon">🏢</div>
-            <p>เลือกสาขาก่อน แล้วถึงจะดูย้อนหลังได้</p>
+            <p>ยังไม่ได้แสดงตาราง — ไม่ใช่ว่าไม่มีคิว</p>
             <p style={{ fontSize: 12, color: "var(--text3)", marginTop: 6, lineHeight: 1.7 }}>
               ช่วงที่เลือกยาว {spanDays} วัน — ถ้าเปิด "ทุกสาขา" พร้อมกันจะมีคิวหลายพันแถวในหน้าเดียว จนหน้าค้าง<br />
               เลือกสาขาที่ต้องการจากช่องด้านบน หรือย่อช่วงให้เหลือไม่เกิน {MAX_DAYS_ALL_BRANCHES} วัน
+            </p>
+            {/* ข้อความเดิมเขียนว่า "เลือกสาขาก่อน" เฉย ๆ หน้าร้านที่กำลังตามหาลูกค้าอ่านแล้ว
+                เข้าใจว่า "ไม่เจอ" แล้วไปลงคิวใหม่ทับของเดิม — ต้องบอกทางที่ถูกไว้ตรงนี้ด้วย */}
+            <p style={{ fontSize: 12, color: "var(--text2)", marginTop: 10, fontWeight: 600, lineHeight: 1.7 }}>
+              🔍 ถ้ากำลังตามหาลูกค้า ให้พิมพ์ชื่อหรือเบอร์ในช่อง "ค้นหา" ด้านบนได้เลย<br />
+              ระบบจะค้นให้ทั้งระบบ ทุกวัน ทุกสาขา โดยไม่ต้องเลือกสาขาหรือตั้งช่วงวันที่
             </p>
           </div>
         </div>
@@ -706,7 +890,7 @@ export default function QueueTablePage({
                     </div>
                     {dayOpen && (
                       <div className="card" style={{ borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
-                        <QueueDataTable items={d.items} showRoomCol {...tableProps} />
+                        <QueueDataTableMemo items={d.items} showRoomCol {...tableProps} />
                       </div>
                     )}
                   </div>
@@ -796,7 +980,7 @@ export default function QueueTablePage({
                       ไม่มีคิวตรงเงื่อนไขในตอนนี้
                     </div>
                   ) : (
-                    <QueueDataTable items={activeItems} showRoomCol={showRoomCol} {...tableProps} />
+                    <QueueDataTableMemo items={activeItems} showRoomCol={showRoomCol} {...tableProps} />
                   )}
                 </div>
                 </>
@@ -808,7 +992,9 @@ export default function QueueTablePage({
       )}
 
       <div style={{ fontSize: 12, color: "var(--text3)", textAlign: "right", marginTop: 8 }}>
-        แสดง {filteredQueues.length} คิว{waitingInRangeTotal > 0 ? ` + คิวรอ ${waitingInRangeTotal}` : ""} • {rangeLabel}
+        {searching
+          ? `พบ ${searchResults.length} คิว${searchResults.length > searchItems.length ? ` (แสดง ${searchItems.length})` : ""} • ค้นทั้งระบบ ไม่จำกัดช่วงวันที่`
+          : `แสดง ${filteredQueues.length} คิว${waitingInRangeTotal > 0 ? ` + คิวรอ ${waitingInRangeTotal}` : ""} • ${rangeLabel}`}
       </div>
 
       {/* ── Delete Confirm Modal ── */}
@@ -827,8 +1013,7 @@ export default function QueueTablePage({
               onChange={(e) => setDeleteInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && deleteInput.trim() === deleteConfirm.queue.name.trim()) {
-                  onDelete(deleteConfirm.queue.id, deleteConfirm.queue);
-                  setDeleteConfirm(null);
+                  handleDelete(deleteConfirm.queue);
                 }
               }}
               placeholder="พิมพ์ชื่อลูกค้า..."
@@ -839,7 +1024,7 @@ export default function QueueTablePage({
               <button
                 className="btn btn-danger"
                 disabled={deleteInput.trim() !== deleteConfirm.queue.name.trim()}
-                onClick={() => { onDelete(deleteConfirm.queue.id, deleteConfirm.queue); setDeleteConfirm(null); }}
+                onClick={() => handleDelete(deleteConfirm.queue)}
               >ลบ</button>
             </div>
           </div>
