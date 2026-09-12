@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
 import { QUEUE_STATUSES } from "../../utils/constants";
 import { blockToTime, formatThaiDate, getTodayStr } from "../../utils/helpers";
+import { isSameRescheduleSlot } from "../../utils/rescheduleQueue";
 
 // flow: pending → follow1/2/3 → confirmed → done | no_show
 //       any → rescheduled | cancelled
@@ -34,6 +35,12 @@ export default function StatusModal({ queue, procedures, queues = [], onSave, on
       const nd = newDate || queue.date;
       if (nd < getTodayStr()) {
         setConflictError("⚠️ ไม่สามารถเลื่อนนัดไปวันที่ผ่านมาแล้ว");
+        return;
+      }
+      // ช่องวันที่/เวลาเติมค่าเดิมไว้ให้ กดยืนยันเฉย ๆ โดยไม่แก้ = ได้คู่แฝด "เลื่อนออก +
+      // เลื่อนมา" ที่ช่องเดียวกัน ซึ่งกินเตียงทั้งที่ไม่มีลูกค้าคนไหนจะมา
+      if (isSameRescheduleSlot(queue, nd, nb)) {
+        setConflictError("⚠️ ยังไม่ได้เปลี่ยนวันหรือเวลา — เลือกวันหรือเวลาใหม่ก่อน ถ้าไม่ได้เลื่อนจริงให้เลือกสถานะอื่นแทน");
         return;
       }
       if (newDate) payload.date = nd;
@@ -73,7 +80,9 @@ export default function StatusModal({ queue, procedures, queues = [], onSave, on
   // ที่ไม่มีห้อง/เวลาทั้งคู่ (ดู PR #126 Codex review)
   const mainActions = QUEUE_STATUSES.filter((s) =>
     ["confirmed", "rescheduled", "no_show", "cancelled", "done"].includes(s.value)
-  ).filter((s) => !(s.value === "rescheduled" && currentStatus === "waiting_queue"));
+  // คิวรอ (waiting_queue) ไม่มีห้อง/เวลาเดิมให้ "เลื่อน" และคิวที่ "เลื่อนออก" ไปแล้ว
+  // ก็ปล่อยช่องเวลาไปแล้ว เลื่อนซ้ำได้แต่แถวงอก — ให้ไปจัดการที่ใบใหม่แทน
+  ).filter((s) => !(s.value === "rescheduled" && ["waiting_queue", "rescheduled"].includes(currentStatus)));
   // rescheduled_in is set automatically, not selectable by user
 
   return (
