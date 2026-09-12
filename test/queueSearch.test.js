@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { searchWords, isSearchable, matchesQueueSearch } from "../src/utils/queueSearch.js";
+import { searchWords, isSearchable, matchesQueueSearch, rankQueueMatch, sortSearchResults } from "../src/utils/queueSearch.js";
 
 // หน้าร้านพิมพ์ "ชื่อ นามสกุล" แล้วหาไม่เจอ ต้องลบนามสกุลออกถึงเจอ แล้วนั่งเลื่อนหาเอง
 // เพราะชื่อในฐานข้อมูลพิมพ์กันมาหลายแบบ เว้นวรรคสองครั้งบ้าง มีช่องว่างต่อท้ายบ้าง
@@ -134,4 +134,40 @@ test("ตอนค้นหาต้องซ่อนตัวเลขที�
   assert.match(page, /\{!searching && Object\.keys\(statusStats\)\.length > 0 && \(/);
   assert.match(page, /\{!searching && overdueCount > 0 && \(/);
   assert.match(page, /\{!searching && !needsBranch && filteredQueues\.length > HEAVY_ROW_WARNING && \(/);
+});
+
+test("เรียงให้ที่ตรงกว่าขึ้นก่อน", () => {
+  // พิมพ์ "สุดา" ต้องได้คนที่ชื่อขึ้นต้นด้วย "สุดา" ก่อนคนที่ "สุดา" ไปโผล่กลางคำ
+  const rows = [
+    { name: "นางสาวสุดารักษ์ คำสุนันท์", phone: "0874261585", date: "2026-10-25" },
+    { name: "น.ส เชษฐ์สุดา นนมุต", phone: "0840327944", date: "2026-10-24" },
+    { name: "สุดารัตน์ สะอาดดวงกมล", phone: "0814364184", date: "2026-10-09" },
+    { name: "พรรณิภา สุดามาตร์", phone: "0661535539", date: "2026-10-03" },
+  ];
+  const sorted = sortSearchResults(rows, "สุดา");
+  assert.equal(sorted[0].name, "สุดารัตน์ สะอาดดวงกมล", "ชื่อขึ้นต้นด้วยคำที่พิมพ์ต้องมาก่อน");
+  assert.equal(sorted[1].name, "พรรณิภา สุดามาตร์", "คำใดคำหนึ่งขึ้นต้นด้วย มาก่อนที่โผล่กลางคำ");
+  assert.ok(sorted.slice(2).every((r) => rankQueueMatch(r, "สุดา") === 10));
+});
+
+test("ค้นด้วยเบอร์ เบอร์ที่ตรงเป๊ะต้องมาก่อน", () => {
+  const rows = [
+    { name: "ก", phone: "0909515956", date: "2026-01-01" },
+    { name: "ข", phone: "09095159560", date: "2026-12-31" },
+  ];
+  assert.equal(sortSearchResults(rows, "0909515956")[0].name, "ก");
+});
+
+test("ผลเยอะเกินต้องตัดให้เหลือเท่าที่อ่านไหว และบอกว่าตัด", () => {
+  // วาด 200 แถว แถวละ 4-5 ปุ่ม = หน้าหน่วงทันทีที่พิมพ์ และคนอ่านก็ไล่ไม่ไหวอยู่ดี
+  assert.match(page, /const SEARCH_PAGE_SIZE = 50;/);
+  assert.match(page, /searchResults\.slice\(0, SEARCH_PAGE_SIZE\)/);
+  assert.match(page, /แสดง \{searchItems\.length\} จากที่เจอทั้งหมด \{searchResults\.length\} คิว/);
+});
+
+test("พิมพ์แล้วต้องไม่วาดตารางใหม่ทุกตัวอักษร", () => {
+  assert.match(page, /const QueueDataTableMemo = memo\(QueueDataTable\);/);
+  assert.match(page, /const tableProps = useMemo\(\(\) => \(\{/,
+    "props ต้อง identity คงที่ ไม่งั้น memo ไม่ช่วยอะไรเลย");
+  assert.ok(!/<QueueDataTable /.test(page), "ต้องใช้ตัวที่ห่อ memo ทุกที่");
 });

@@ -1,8 +1,8 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, memo } from "react";
 import { CUSTOMER_TYPES, QUEUE_STATUSES } from "../utils/constants";
 import { getTodayStr, formatThaiDate, blockToTime, formatRecorderLabel, getCustomerBadgeClass, isOverdueUnconfirmed, isoToLocalDateStr } from "../utils/helpers";
 import { pickDatePresets, daySpan } from "../utils/datePresets";
-import { isSearchable, matchesQueueSearch } from "../utils/queueSearch";
+import { isSearchable, matchesQueueSearch, sortSearchResults } from "../utils/queueSearch";
 
 const ALL_ROOMS_TAB = "__all__";
 // แท็บคิวรอ อยู่แถวเดียวกับแท็บห้อง — คิวรอยังไม่มีห้อง/เวลา จึงเข้ากลุ่มห้องไหนไม่ได้
@@ -21,6 +21,8 @@ const MAX_DAYS_ALL_BRANCHES = 7;
 const HEAVY_ROW_WARNING = 1500;
 // รอให้พิมพ์นิ่งก่อนค่อยกรอง/ค้น — สั้นกว่านี้แล้วยังกระตุก ยาวกว่านี้แล้วรู้สึกว่าไม่ตอบสนอง
 const SEARCH_DEBOUNCE_MS = 300;
+// แสดงผลค้นหาทีละกี่แถว — มากกว่านี้หน้าหน่วงและคนอ่านก็ไล่ไม่ไหว
+const SEARCH_PAGE_SIZE = 50;
 
 function StatusBadge({ status }) {
   const s = QUEUE_STATUSES.find((x) => x.value === (status || "pending"));
@@ -210,6 +212,10 @@ function QueueDataTable({
   );
 }
 
+// ตารางนี้มีได้ถึงหลายสิบแถว แถวละ 4-5 ปุ่ม — ถ้า re-render ทุกครั้งที่กดแป้นในช่องค้นหา
+// จะรู้สึกหน่วงทันที ห่อ memo ไว้ แล้วส่ง props ที่ identity คงที่ (ดู tableProps ข้างล่าง)
+const QueueDataTableMemo = memo(QueueDataTable);
+
 // เนื้อในของแท็บคิวรอ — ใช้ทั้งโหมดวันเดียว (เป็นแท็บ) และโหมดหลายวัน (เป็นการ์ดแยก)
 //
 // ทุกตัวเลขบนหน้า (หัวข้อสาขา, แท็บ, บรรทัดสรุปล่างสุด) นับเฉพาะคิวรอในช่วงวันที่ที่เลือก
@@ -254,7 +260,7 @@ function WaitingQueueBlock({ inRange, earlier, showAll, searching, onToggleShowA
           ไม่มีคิวรอในช่วงวันที่นี้
         </div>
       ) : (
-        <QueueDataTable items={items} showRoomCol={false} waitingMode {...tableProps} />
+        <QueueDataTableMemo items={items} showRoomCol={false} waitingMode {...tableProps} />
       )}
     </>
   );
@@ -527,13 +533,13 @@ export default function QueueTablePage({
     }
     for (const q of queues) if (matchesSearch(q)) byId.set(q.id, q);
     for (const id of deletedInSearch) byId.delete(id);
-    return Array.from(byId.values()).sort((a, b) => {
-      if (a.date !== b.date) return (b.date || "").localeCompare(a.date || "");
-      return (a.timeBlock ?? 0) - (b.timeBlock ?? 0);
-    });
-  }, [searching, resultsFresh, globalSearch.rows, queues, matchesSearch, branches, deletedInSearch]);
+    // เรียงให้ที่ตรงกว่าขึ้นก่อน — พิมพ์ "สุดา" ต้องได้ "สุดารัตน์" ก่อน "เชษฐ์สุดา"
+    return sortSearchResults(Array.from(byId.values()), searchTerm);
+  }, [searching, resultsFresh, globalSearch.rows, queues, matchesSearch, branches, deletedInSearch, searchTerm]);
 
-  const searchItems = useMemo(() => searchResults.map((q) => {
+  // แสดงทีละไม่เกิน SEARCH_PAGE_SIZE แถว — เจอ 200 คนแล้ววาดทั้งหมดคือหน้าหน่วง
+  // และคนอ่านก็ไล่ไม่ไหวอยู่ดี ที่ตรงที่สุดอยู่บนสุดแล้วจากการเรียงข้างบน
+  const searchItems = useMemo(() => searchResults.slice(0, SEARCH_PAGE_SIZE).map((q) => {
     const branch = branches.find((b) => b.id === q.branchId);
     const room = rooms.find((r) => r.id === q.roomId);
     return { ...q, __roomName: `${branch?.name || "ไม่ระบุสาขา"}${room ? ` · ${room.name}` : ""}` };
@@ -554,11 +560,12 @@ export default function QueueTablePage({
     setQfSearch("");
   }
 
-  const tableProps = {
+  const askMove = useCallback((q) => setMoveConfirm({ queue: q }), []);
+  const askDelete = useCallback((q) => { setDeleteConfirm({ queue: q }); setDeleteInput(""); }, []);
+  const tableProps = useMemo(() => ({
     procedures, promos, staff, onUpdateStatus, onEdit,
-    onAskMove: (q) => setMoveConfirm({ queue: q }),
-    onAskDelete: (q) => { setDeleteConfirm({ queue: q }); setDeleteInput(""); },
-  };
+    onAskMove: askMove, onAskDelete: askDelete,
+  }), [procedures, promos, staff, onUpdateStatus, onEdit, askMove, askDelete]);
 
   const rangeLabel = isRange
     ? `${formatThaiDate(rangeStart)} – ${formatThaiDate(rangeEnd)} (${spanDays} วัน)`
@@ -694,7 +701,13 @@ export default function QueueTablePage({
           </div>
           {searchResults.length > 0 ? (
             <>
-              <QueueDataTable items={searchItems} showRoomCol searchMode {...tableProps} onJumpToDate={jumpToQueue} />
+              <QueueDataTableMemo items={searchItems} showRoomCol searchMode {...tableProps} onJumpToDate={jumpToQueue} />
+              {searchResults.length > searchItems.length && (
+                <div style={{ padding: "8px 14px", borderTop: "1px solid var(--border)", fontSize: 12, color: "var(--text2)", fontWeight: 600 }}>
+                  แสดง {searchItems.length} จากที่เจอทั้งหมด {searchResults.length} คิว — เรียงจากที่ตรงกับคำค้นมากที่สุด
+                  <span style={{ fontWeight: 400, color: "var(--text3)" }}> · พิมพ์ชื่อให้ยาวขึ้นหรือใส่นามสกุล/เบอร์โทร เพื่อให้แคบลง</span>
+                </div>
+              )}
               {searchStatus === "loading" && (
                 <div style={{ padding: "8px 14px", fontSize: 12, color: "var(--text3)" }}>⏳ กำลังค้นเพิ่มจากทั้งระบบ...</div>
               )}
@@ -877,7 +890,7 @@ export default function QueueTablePage({
                     </div>
                     {dayOpen && (
                       <div className="card" style={{ borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
-                        <QueueDataTable items={d.items} showRoomCol {...tableProps} />
+                        <QueueDataTableMemo items={d.items} showRoomCol {...tableProps} />
                       </div>
                     )}
                   </div>
@@ -967,7 +980,7 @@ export default function QueueTablePage({
                       ไม่มีคิวตรงเงื่อนไขในตอนนี้
                     </div>
                   ) : (
-                    <QueueDataTable items={activeItems} showRoomCol={showRoomCol} {...tableProps} />
+                    <QueueDataTableMemo items={activeItems} showRoomCol={showRoomCol} {...tableProps} />
                   )}
                 </div>
                 </>
@@ -980,7 +993,7 @@ export default function QueueTablePage({
 
       <div style={{ fontSize: 12, color: "var(--text3)", textAlign: "right", marginTop: 8 }}>
         {searching
-          ? `พบ ${searchResults.length} คิว • ค้นทั้งระบบ ไม่จำกัดช่วงวันที่`
+          ? `พบ ${searchResults.length} คิว${searchResults.length > searchItems.length ? ` (แสดง ${searchItems.length})` : ""} • ค้นทั้งระบบ ไม่จำกัดช่วงวันที่`
           : `แสดง ${filteredQueues.length} คิว${waitingInRangeTotal > 0 ? ` + คิวรอ ${waitingInRangeTotal}` : ""} • ${rangeLabel}`}
       </div>
 
