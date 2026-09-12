@@ -854,15 +854,23 @@ export default function App() {
     recordClientDiagnostic("write_outcome", { outcome: "started" });
     try {
       if (payload.status === "rescheduled") {
+        // สร้างคิวใหม่ให้ได้ก่อน ค่อยปิดคิวเดิม — ปิดเดิมไปแล้วเพิ่งรู้ว่าไม่มีช่องใหม่
+        // เท่ากับคิวหายจากตารางทั้งใบ ต้องตรวจให้จบก่อนแตะอะไรสักอย่าง
+        const orig = queues.find((q) => q.id === id);
+        const rescheduledQueue = buildRescheduledQueue(orig, payload, getTodayStr());
+        if (!rescheduledQueue && (payload.date !== undefined || payload.timeBlock !== undefined)) {
+          // เลื่อนไปช่องเดิมเป๊ะ ๆ = ไม่ได้เลื่อนจริง (ดู isSameRescheduleSlot) ปล่อยผ่านแล้ว
+          // จะได้คู่แฝด "เลื่อนออก + เลื่อนมา" ที่ช่องเดียวกัน กินเตียงทั้งที่ไม่มีลูกค้า
+          showToast("error", "ยังไม่ได้เปลี่ยนวันหรือเวลา — เลือกวันหรือเวลาใหม่ก่อนถึงจะเลื่อนได้");
+          recordClientDiagnostic("write_outcome", { outcome: "rejected" });
+          return;
+        }
+
         // คิวเดิม: เปลี่ยนแค่ status + statusNote ไม่แตะ date/timeBlock
         await updateQueueStatusDB(id, {
           status: "rescheduled",
           statusNote: payload.statusNote || "",
         });
-
-        // สร้างคิวใหม่ที่วันใหม่ สถานะ rescheduled_in
-        const orig = queues.find((q) => q.id === id);
-        const rescheduledQueue = buildRescheduledQueue(orig, payload, getTodayStr());
         if (rescheduledQueue) await createQueue(rescheduledQueue);
       } else {
         await updateQueueStatusDB(id, payload);
