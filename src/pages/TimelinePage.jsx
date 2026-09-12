@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed, roleAtLeast, requiresRecorderNote } from "../utils/helpers";
+import { addDays } from "../utils/queueRanges";
 import { CUSTOMER_TYPES } from "../utils/constants";
 import { getBedSwitchState } from "../utils/bedSwitch";
 import HnLookup from "../components/HnLookup";
@@ -56,9 +57,10 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   }
 
   function navigate(dir) {
-    const d = new Date(date);
-    d.setDate(d.getDate() + dir);
-    setDate(d.toISOString().slice(0, 10));
+    // บวก/ลบวันบนสตริง "YYYY-MM-DD" ตรง ๆ — เดิมแปลงผ่าน Date แล้วอ่านกลับด้วย
+    // toISOString() (UTC) ซึ่งบังเอิญได้ผลถูกเฉพาะโซนเวลาบวกอย่างไทย อ่านแล้วต้องนั่ง
+    // พิสูจน์ว่าหักล้างกันพอดี ใช้ addDays ที่คิดด้วยเวลาเครื่องล้วนแทน ชัดเจนกว่า
+    setDate(addDays(date, dir));
   }
 
   const filteredRooms = useMemo(() => {

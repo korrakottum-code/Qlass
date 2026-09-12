@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { fetchActivityLogs } from "../utils/supabaseService";
-import { blockToTime, formatThaiDate, getTodayStr } from "../utils/helpers";
+import { blockToTime, formatThaiDate, getTodayStr, isoToLocalDateStr } from "../utils/helpers";
 
 export default function ActivityLogPage({ rooms, procedures }) {
   const [logs, setLogs] = useState([]);
@@ -72,7 +72,7 @@ export default function ActivityLogPage({ rooms, procedures }) {
                   <tr key={log.id} style={{ borderBottom: "1px solid var(--border)" }}>
                     <td style={{ padding: "8px 12px", fontSize: 12, fontFamily: "var(--mono)", color: "var(--text2)", whiteSpace: "nowrap" }}>
                       {deletedAt
-                        ? `${formatThaiDate(deletedAt.toISOString().slice(0, 10))} ${deletedAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}`
+                        ? `${formatThaiDate(isoToLocalDateStr(deletedAt))} ${deletedAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}`
                         : "—"}
                     </td>
                     <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 700 }}>{d?.name || "—"}</td>
