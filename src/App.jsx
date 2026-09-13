@@ -74,6 +74,7 @@ import ExportPage from "./pages/ExportPage";
 import TicketPage from "./pages/TicketPage";
 import ActivityLogPage from "./pages/ActivityLogPage";
 import CeoDashboardPage from "./pages/CeoDashboardPage";
+import ManualPage from "./pages/ManualPage";
 
 export default function App() {
 
@@ -878,7 +879,7 @@ export default function App() {
 
       setModal(null);
       const st = payload.status;
-      const labels = { confirmed: "ยืนยันแล้ว ✅", rescheduled: "เลื่อนออก 📤", rescheduled_in: "เลื่อนมา (ใหม่) �", no_show: "บันทึก: ไม่มาตามนัด 🚫", cancelled: "ยกเลิกแล้ว ❌", done: "เสร็จสิ้น 🎉", follow1: "บันทึก: โทรตาม ×1", follow2: "บันทึก: โทรตาม ×2", follow3: "บันทึก: โทรตาม ×3 📞" };
+      const labels = { confirmed: "ยืนยันแล้ว ✅", rescheduled: "เลื่อนออก 📤", rescheduled_in: "เลื่อนมา (ใหม่) 📥", no_show: "บันทึก: ไม่มาตามนัด 🚫", cancelled: "ยกเลิกแล้ว ❌", done: "เสร็จสิ้น 🎉", follow1: "บันทึก: โทรตาม ×1", follow2: "บันทึก: โทรตาม ×2", follow3: "บันทึก: โทรตาม ×3 📞" };
       showToast("success", labels[st] || "อัปเดตสถานะแล้ว");
       recordClientDiagnostic("write_outcome", { outcome: "succeeded" });
     } catch (error) {
@@ -1815,6 +1816,10 @@ export default function App() {
                 rooms={rooms}
                 procedures={procedures}
               />
+            )}
+
+            {page === "manual" && (
+              <ManualPage currentUser={currentUser} />
             )}
           </div>
         </div>

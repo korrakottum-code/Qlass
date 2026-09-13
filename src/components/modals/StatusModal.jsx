@@ -174,7 +174,7 @@ export default function StatusModal({ queue, procedures, queues = [], onSave, on
             marginBottom: 14,
           }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed", marginBottom: 10 }}>
-              � วันและเวลาใหม่ที่เลื่อนไป
+              📅 วันและเวลาใหม่ที่เลื่อนไป
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <div style={{ flex: "1 1 140px" }}>
