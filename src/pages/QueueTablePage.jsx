@@ -3,6 +3,7 @@ import { CUSTOMER_TYPES, QUEUE_STATUSES } from "../utils/constants";
 import { getTodayStr, formatThaiDate, blockToTime, formatRecorderLabel, getCustomerBadgeClass, isOverdueUnconfirmed, isoToLocalDateStr } from "../utils/helpers";
 import { pickDatePresets, daySpan } from "../utils/datePresets";
 import { isSearchable, matchesQueueSearch, sortSearchResults } from "../utils/queueSearch";
+import { buildStatusChips } from "../utils/statusChips";
 
 const ALL_ROOMS_TAB = "__all__";
 // แท็บคิวรอ อยู่แถวเดียวกับแท็บห้อง — คิวรอยังไม่มีห้อง/เวลา จึงเข้ากลุ่มห้องไหนไม่ได้
@@ -463,6 +464,12 @@ export default function QueueTablePage({
     return counts;
   }, [queues, rangeStart, rangeEnd, qfBranch, needsBranch]);
 
+  // ชิปสรุปสถานะที่จะแสดงจริง — กติกาการเรียงและการคงชิปที่กรองอยู่ดู statusChips.js
+  const statusChips = useMemo(
+    () => (needsBranch ? [] : buildStatusChips(TABLE_STATUSES, statusStats, qfStatus)),
+    [statusStats, qfStatus, needsBranch]
+  );
+
   // คิวที่ลงล่วงหน้าแล้วยังไม่ยืนยันเมื่อเลย 12:00 ของวันนัด
   // นับเฉพาะคิวที่มีห้อง ให้ตัวเลขตรงกับจำนวนแถวที่มีปุ่ม "ย้ายเข้าคิวรอ" จริง
   // isOverdueUnconfirmed เช็ควันนี้ให้อยู่แล้ว — แบนเนอร์จึงขึ้นเฉพาะตอนช่วงที่ดูอยู่คลุมวันนี้
@@ -625,9 +632,24 @@ export default function QueueTablePage({
       {/* ชิปสรุปสถานะ / แบนเนอร์เตือน — ทั้งหมดผูกกับช่วงวันที่ที่เลือก ซึ่งตอนค้นหาไม่ได้ใช้
           ปล่อยไว้จะอ่านปนกัน เห็นเลขของช่วงวันที่แต่ตารางข้างล่างเป็นผลค้นหาทั้งระบบ */}
       {/* Status summary chips */}
-      {!searching && Object.keys(statusStats).length > 0 && (
+      {!searching && statusChips.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "nowrap", overflowX: "auto", marginBottom: 12, paddingBottom: 2 }}>
-          {TABLE_STATUSES.filter((s) => statusStats[s.value]).map((s) => (
+          {/* กรองสถานะค้างไว้ = ตารางข้างล่างไม่ใช่ทั้งวัน ต้องมีปุ่มล้างให้เห็นมาก่อนชิป
+              ไม่ใช่ให้ไปเดาว่าต้องกดชิปเดิมซ้ำถึงจะกลับมาเห็นครบ */}
+          {qfStatus !== "all" && (
+            <button
+              onClick={() => setQfStatus("all")}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 5, flex: "none",
+                padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
+                background: "var(--surface2)", border: "1.5px solid var(--border2)",
+                color: "var(--text2)", cursor: "pointer", fontFamily: "var(--font)",
+              }}
+            >
+              ✕ ล้างตัวกรองสถานะ
+            </button>
+          )}
+          {statusChips.map((s) => (
             <button
               key={s.value}
               onClick={() => setQfStatus(qfStatus === s.value ? "all" : s.value)}
@@ -645,7 +667,7 @@ export default function QueueTablePage({
                 background: s.color, color: "#fff", borderRadius: 10,
                 padding: "0 5px", fontSize: 10, fontWeight: 800,
               }}>
-                {statusStats[s.value]}
+                {s.count}
               </span>
             </button>
           ))}
