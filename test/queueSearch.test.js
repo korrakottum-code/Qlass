@@ -139,7 +139,7 @@ test("ลบไม่สำเร็จต้องไม่ซ่อนแถ�
 
 test("ตอนค้นหาต้องซ่อนตัวเลขที่ผูกกับช่วงวันที่", () => {
   // ชิปสรุปสถานะและแบนเนอร์เตือนนับตามช่วงวันที่ ซึ่งตอนค้นหาไม่ได้ใช้ — โชว์ไว้จะอ่านปนกัน
-  assert.match(page, /\{!searching && Object\.keys\(statusStats\)\.length > 0 && \(/);
+  assert.match(page, /\{!searching && statusChips\.length > 0 && \(/);
   assert.match(page, /\{!searching && overdueCount > 0 && \(/);
   assert.match(page, /\{!searching && !needsBranch && filteredQueues\.length > HEAVY_ROW_WARNING && \(/);
 });
