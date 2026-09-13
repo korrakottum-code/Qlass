@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect, Fragment } from "react";
 import { CUSTOMER_TYPES, ROLES, QUEUE_STATUSES } from "../utils/constants";
 import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass, canViewAllBranches, isoToLocalDateStr } from "../utils/helpers";
 import { buildPromoPriceIndex, queueBookedValue } from "../utils/promoValue";
-import { buildActivationReport, sortActivationRows, formatRate } from "../utils/statusActivation";
+import { buildActivationReport, sortActivationRows, formatRate, isAppointmentQueue } from "../utils/statusActivation";
 import AdSpendCard from "../components/AdSpendCard";
 
 // ─── Date Distribution Bar Chart ───
@@ -68,8 +68,8 @@ function DateInputButton({ value, onChange, min, max }) {
 
 // ─── Mini Bar Chart ───
 function MiniBarChart({ title, data, colorFn, onSelect, selectedValues, maxItems = 12 }) {
-  if (!data || data.length === 0) return null;
   const [expanded, setExpanded] = useState(false);
+  if (!data || data.length === 0) return null;
   const max = Math.max(...data.map((d) => d.value), 1);
   const visibleData = expanded ? data : data.slice(0, maxItems);
   const selected = Array.isArray(selectedValues) ? selectedValues : [];
@@ -1001,11 +1001,18 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
     [filteredQueues, inRange]
   );
 
-  // คิวที่มี appointment ในช่วงนี้ (date)
+  // คิวที่มี appointment ในช่วงนี้ (date) — ตัดคิวรอออก (ดู isAppointmentQueue)
   const appointmentQueues = useMemo(() =>
     filteredQueues
-      .filter((q) => inRange(q.date))
+      .filter((q) => isAppointmentQueue(q) && inRange(q.date))
       .sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.timeBlock || 0) - (b.timeBlock || 0)),
+    [filteredQueues, inRange]
+  );
+
+  // คิวรอที่ลงไว้ในช่วงนี้ — ไม่ใช่นัด แต่ต้องบอกจำนวนไว้บนการ์ด
+  // ตัดออกเฉย ๆ แล้วเงียบ = เลขลดลงโดยไม่มีคำอธิบาย ซึ่งคือปัญหาเดิมกลับด้าน
+  const waitingInRange = useMemo(
+    () => filteredQueues.filter((q) => !isAppointmentQueue(q) && inRange(q.date)),
     [filteredQueues, inRange]
   );
 
@@ -1244,6 +1251,11 @@ export default function SummaryPage({ queues, allQueues, branches, allBranches, 
         defaultOpen={false}
       >
         <SectionStats queues={appointmentQueues} procedures={procedures} promoPriceIndex={promoPriceIndex} showStatus={true} />
+        {waitingInRange.length > 0 && (
+          <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 8, padding: "4px 10px", background: "var(--surface2)", borderRadius: 6 }}>
+            ⏳ ช่วงนี้มีคิวรออีก <strong>{waitingInRange.length}</strong> คิว — ไม่นับรวมข้างบน เพราะคิวรอยังไม่มีวันนัดจริง (ตัวเลขนี้ตรงกับรายงานการแอคทีฟด้านล่าง)
+          </div>
+        )}
         {advanceBookings.length > 0 && (
           <div style={{ fontSize: 12, color: "var(--amber)", marginBottom: 8, padding: "4px 10px", background: "rgba(245,158,11,0.1)", borderRadius: 6 }}>
             📌 ในจำนวนนี้ <strong>{advanceBookings.length}</strong> คิว จองล่วงหน้ามาจากวันก่อนหน้า

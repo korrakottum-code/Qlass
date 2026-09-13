@@ -16,6 +16,19 @@ const ACTIVATED = new Set(ACTIVATED_STATUSES);
 const EXCLUDED = new Set(ACTIVATION_EXCLUDED_STATUSES);
 
 /**
+ * คิวใบนี้นับเป็น "นัด" ของวันนั้นไหม
+ *
+ * คิวรอไม่ใช่นัด — ยังไม่มีวันนัดจริง ช่อง date ของคิวรอคือวันที่แอดมินลงคิวไว้เฉย ๆ
+ * รายงานแอคทีฟตัดคิวรอออกตั้งแต่แรก แต่การ์ด "คิวนัดทำ" เคยนับรวม สองเลขบนหน้า
+ * เดียวกันจึงไม่เท่ากันทุกวันที่มีคิวรอ (12 ก.ย. 2569: การ์ด 1,855 รายงาน 1,843)
+ * ทั้งสองที่ต้องอ่านกติกาจากตัวนี้ตัวเดียว จะได้ไม่มีทางเพี้ยนออกจากกันอีก
+ */
+export function isAppointmentQueue(queue) {
+  const status = queue?.status;
+  return !!status && !EXCLUDED.has(status);
+}
+
+/**
  * จัดกลุ่มคิวหนึ่งใบ
  * @returns "excluded" | "activated" | "overdue" | "not_due"
  */
