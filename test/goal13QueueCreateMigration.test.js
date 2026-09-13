@@ -39,3 +39,33 @@ test("'rescheduled_in' ต้องยังกินช่องเวลา �
   // ถ้าหลุดเข้าไปในรายการด้วย คู่แฝดเก่า 508 คู่จะเปิดช่องให้จองทับคิวจริงทันที
   assert.ok(!/'rescheduled_in'/.test(current.split("q.status not in")[1]?.slice(0, 200) || ""));
 });
+
+// ═══ กันการคัดลอกฟังก์ชันตกหล่น ═══
+// create or replace ต้องส่งฟังก์ชันเต็มทุกครั้ง การแก้แต่ละรอบจึงคัดลอกของเดิมมาทั้งดุ้น
+// ซึ่งเสี่ยงตกบรรทัด — เทียบว่าทุก guard ของเวอร์ชันก่อนยังอยู่ครบในเวอร์ชันถัดไป
+// (แพตเทิร์นเดียวกับ test/roomProcedureLockMigration.test.js ซึ่งยังไม่ครอบสองรอบล่าสุด)
+const CHAIN = [
+  "20260817160000_create_queue_v1_room_procedure_lock.sql",
+  "20260909020000_create_queue_v1_require_customer_type.sql",
+  "20260913090000_create_queue_v1_request_id_payload_guard.sql",
+  "20260913100000_create_queue_v1_rescheduled_frees_slot.sql",
+];
+
+const guardsOf = (src) => [...src.matchAll(/message = '([a-z_]+)'/g)].map((m) => m[1]);
+
+for (let i = 1; i < CHAIN.length; i++) {
+  test(`คัดลอกครบ: ${CHAIN[i - 1].slice(0, 14)} -> ${CHAIN[i].slice(0, 14)}`, () => {
+    const before = new Set(guardsOf(read(`../supabase/migrations/${CHAIN[i - 1]}`)));
+    const after = new Set(guardsOf(read(`../supabase/migrations/${CHAIN[i]}`)));
+    const dropped = [...before].filter((code) => !after.has(code));
+    assert.deepEqual(dropped, [], "มี guard หายไประหว่างคัดลอก");
+  });
+}
+
+test("ตัวล็อกกันจองชนและกันคำขอซ้ำต้องอยู่ครบในเวอร์ชันล่าสุด", () => {
+  // สองตัวนี้คือหัวใจของ Goal 13 ถ้าตกไปตอนคัดลอก จะกลายเป็นจองทับกันได้/คิวซ้ำได้
+  assert.match(current, /pg_advisory_xact_lock\(hashtextextended\('queue-request:/i);
+  assert.match(current, /pg_advisory_xact_lock\(hashtextextended\('queue-room-day:/i);
+  assert.match(current, /security definer\s+set search_path = ''/i);
+  assert.match(current, /revoke all on function public\.create_queue_v1\([^)]*jsonb\) from public, anon, authenticated/i);
+});
