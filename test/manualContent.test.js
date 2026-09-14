@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import test from "node:test";
 import { NAV_ITEMS, ROLES } from "../src/utils/constants.js";
 import { MANUAL_SECTIONS, MANUAL_META } from "../src/manual/manualContent.js";
-import { PRACTICAL_TESTS, QUIZ_QUESTIONS, TEST_PLAN_GUIDE } from "../src/manual/testContent.js";
+import { QUIZ_META, QUIZ_QUESTIONS } from "../src/manual/testContent.js";
 
 const PAGE_IDS = new Set(NAV_ITEMS.filter((n) => n.id).map((n) => n.id));
 const ROLE_IDS = new Set(ROLES.map((r) => r.value));
@@ -60,30 +60,10 @@ test("ทุกเมนูใน NAV_ITEMS มีหัวข้อคู่ม
   }
 });
 
-test("แบบทดสอบภาคปฏิบัติ: id ไม่ซ้ำ, sectionId/pageId/roles ถูกต้อง และมีขั้นตอน+ผลที่ต้องได้", () => {
-  const ids = new Set();
-  for (const t of PRACTICAL_TESTS) {
-    assert.ok(!ids.has(t.id), `id ซ้ำ ${t.id}`); ids.add(t.id);
-    assert.ok(SECTION_IDS.has(t.sectionId), `${t.id}: sectionId ${t.sectionId} ไม่มี`);
-    if (t.pageId) assert.ok(PAGE_IDS.has(t.pageId), `${t.id}: pageId ${t.pageId} ไม่มี`);
-    assert.ok(t.roles.length > 0, `${t.id}: ไม่มี roles`);
-    for (const r of t.roles) {
-      assert.ok(ROLE_IDS.has(r), `${t.id}: role ${r} ไม่รู้จัก`);
-      if (t.pageId) {
-        const role = ROLES.find((x) => x.value === r);
-        assert.ok(role.pages.includes(t.pageId), `${t.id}: ${r} เข้าเมนู ${t.pageId} ไม่ได้ จึงทำข้อนี้ไม่ได้`);
-      }
-    }
-    assert.ok(t.steps.length > 0 && t.expected.length > 0, `${t.id}: ต้องมี steps และ expected`);
-  }
-  // ทุกบทบาทต้องมีข้อทดสอบ
-  for (const r of ROLES) {
-    const n = PRACTICAL_TESTS.filter((t) => t.roles.includes(r.value)).length;
-    assert.ok(n >= 5, `${r.value} มีข้อทดสอบแค่ ${n} ข้อ`);
-  }
-});
-
-test("แบบทดสอบความเข้าใจ: id ไม่ซ้ำ, answer อยู่ในช่วง choices, roles ถูกต้อง", () => {
+test("แบบทดสอบก่อน/หลังเทรน: 30 ข้อ id ไม่ซ้ำ answer อยู่ในช่วง choices ไม่ผูกบทบาท และมี 2 รอบ", () => {
+  assert.equal(QUIZ_QUESTIONS.length, 30, "ต้องมี 30 ข้อพอดี (เจ้าของกำหนด)");
+  assert.deepEqual(QUIZ_META.rounds.map((r) => r.id), ["pre", "post"]);
+  assert.ok(QUIZ_META.passPct > 0 && QUIZ_META.passPct <= 100);
   const ids = new Set();
   for (const q of QUIZ_QUESTIONS) {
     assert.ok(!ids.has(q.id), `id ซ้ำ ${q.id}`); ids.add(q.id);
@@ -91,22 +71,6 @@ test("แบบทดสอบความเข้าใจ: id ไม่ซ้
     assert.ok(q.choices.length >= 2, `${q.id}: choices น้อยเกินไป`);
     assert.ok(Number.isInteger(q.answer) && q.answer >= 0 && q.answer < q.choices.length, `${q.id}: answer ผิดช่วง`);
     assert.ok(q.explain, `${q.id}: ไม่มีเฉลย`);
-    if (q.roles) for (const r of q.roles) assert.ok(ROLE_IDS.has(r), `${q.id}: role ${r} ไม่รู้จัก`);
-  }
-  for (const r of ROLES) {
-    const n = QUIZ_QUESTIONS.filter((q) => !q.roles || q.roles.includes(r.value)).length;
-    assert.ok(n >= 10, `${r.value} มีคำถามแค่ ${n} ข้อ`);
-  }
-});
-
-test("สายการทดสอบอ้างถึง id ที่มีจริง และเรียงตามบทบาทที่ทำต่อกันได้", () => {
-  const byId = new Map(PRACTICAL_TESTS.map((t) => [t.id, t]));
-  assert.ok(TEST_PLAN_GUIDE.howTo.length >= 5 && TEST_PLAN_GUIDE.cleanup.length >= 5);
-  for (const c of TEST_PLAN_GUIDE.chains) {
-    assert.ok(c.ids.length >= 2, `${c.title}: สายสั้นเกินไป`);
-    for (const id of c.ids) assert.ok(byId.has(id), `${c.title}: ไม่มีข้อ ${id}`);
-    // ต้องมีบทบาทอย่างน้อยหนึ่งที่ทำได้ทุกข้อในสาย
-    const shared = c.ids.map((id) => new Set(byId.get(id).roles)).reduce((a, b) => new Set([...a].filter((r) => b.has(r))));
-    assert.ok(shared.size > 0, `${c.title}: ไม่มีบทบาทเดียวที่ทำได้ทั้งสาย`);
+    assert.equal(q.roles, undefined, `${q.id}: ทุกบทบาทต้องตอบชุดเดียวกัน ห้ามผูก roles`);
   }
 });

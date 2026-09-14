@@ -56,6 +56,19 @@ async function scrollTimeline(page, px) {
   }, px);
   await wait(300);
 }
+// กดช่องว่างใน Timeline ใต้หัวคอลัมน์เตียงที่ระบุ (เช่น "T02") ลำดับที่ n
+async function clickFreeCellOnBed(page, bedName, n = 6) {
+  const ok = await page.evaluate(([name, idx]) => {
+    const head = [...document.querySelectorAll("th, div")].find((e) => e.children.length < 6 && e.textContent.trim().startsWith(name) && e.getBoundingClientRect().width > 40 && e.getBoundingClientRect().width < 400);
+    if (!head) return false;
+    const r = head.getBoundingClientRect(); const cx = r.left + r.width / 2;
+    const cells = [...document.querySelectorAll('[title="กดเพื่อจองคิว"]')].filter((c) => { const b = c.getBoundingClientRect(); return b.left <= cx && b.right >= cx; });
+    if (!cells[idx]) return false;
+    cells[idx].scrollIntoView({ block: "center" }); cells[idx].click(); return true;
+  }, [bedName, n]);
+  if (!ok) throw new Error(`no free cell on ${bedName}`);
+  await wait(400);
+}
 async function closeModal(page) {
   const x = page.locator(".modal-close").first();
   if (await x.count()) await x.click();
@@ -90,6 +103,11 @@ await step("booking", async () => {
   await shot(page, "booking-page");
   await page.getByPlaceholder("เช่น คุณสมหญิง").fill("คุณสมหญิง ใจดี");
   await page.getByPlaceholder("08x-xxx-xxxx").fill("0891234567");
+  await wait(300);
+  // ยังไม่เลือกประเภทลูกค้า → ฟอร์มหุบครึ่งล่าง
+  await shot(page, "booking-customer-type");
+  await page.getByRole("button", { name: "🆕 ลูกค้าใหม่" }).click();
+  await wait(300);
   await page.locator("select").filter({ has: page.locator('option:has-text("สาขาขอนแก่น")') }).first().selectOption({ label: "สาขาขอนแก่น" });
   await wait(200);
   await page.locator("select").filter({ has: page.locator('option:has-text("[M] M01")') }).first().selectOption({ label: "[M] M01" });
@@ -109,6 +127,31 @@ await step("booking", async () => {
   await shot(page, "booking-confirm");
   await page.getByRole("button", { name: "แก้ไข", exact: true }).click();
   await wait(200);
+  await page.getByRole("button", { name: "ล้างฟอร์ม" }).click();
+});
+
+await step("booking-areas", async () => {
+  await go(page, "#booking");
+  await page.getByPlaceholder("เช่น คุณสมหญิง").fill("คุณวราภรณ์ ทองดี");
+  await page.getByPlaceholder("08x-xxx-xxxx").fill("0812345678");
+  await page.getByRole("button", { name: "📋 ใช้คอร์ส" }).click();
+  await wait(300);
+  await page.locator("select").filter({ has: page.locator('option:has-text("สาขาขอนแก่น")') }).first().selectOption({ label: "สาขาขอนแก่น" });
+  await wait(200);
+  await page.locator("select").filter({ has: page.locator('option:has-text("[T] T02")') }).first().selectOption({ label: "[T] T02" });
+  await wait(200);
+  await page.locator("select").filter({ has: page.locator('option:has-text("Diode Laser")') }).first().selectOption({ index: 5 });
+  await wait(300);
+  await page.locator("select").filter({ has: page.locator('option:has-text("Diode ขา Full")') }).first().selectOption({ index: 2 });
+  await page.getByRole("button", { name: /^Hollywood/ }).click();
+  await page.getByRole("button", { name: /^ขา\s/ }).click();
+  await page.locator('input[type="date"]').first().fill(tomorrow(2)); // พรุ่งนี้ T02 ปิดซ่อมในข้อมูลสาธิต
+  await wait(400);
+  await page.locator('.time-block:not(.disabled):not([title*="มีคิว"])').nth(8).click();
+  await wait(300);
+  await page.getByText("บริเวณที่ทำ").first().evaluate((el) => el.scrollIntoView({ block: "start" }));
+  await wait(200);
+  await shot(page, "booking-areas");
   await page.getByRole("button", { name: "ล้างฟอร์ม" }).click();
 });
 
@@ -142,6 +185,19 @@ await step("queue-table", async () => {
   await page.locator("select").filter({ has: page.locator('option:has-text("สาขาขอนแก่น")') }).first().selectOption({ label: "สาขาขอนแก่น" });
   await wait(500);
   await shot(page, "queue-table");
+  // แท็บคิวรอ (มีคนรอค้างจากเดือนก่อน 1 คน)
+  await page.locator(".content").getByRole("button", { name: /^⏳ คิวรอ/ }).first().click();
+  await wait(400);
+  await shot(page, "queue-table-waiting-tab");
+  await page.locator(".content").getByRole("button", { name: /^🗂️ ทั้งหมด/ }).first().click();
+  await wait(300);
+  // ค้นหาทั้งระบบ
+  const search = page.getByPlaceholder("ชื่อ / เบอร์โทร / แอดมิน...");
+  await search.fill("วราภรณ์ ทองดี");
+  await wait(1200);
+  await shot(page, "queue-table-search");
+  await search.fill("");
+  await wait(600);
   // โหมดช่วงหลายวัน: ช่วงด่วน → 7 วันล่าสุด แล้วกางวันแรก
   await page.locator("select").filter({ has: page.locator('option:has-text("7 วันล่าสุด")') }).first().selectOption({ label: "7 วันล่าสุด" });
   await wait(800);
@@ -157,6 +213,10 @@ await step("queue-table", async () => {
   await page.locator(".modal").getByRole("button", { name: "📤 เลื่อนออก", exact: true }).click();
   await wait(300);
   await shot(page, "status-reschedule");
+  // กดบันทึกโดยยังไม่แก้วัน/เวลา → ระบบไม่ยอม
+  await page.locator(".modal").getByRole("button", { name: "บันทึกสถานะ" }).click();
+  await wait(300);
+  await shot(page, "status-reschedule-same-slot");
   await closeModal(page);
   const mv = page.getByRole("button", { name: "➡️ ย้ายเข้าคิวรอ" }).first();
   if (await mv.count()) {
@@ -186,6 +246,20 @@ await step("timeline", async () => {
   await shot(page, "timeline-mini-booking");
   await page.getByRole("button", { name: "ยกเลิก" }).last().click();
   await wait(200);
+  // เลือก Diode บน T02 → ปุ่มบริเวณ + บรรทัดเวลาจบ
+  await clickFreeCellOnBed(page, "T02", 20);
+  await page.getByPlaceholder("ชื่อ-นามสกุล").fill("คุณณัฐพร บุญมา");
+  await page.getByPlaceholder("0xxxxxxxxx").fill("0856789012");
+  await page.getByRole("button", { name: "🔄 ลูกค้าเก่า" }).click();
+  await wait(300);
+  await page.locator("select").filter({ has: page.locator('option:has-text("Diode Laser")') }).last().selectOption({ label: "Diode Laser (กำจัดขน)" });
+  await wait(300);
+  await page.getByRole("button", { name: /^Hollywood/ }).click();
+  await page.getByRole("button", { name: /^ขา\s/ }).click();
+  await wait(300);
+  await shot(page, "timeline-mini-areas");
+  await page.getByRole("button", { name: "ยกเลิก" }).last().click();
+  await wait(200);
   await page.getByRole("button", { name: "กดปิดเตียง" }).first().click();
   await wait(400);
   await shot(page, "bed-switch-modal");
@@ -202,9 +276,16 @@ await step("timeline", async () => {
 await step("summary", async () => {
   await go(page, "#summary");
   await wait(800);
-  await page.getByText("📝 คิวที่บันทึก").first().click();
+  await shot(page, "summary");
+  await page.getByRole("button", { name: "เดือน", exact: true }).click();
+  await wait(800);
+  await page.getByText("📌 การแอคทีฟสถานะคิว").first().click();
   await wait(500);
-  await shot(page, "summary", { fullPage: true });
+  await page.getByRole("button", { name: /วิธีนับตัวเลขในรายงานนี้/ }).click();
+  await wait(200);
+  await page.locator('button[title*="กดเพื่อดูรายชื่อคิว"]').first().click();
+  await wait(400);
+  await shot(page, "summary-activation", { fullPage: true });
 });
 await step("capacity", async () => {
   await go(page, "#capacity");
@@ -257,7 +338,15 @@ await step("activity-log", async () => {
 
 // ── ตั้งค่าระบบ ──
 await step("branches", async () => { await go(page, "#branches"); await shot(page, "branches"); });
-await step("procedures", async () => { await go(page, "#procedures"); await shot(page, "procedures", { fullPage: true }); });
+await step("procedures", async () => {
+  await go(page, "#procedures");
+  await shot(page, "procedures", { fullPage: true });
+  await page.getByRole("button", { name: /📍 9 บริเวณ/ }).click();
+  await wait(400);
+  await page.locator(".area-panel").first().evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await wait(200);
+  await shot(page, "procedures-areas");
+});
 await step("promos", async () => { await go(page, "#promos"); await shot(page, "promos", { fullPage: true }); });
 await step("rooms", async () => {
   await go(page, "#rooms");
@@ -301,9 +390,9 @@ await step("manual", async () => {
   await go(page, "#manual");
   await wait(500);
   await shot(page, "manual");
-  await page.getByRole("button", { name: "✅ แบบทดสอบภาคปฏิบัติ" }).click();
+  await page.getByRole("button", { name: /แบบทดสอบ ก่อน\/หลังเทรน/ }).click();
   await wait(400);
-  await shot(page, "manual-practical");
+  await shot(page, "manual-quiz");
 });
 
 // ── หน้าจอแคชเชีย (เดสก์ท็อป) ──
@@ -316,6 +405,22 @@ await step("cashier-desktop", async () => {
   await wait(500);
   await shot(c, "booking-page-cashier");
   await cctx.close();
+});
+
+// ── บัญชีผู้จัดการสาขา: ช่องชื่อผู้บันทึกจริง ──
+await step("recorder-note", async () => {
+  const bctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: "th-TH" });
+  await bctx.clock.setFixedTime(NOW);
+  const b = await bctx.newPage();
+  await login(b, "เจ๊หมวย", "2222");
+  await go(b, "#booking");
+  await wait(500);
+  await b.getByPlaceholder("เช่น คุณสมหญิง").fill("คุณอรทัย ศรีสุข");
+  await b.getByPlaceholder("08x-xxx-xxxx").fill("0899990000");
+  await b.getByPlaceholder("เช่น โย").fill("โย");
+  await wait(300);
+  await shot(b, "booking-recorder-note");
+  await bctx.close();
 });
 
 // ── มือถือ (แคชเชีย) ──

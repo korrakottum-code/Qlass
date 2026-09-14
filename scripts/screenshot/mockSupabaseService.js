@@ -71,6 +71,9 @@ export const DB = {
     { id: "r10", name: "T01", branchId: "b3", type: "T", notes: "", openBlock: 132, closeBlock: 240, sortOrder: 1 },
   ],
   roomProcedures: ["p6", "p13", "p90", "p91", "p92", "p93"].map((procedureId) => ({ roomId: "r5", procedureId })),
+  // บริเวณของ Diode — ชุดเดียวกับ supabase/seeds/procedure_areas_diode.sql
+  procedureAreas: [["รักแร้", 3], ["หนวด", 3], ["เครา", 3], ["ใบหน้า", 3], ["แขน", 4], ["ขา", 4], ["ขาล่าง", 4], ["หลัง", 4], ["Hollywood", 6]]
+    .map(([name, blocks], i) => ({ id: `pa${i + 1}`, procedureId: "p8", name, blocks, sortOrder: (i + 1) * 10, active: true })),
   roomSchedules: [
     { id: "rs1", roomId: "r4", date: addDays(TODAY, 1), available: false, startBlock: null, endBlock: null, note: "เครื่อง Diode ส่งซ่อม", source: null },
     { id: "rs2", roomId: "r1", date: TODAY, available: true, startBlock: null, endBlock: null, note: "หมอเข้า 14:00 เป็นต้นไป", source: null },
@@ -122,7 +125,8 @@ function genQueues() {
             const customerType = ct < 0.45 ? "new" : ct < 0.8 ? "old" : "course";
             let status;
             const s = rnd();
-            if (off < 0) status = s < 0.72 ? "done" : s < 0.84 ? "no_show" : s < 0.95 ? "cancelled" : "rescheduled";
+            // วันที่ผ่านมาแล้ว: ส่วนใหญ่ปิดงานครบ แต่เหลือ "ค้างไม่แอคทีฟ" ไว้บ้าง (ยืนยันแล้ว/โทรตาม) ให้รายงานการแอคทีฟมีตัวอย่าง
+            if (off < 0) status = s < 0.7 ? "done" : s < 0.82 ? "no_show" : s < 0.92 ? "cancelled" : s < 0.96 ? "rescheduled" : off >= -4 && s < 0.985 ? "confirmed" : off >= -4 ? "follow1" : "done";
             else if (off === 0) status = block < 168 ? (s < 0.7 ? "done" : "confirmed") : (s < 0.5 ? "confirmed" : s < 0.7 ? "pending" : s < 0.85 ? "follow1" : "follow2");
             else status = s < 0.4 ? "confirmed" : s < 0.75 ? "pending" : s < 0.9 ? "follow1" : "follow2";
             const lead = off > 0 ? Math.floor(rnd() * 3) : Math.floor(rnd() * 4);
@@ -134,6 +138,8 @@ function genQueues() {
               durationBlocks: null, status, statusNote: status === "follow1" ? "โทรไม่รับสาย" : status === "cancelled" ? "ลูกค้าติดธุระ" : "",
               recordedBy: pick(ADMINS), createdAt: created.toISOString(), statusUpdatedAt: null,
             });
+            const last = out[out.length - 1];
+            if (last.recordedBy === "s6") last.recordedNote = pick(["โย", "เอมมี่", "ฝน"]);
             block += proc.blocks + (rnd() < 0.5 ? 0 : 6);
           } else block += 6;
         }
@@ -143,6 +149,8 @@ function genQueues() {
   // คิวรอ
   out.push({ id: "q-wait-1", name: "คุณอรอนงค์ มีสุข", phone: "0812223333", branchId: "b1", roomId: null, procedureId: "p6", promoId: "pr6", price: 3900, note: "สะดวกช่วงบ่าย", customerType: "new", date: TODAY, timeBlock: null, durationBlocks: null, status: "waiting_queue", statusNote: "", recordedBy: "s8", createdAt: new Date(Date.now() - 3600e3).toISOString(), statusUpdatedAt: null });
   out.push({ id: "q-wait-2", name: "คุณเบญจมาศ ศรีสุข", phone: "0854445555", branchId: "b1", roomId: null, procedureId: "p1", promoId: "pr1", price: 2500, note: "", customerType: "old", date: TODAY, timeBlock: null, durationBlocks: null, status: "waiting_queue", statusNote: `🕐 เดิมนัด M02 11:30 (วันนี้) — ย้ายเข้าคิวรอเพราะยังไม่ยืนยัน`, recordedBy: "s3", createdAt: new Date(Date.now() - 7200e3).toISOString(), statusUpdatedAt: null });
+  out.push({ id: "q-wait-3", name: "คุณพิมพ์ลดา รักษ์ดี", phone: "0866667777", branchId: "b1", roomId: null, procedureId: "p8", promoId: "pr10", price: 990, note: "รอเครื่อง Diode กลับจากซ่อม", customerType: "course", date: addDays(TODAY, -35), timeBlock: null, durationBlocks: 7, status: "waiting_queue", statusNote: "", recordedBy: "s6", recordedNote: "โย", createdAt: new Date(Date.now() - 35 * 86400e3).toISOString(), statusUpdatedAt: null });
+  out.push({ id: "q-wait-4", name: "คุณศศิธร วงศ์ดี", phone: "0877778888", branchId: "b2", roomId: null, procedureId: "p3", promoId: "pr8", price: 3500, note: "", customerType: "new", date: addDays(TODAY, -2), timeBlock: null, durationBlocks: null, status: "waiting_queue", statusNote: "", recordedBy: "s4", createdAt: new Date(Date.now() - 2 * 86400e3).toISOString(), statusUpdatedAt: null });
   return out;
 }
 DB.queues = genQueues();
@@ -213,7 +221,7 @@ export async function deleteStaff(id) { remove(DB.staff, id); }
 
 // ─── queues ───
 export function mapQueueRow(q) {
-  return { id: q.id, name: q.name, phone: q.phone, branchId: q.branch_id, procedureId: q.procedure_id, promoId: q.promo_id, price: q.price ? parseFloat(q.price) : "", note: q.note || "", customerType: q.customer_type, date: q.date, timeBlock: q.time_block, durationBlocks: q.duration_blocks ?? null, roomId: q.room_id, status: q.status, statusNote: q.status_note || "", recordedBy: q.recorded_by, createdAt: q.created_at, statusUpdatedAt: q.status_updated_at };
+  return { id: q.id, name: q.name, phone: q.phone, branchId: q.branch_id, procedureId: q.procedure_id, promoId: q.promo_id, price: q.price ? parseFloat(q.price) : "", note: q.note || "", customerType: q.customer_type, date: q.date, timeBlock: q.time_block, durationBlocks: q.duration_blocks ?? null, roomId: q.room_id, status: q.status, statusNote: q.status_note || "", recordedBy: q.recorded_by, recordedNote: q.recorded_note || "", createdAt: q.created_at, statusUpdatedAt: q.status_updated_at };
 }
 export async function fetchQueues(opts = {}) {
   const { sinceDate = null, untilDate = null, onResult = null } = opts;
@@ -237,6 +245,25 @@ export async function fetchQueuesForRoomDate(roomId, date) {
   if (!roomId || !date) return [];
   return clone(DB.queues.filter((q) => q.roomId === roomId && q.date === date && !["cancelled", "no_show", "rescheduled"].includes(q.status)));
 }
+
+// คิวรอทั้งหมดไม่จำกัดวัน (แท็บ "⏳ คิวรอ" ในตารางคิว) — เหมือน fetchWaitingQueues ตัวจริง
+export async function fetchWaitingQueues() { await delay(); return clone(DB.queues.filter((q) => q.status === "waiting_queue")); }
+// ค้นหาคิวทั้งระบบด้วยชื่อ/เบอร์ — กติกาเดียวกับ queueSearch.js (ทุกคำต้องเจอครบ)
+export async function searchQueues(term, { limit = 200 } = {}) {
+  await delay();
+  const words = String(term || "").replace(/[,()%_*"\\]/g, " ").trim().split(/\s+/).filter(Boolean).slice(0, 4);
+  if (!words.length) return [];
+  const rows = DB.queues.filter((q) => words.every((w) => `${q.name} ${q.phone}`.toLowerCase().includes(w.toLowerCase())));
+  return clone(rows.sort((a, b) => b.date.localeCompare(a.date)).slice(0, limit));
+}
+
+// ─── procedure areas (บริเวณของหัตถการ) ───
+export function mapProcedureAreaRow(row) { return { id: row.id, procedureId: row.procedure_id, name: row.name || "", blocks: row.blocks, sortOrder: row.sort_order ?? 0, active: row.active !== false }; }
+export async function fetchProcedureAreas() { await delay(); return clone(DB.procedureAreas); }
+export async function createProcedureArea(a) { return clone(upsert(DB.procedureAreas, { active: true, sortOrder: 0, ...a, id: uid("pa") })); }
+export async function updateProcedureArea(id, a) { return clone(upsert(DB.procedureAreas, { ...DB.procedureAreas.find((x) => x.id === id), ...a, id })); }
+export async function deleteProcedureArea(id) { remove(DB.procedureAreas, id); }
+export const getAllProcedureAreas = fetchProcedureAreas;
 
 // ─── tickets / categories / logs / HN ───
 export async function fetchTickets() { await delay(); return clone(DB.tickets); }
