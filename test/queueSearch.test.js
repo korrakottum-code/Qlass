@@ -81,71 +81,82 @@ test("ค้นหาต้องไม่ผูกช่วงวันที�
   assert.match(fn, /for \(const w of words\) query = query\.or\(/, "ต้อง AND ทีละคำ");
 });
 
-test("ตอนค้นหาต้องข้ามด่านบังคับเลือกสาขา", () => {
-  // ด่านนั้นมีไว้กันตารางเป็นพันแถว ซึ่งไม่เกิดตอนค้นชื่อคนเดียว
-  assert.match(page, /\{searching \? \(/);
-  const i = page.indexOf("{searching ? (");
-  const j = page.indexOf("needsBranch ? (", i);
-  assert.ok(j > i, "บล็อกค้นหาต้องมาก่อนด่านเลือกสาขา");
+test("ตอนค้นหาต้องไม่ยึดตารางของวันที่เลือกไปทั้งหน้า", () => {
+  // #186 เคยให้ผลค้นหาแทนที่มุมมองรายวันทั้งหมด หน้าร้านเสียมุมมอง "งานวันนี้" ซึ่งใช้
+  // วันละหลายสิบครั้ง ส่วนการตามหาคนข้ามวันเกิดวันละไม่กี่ครั้ง (หน้าร้านแจ้ง 13 ก.ย. 2569)
+  assert.ok(!/โหมดค้นหา: แทนที่มุมมองรายวันทั้งหมด/.test(page));
+  assert.match(page, /const elsewhere = useMemo\(/, "ต้องแยกเป็น 'คิวที่อยู่นอกมุมมองนี้'");
+  assert.match(page, /!visibleIds\.has\(q\.id\)/, "ต้องไม่โชว์ซ้ำกับที่อยู่ในตารางแล้ว");
 });
 
-test("ไม่เจอตอนค้นหา ห้ามชวนให้ไปลงคิวใหม่", () => {
-  // "ยังไม่มีคิว — ไปบันทึกคิวก่อนเลย!" ของมุมมองรายวัน ถ้าโผล่ตอนค้นหา หน้าร้านจะอ่านว่า
-  // ลูกค้าคนนี้ไม่มีคิว แล้วลงใหม่ทับของเดิม
-  const i = page.indexOf("{searching ? (");
-  const j = page.indexOf("needsBranch ? (", i);
-  const searchBlock = page.slice(i, j);
-  // เทียบข้อความที่ใช้จริง (มี "!" ท้าย) ไม่ใช่ที่พิมพ์ไว้ในคอมเมนต์อธิบายกฎข้อนี้
-  assert.ok(!searchBlock.includes("ไปบันทึกคิวก่อนเลย!"));
-  assert.ok(searchBlock.includes("ไม่พบ") && searchBlock.includes("ในระบบเลย"));
-  assert.match(searchBlock, /ค้นครบทุกวันและทุกสาขาแล้ว/);
+test("บรรทัดเตือนนับเฉพาะคิวข้างหน้า ไม่นับประวัติเก่า", () => {
+  // ลูกค้าประจำมีประวัติหลายใบ ถ้านับด้วย บรรทัดนี้จะขึ้นเลขทุกครั้งจนไม่มีใครอ่าน
+  // ข้อมูลจริง: ลูกค้า 115,979 คน มีแค่ 6,087 คนที่มีคิวข้างหน้าค้างอยู่
+  const start = page.indexOf("const elsewhereUpcoming");
+  const block = page.slice(start, start + 500);
+  assert.match(block, /q\.date >= today/);
+  assert.match(block, /isActiveQueueStatus/);
+  assert.match(block, /!== "done"/);
 });
 
-test("ผลค้นหาต้องผูกกับคำที่ค้น กันผลของคำเก่าค้างโชว์", () => {
-  assert.match(page, /const resultsFresh = globalSearch\.term === searchTerm;/);
-  assert.match(page, /resultsFresh \? globalSearch\.rows : \[\]/);
+test("ตัวกรองด้านบนต้องกลับมาทำงานตอนค้นหา", () => {
+  // ชิปสรุปสถานะและแบนเนอร์เตือนถูกซ่อนไว้ตอน #186 เพราะผลค้นหายึดทั้งหน้า
+  // ตอนนี้ตารางรายวันเป็นพระเอกเหมือนเดิม ตัวเลขพวกนี้จึงต้องกลับมา
+  assert.ok(!/\{!searching && statusChips\.length > 0/.test(page));
+  assert.ok(!/\{!searching && overdueCount > 0/.test(page));
+});
+
+test("ไม่เจอในวันที่เลือก ห้ามชวนให้ไปลงคิวใหม่", () => {
+  // "ยังไม่มีคิว — ไปบันทึกคิวก่อนเลย!" คือประโยคที่ทำให้หน้าร้านลงคิวซ้ำทับของเดิม
+  assert.match(page, /ไม่เจอ "\$\{searchTerm\}" ใน\$\{isRange \? "ช่วงวันที่นี้" : "วันที่เลือก"\}/);
+  assert.match(page, /แต่เจอในวันอื่น \{elsewhere\.length\} คิว/);
+});
+
+test("ค้นครบทั้งระบบแล้วไม่เจอจริง ต้องบอกให้ชัด", () => {
+  // ต่างจาก "ไม่เจอในวันนี้" ซึ่งไม่ได้แปลว่าไม่มี — ประโยคนี้คือสิ่งที่ทำให้กล้าลงใหม่
+  assert.match(page, /const foundNowhere = searching && searchStatus === "done" && searchResults\.length === 0;/);
+  assert.match(page, /ไม่พบ "\{searchTerm\}" ในระบบเลย/);
+});
+
+test("แผงกางต้องหุบเองเมื่อเปลี่ยนคำค้น", () => {
+  // เก็บเป็น "คำค้นที่กางไว้" ไม่ใช่บูลีน จะได้ไม่ต้องมี effect คอยรีเซ็ต (setState ใน
+  // effect ทำให้ render ซ้อน และ lint ของโปรเจกต์นี้ก็ห้ามไว้)
+  assert.match(page, /const \[expandedFor, setExpandedFor\] = useState\(""\);/);
+  assert.match(page, /const showElsewhere = expandedFor === searchTerm;/);
+});
+
+test("ผลที่อยู่นอกมุมมองต้องตัดให้เหลือเท่าที่อ่านไหว", () => {
+  assert.match(page, /const SEARCH_PAGE_SIZE = 50;/);
+  assert.match(page, /elsewhere\.slice\(0, SEARCH_PAGE_SIZE\)/);
+  assert.match(page, /แสดง \{elsewhereItems\.length\} จาก \{elsewhere\.length\}/);
+});
+
+test("ยังพิมพ์ไม่หยุด ต้องบอกว่าตัวเลขยังไม่ใช่ของคำล่าสุด", () => {
+  assert.match(page, /const searchPending = qfSearch\.trim\(\) !== appliedSearch;/);
+  assert.match(page, /กำลังพิมพ์/);
 });
 
 test("ต้องรอให้พิมพ์นิ่งก่อน ไม่กรอง/ไม่ยิงหาใหม่ทุกตัวอักษร", () => {
-  // พิมพ์หนึ่งตัวอักษรแล้วคำนวณตารางใหม่ทั้งหน้า (คิวหลักพันแถว จัดกลุ่มตามสาขา/ห้อง/วัน)
-  // ทำให้ช่องพิมพ์รู้สึกค้าง — หน้าร้านแจ้งเข้ามา 12 ก.ย. 2569
   assert.match(page, /const \[appliedSearch, setAppliedSearch\] = useState\(""\);/);
   assert.match(page, /setTimeout\(\(\) => setAppliedSearch\(qfSearch\.trim\(\)\), SEARCH_DEBOUNCE_MS\)/);
-  assert.match(page, /const searchTerm = appliedSearch;/,
-    "ทุกอย่างที่หนักต้องอิงคำที่นิ่งแล้ว ไม่ใช่คำที่กำลังพิมพ์");
+  assert.match(page, /const searchTerm = appliedSearch;/);
 });
 
 test("ตัวอักษรเดียวยังไม่กรองอะไร", () => {
   assert.match(page, /if \(!isSearchable\(appliedSearch\)\) return true;/);
 });
 
-test("ยังพิมพ์ไม่หยุด ต้องบอกว่าผลที่เห็นยังไม่ใช่ของคำล่าสุด", () => {
-  assert.match(page, /const searchPending = qfSearch\.trim\(\) !== appliedSearch;/);
-  assert.match(page, /กำลังพิมพ์/);
-});
-
 test("ลบคิวจากผลค้นหาแล้วแถวต้องหายทันที", () => {
-  // ผลค้นหามาจากคนละก้อนกับ state หลัก ถ้าไม่จำไว้ว่าลบอะไรไป แถวที่ลบแล้วจะยังค้างอยู่
-  // จนกว่าจะค้นใหม่ แล้วหน้าร้านจะเข้าใจว่าลบไม่สำเร็จ แล้วกดลบซ้ำ
   assert.match(page, /const \[deletedInSearch, setDeletedInSearch\]/);
   assert.match(page, /for \(const id of deletedInSearch\) byId\.delete\(id\);/);
 });
 
 test("ลบไม่สำเร็จต้องไม่ซ่อนแถว", () => {
-  // แถวยังอยู่ใน DB จริง ซ่อนไปแล้วหน้าร้านจะเข้าใจว่าลบสำเร็จ
   assert.match(page, /\.then\(\(\) => setDeletedInSearch/);
   assert.match(page, /\.catch\(\(\) => \{\}\)/);
 });
 
-test("ตอนค้นหาต้องซ่อนตัวเลขที่ผูกกับช่วงวันที่", () => {
-  // ชิปสรุปสถานะและแบนเนอร์เตือนนับตามช่วงวันที่ ซึ่งตอนค้นหาไม่ได้ใช้ — โชว์ไว้จะอ่านปนกัน
-  assert.match(page, /\{!searching && statusChips\.length > 0 && \(/);
-  assert.match(page, /\{!searching && overdueCount > 0 && \(/);
-  assert.match(page, /\{!searching && !needsBranch && filteredQueues\.length > HEAVY_ROW_WARNING && \(/);
-});
-
 test("เรียงให้ที่ตรงกว่าขึ้นก่อน", () => {
-  // พิมพ์ "สุดา" ต้องได้คนที่ชื่อขึ้นต้นด้วย "สุดา" ก่อนคนที่ "สุดา" ไปโผล่กลางคำ
   const rows = [
     { name: "นางสาวสุดารักษ์ คำสุนันท์", phone: "0874261585", date: "2026-10-25" },
     { name: "น.ส เชษฐ์สุดา นนมุต", phone: "0840327944", date: "2026-10-24" },
@@ -153,8 +164,8 @@ test("เรียงให้ที่ตรงกว่าขึ้นก่�
     { name: "พรรณิภา สุดามาตร์", phone: "0661535539", date: "2026-10-03" },
   ];
   const sorted = sortSearchResults(rows, "สุดา");
-  assert.equal(sorted[0].name, "สุดารัตน์ สะอาดดวงกมล", "ชื่อขึ้นต้นด้วยคำที่พิมพ์ต้องมาก่อน");
-  assert.equal(sorted[1].name, "พรรณิภา สุดามาตร์", "คำใดคำหนึ่งขึ้นต้นด้วย มาก่อนที่โผล่กลางคำ");
+  assert.equal(sorted[0].name, "สุดารัตน์ สะอาดดวงกมล");
+  assert.equal(sorted[1].name, "พรรณิภา สุดามาตร์");
   assert.ok(sorted.slice(2).every((r) => rankQueueMatch(r, "สุดา") === 10));
 });
 
@@ -166,16 +177,19 @@ test("ค้นด้วยเบอร์ เบอร์ที่ตรงเ�
   assert.equal(sortSearchResults(rows, "0909515956")[0].name, "ก");
 });
 
-test("ผลเยอะเกินต้องตัดให้เหลือเท่าที่อ่านไหว และบอกว่าตัด", () => {
-  // วาด 200 แถว แถวละ 4-5 ปุ่ม = หน้าหน่วงทันทีที่พิมพ์ และคนอ่านก็ไล่ไม่ไหวอยู่ดี
-  assert.match(page, /const SEARCH_PAGE_SIZE = 50;/);
-  assert.match(page, /searchResults\.slice\(0, SEARCH_PAGE_SIZE\)/);
-  assert.match(page, /แสดง \{searchItems\.length\} จากที่เจอทั้งหมด \{searchResults\.length\} คิว/);
+test("ด่านกันหน้าค้างต้องยังอยู่ครบ", () => {
+  // ช่วงยาวเกิน 7 วัน + ทุกสาขา = คิวหลายพันแถวในหน้าเดียว หน้าค้างแน่
+  // ตอนรื้อโหมดค้นหาออก บล็อกนี้เกือบหลุดหายไปด้วย (13 ก.ย. 2569)
+  assert.match(page, /\{needsBranch \? \(/);
+  assert.match(page, /ยังไม่ได้แสดงตาราง — ไม่ใช่ว่าไม่มีคิว/);
+  assert.match(page, /ให้พิมพ์ชื่อหรือเบอร์ในช่อง "ค้นหา" ด้านบนได้เลย/,
+    "ด่านนี้ต้องบอกทางที่ถูกด้วย ไม่ใช่บอกแค่ว่าให้เลือกสาขา");
 });
 
-test("พิมพ์แล้วต้องไม่วาดตารางใหม่ทุกตัวอักษร", () => {
-  assert.match(page, /const QueueDataTableMemo = memo\(QueueDataTable\);/);
-  assert.match(page, /const tableProps = useMemo\(\(\) => \(\{/,
-    "props ต้อง identity คงที่ ไม่งั้น memo ไม่ช่วยอะไรเลย");
-  assert.ok(!/<QueueDataTable /.test(page), "ต้องใช้ตัวที่ห่อ memo ทุกที่");
+test("ลำดับการแสดงผลต้องครบสามทาง", () => {
+  // needsBranch -> ตารางว่าง -> ตารางจริง ถ้าขาดทางใดทางหนึ่งจะได้หน้าขาวหรือหน้าค้าง
+  const i = page.indexOf("{needsBranch ? (");
+  const j = page.indexOf("filteredQueues.length === 0 && waitingQueues.length === 0 ? (", i);
+  const k = page.indexOf("groupedData.map(", j);
+  assert.ok(i > 0 && j > i && k > j, "ลำดับ needsBranch -> ว่าง -> ตาราง ต้องอยู่ครบตามนี้");
 });

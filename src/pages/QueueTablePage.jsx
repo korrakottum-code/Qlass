@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, memo } from "react";
 import { CUSTOMER_TYPES, QUEUE_STATUSES } from "../utils/constants";
-import { getTodayStr, formatThaiDate, blockToTime, formatRecorderLabel, getCustomerBadgeClass, isOverdueUnconfirmed, isoToLocalDateStr } from "../utils/helpers";
+import { getTodayStr, formatThaiDate, blockToTime, formatRecorderLabel, getCustomerBadgeClass, isOverdueUnconfirmed, isoToLocalDateStr, isActiveQueueStatus } from "../utils/helpers";
 import { pickDatePresets, daySpan } from "../utils/datePresets";
 import { isSearchable, matchesQueueSearch, sortSearchResults } from "../utils/queueSearch";
 import { buildStatusChips } from "../utils/statusChips";
@@ -313,6 +313,9 @@ export default function QueueTablePage({
   // คิวที่ผู้ใช้เพิ่งลบไป — ผลค้นหามาจากคนละก้อนกับ state หลัก ถ้าไม่จำไว้ แถวที่ลบแล้ว
   // จะยังค้างอยู่ในผลค้นหาจนกว่าจะค้นใหม่ แล้วหน้าร้านจะเข้าใจว่าลบไม่สำเร็จ
   const [deletedInSearch, setDeletedInSearch] = useState(() => new Set());
+  // กางดูคิวที่อยู่นอกมุมมองนี้ — เก็บเป็น "คำค้นที่กางไว้" ไม่ใช่บูลีน เพื่อให้พอเปลี่ยน
+  // คำค้นแล้วแผงหุบเองโดยไม่ต้องมี effect คอยรีเซ็ต (setState ใน effect ทำให้ render ซ้อน)
+  const [expandedFor, setExpandedFor] = useState("");
   const searchTerm = appliedSearch;
   const searching = isSearchable(searchTerm);
   const resultsFresh = globalSearch.term === searchTerm;
@@ -544,13 +547,43 @@ export default function QueueTablePage({
     return sortSearchResults(Array.from(byId.values()), searchTerm);
   }, [searching, resultsFresh, globalSearch.rows, queues, matchesSearch, branches, deletedInSearch, searchTerm]);
 
-  // แสดงทีละไม่เกิน SEARCH_PAGE_SIZE แถว — เจอ 200 คนแล้ววาดทั้งหมดคือหน้าหน่วง
-  // และคนอ่านก็ไล่ไม่ไหวอยู่ดี ที่ตรงที่สุดอยู่บนสุดแล้วจากการเรียงข้างบน
-  const searchItems = useMemo(() => searchResults.slice(0, SEARCH_PAGE_SIZE).map((q) => {
+  // ─── คิวที่ตรงกับคำค้น แต่ไม่ได้อยู่ในมุมมองที่เปิดอยู่ ───
+  //
+  // พิมพ์ชื่อแล้วยึดตารางทั้งหน้าไปเป็นผลค้นหา (แบบ #186) หน้าร้านเสียมุมมอง "งานวันนี้"
+  // ซึ่งเป็นสิ่งที่ใช้วันละหลายสิบครั้ง — การตามหาคนข้ามวันเกิดวันละไม่กี่ครั้ง
+  // ตอนนี้ตารางวันที่เลือกกรองตามคำค้นเหมือนเดิม ส่วนคิวที่อยู่วันอื่น/สาขาอื่นมาเป็น
+  // บรรทัดเตือนบรรทัดเดียว กดกางดูได้ ไม่แย่งที่ของตาราง
+  const visibleIds = useMemo(() => {
+    const ids = new Set();
+    for (const q of filteredQueues) ids.add(q.id);
+    for (const q of waitingQueues) ids.add(q.id);
+    return ids;
+  }, [filteredQueues, waitingQueues]);
+
+  const elsewhere = useMemo(
+    () => searchResults.filter((q) => !visibleIds.has(q.id)),
+    [searchResults, visibleIds]
+  );
+
+  // บรรทัดเตือนนับเฉพาะ "คิวข้างหน้าที่ยังไม่จบ" — ถ้านับประวัติเก่าด้วย ลูกค้าประจำ
+  // จะขึ้นเลขทุกครั้งจนกลายเป็นเสียงรบกวนที่ไม่มีใครอ่าน
+  // (ข้อมูลจริง 13 ก.ย. 2569: ลูกค้า 115,979 คน มีแค่ 6,087 คนที่มีคิวข้างหน้าค้างอยู่
+  //  ค่ากลางคือคนละ 1 คิว บรรทัดนี้จึงเงียบเกือบตลอด และดังเฉพาะตอนที่สำคัญจริง)
+  const elsewhereUpcoming = useMemo(() => {
+    const today = getTodayStr();
+    return elsewhere.filter((q) =>
+      q.date && q.date >= today && isActiveQueueStatus(q.status || "pending") && (q.status || "pending") !== "done");
+  }, [elsewhere]);
+
+  const elsewhereItems = useMemo(() => elsewhere.slice(0, SEARCH_PAGE_SIZE).map((q) => {
     const branch = branches.find((b) => b.id === q.branchId);
     const room = rooms.find((r) => r.id === q.roomId);
     return { ...q, __roomName: `${branch?.name || "ไม่ระบุสาขา"}${room ? ` · ${room.name}` : ""}` };
-  }), [searchResults, branches, rooms]);
+  }), [elsewhere, branches, rooms]);
+
+  // ค้นครบทั้งระบบแล้วไม่เจอจริง ๆ — ต่างจาก "ไม่เจอในวันนี้" ซึ่งไม่ได้แปลว่าไม่มี
+  const foundNowhere = searching && searchStatus === "done" && searchResults.length === 0;
+  const showElsewhere = expandedFor === searchTerm;
 
   // ลบล้มเหลว = แถวยังอยู่ใน DB จริง ห้ามซ่อนจากผลค้นหา (App แจ้ง error ให้เองแล้ว)
   function handleDelete(queue) {
@@ -632,7 +665,7 @@ export default function QueueTablePage({
       {/* ชิปสรุปสถานะ / แบนเนอร์เตือน — ทั้งหมดผูกกับช่วงวันที่ที่เลือก ซึ่งตอนค้นหาไม่ได้ใช้
           ปล่อยไว้จะอ่านปนกัน เห็นเลขของช่วงวันที่แต่ตารางข้างล่างเป็นผลค้นหาทั้งระบบ */}
       {/* Status summary chips */}
-      {!searching && statusChips.length > 0 && (
+      {statusChips.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "nowrap", overflowX: "auto", marginBottom: 12, paddingBottom: 2 }}>
           {/* กรองสถานะค้างไว้ = ตารางข้างล่างไม่ใช่ทั้งวัน ต้องมีปุ่มล้างให้เห็นมาก่อนชิป
               ไม่ใช่ให้ไปเดาว่าต้องกดชิปเดิมซ้ำถึงจะกลับมาเห็นครบ */}
@@ -674,7 +707,7 @@ export default function QueueTablePage({
         </div>
       )}
 
-      {!searching && overdueCount > 0 && (
+      {overdueCount > 0 && (
         <div style={{
           display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
           padding: "8px 14px", borderRadius: "var(--radius-sm)",
@@ -685,7 +718,7 @@ export default function QueueTablePage({
         </div>
       )}
 
-      {!searching && !needsBranch && filteredQueues.length > HEAVY_ROW_WARNING && (
+      {!needsBranch && filteredQueues.length > HEAVY_ROW_WARNING && (
         <div style={{
           display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
           padding: "8px 14px", borderRadius: "var(--radius-sm)",
@@ -696,69 +729,57 @@ export default function QueueTablePage({
         </div>
       )}
 
-      {searching ? (
-        /* ── โหมดค้นหา: แทนที่มุมมองรายวันทั้งหมด ── */
-        <div className="card">
+      {/* ── คำค้นไม่ยึดหน้า: ตารางวันที่เลือกยังเป็นพระเอก ที่เจอที่อื่นมาเป็นบรรทัดเดียว ── */}
+      {searching && (foundNowhere || elsewhereUpcoming.length > 0) && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12,
+          padding: "8px 14px", borderRadius: "var(--radius-sm)",
+          border: `1.5px solid ${foundNowhere ? "var(--border2)" : "#d97706"}`,
+          background: foundNowhere ? "var(--surface2)" : "rgba(217,119,6,0.12)",
+          color: foundNowhere ? "var(--text2)" : "#b45309",
+          fontSize: 13, fontWeight: 700,
+        }}>
+          {foundNowhere ? (
+            <span>🔍 ไม่พบ "{searchTerm}" ในระบบเลย — ค้นครบทุกวันและทุกสาขาแล้ว ไม่จำกัดช่วงวันที่ด้านบน</span>
+          ) : (
+            <>
+              <span>🔍 "{searchTerm}" มีคิวข้างหน้าอยู่ที่อื่นอีก {elsewhereUpcoming.length} คิว</span>
+              {/* ยังพิมพ์ไม่หยุด = ตัวเลขยังเป็นของคำก่อนหน้า ต้องบอก ไม่ใช่ปล่อยให้อ่านผิดคน */}
+              {searchPending && <span style={{ fontWeight: 600, color: "var(--text3)" }}>⏳ กำลังพิมพ์...</span>}
+              <button
+                type="button"
+                onClick={() => setExpandedFor(showElsewhere ? "" : searchTerm)}
+                style={{
+                  marginLeft: "auto", background: "var(--surface)", border: "1.5px solid #d97706",
+                  borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700,
+                  color: "#b45309", cursor: "pointer", fontFamily: "var(--font)",
+                }}
+              >
+                {showElsewhere ? "▸ ซ่อน" : `▾ ดูทั้งหมด (${elsewhere.length})`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {searching && showElsewhere && elsewhere.length > 0 && (
+        <div className="card" style={{ marginBottom: 12 }}>
           <div style={{
-            display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
             padding: "8px 14px", borderBottom: "1px solid var(--border)",
             fontSize: 12, fontWeight: 700, color: "var(--text2)",
           }}>
-            <span>🔍 ผลค้นหา "{searchTerm}" — ค้นทั้งระบบ ทุกวัน ทุกสาขา ทุกสถานะ (ตัวกรองด้านบนไม่ถูกใช้ตอนค้นหา)</span>
-            {/* ยังพิมพ์ไม่หยุด = ที่เห็นอยู่ยังเป็นผลของคำก่อนหน้า ต้องบอก ไม่ใช่ปล่อยให้อ่านผิดคน */}
-            {searchPending && (
-              <span style={{ fontWeight: 600, color: "var(--text3)" }}>⏳ กำลังพิมพ์...</span>
+            คิวของ "{searchTerm}" ที่อยู่นอกมุมมองนี้ — ทุกวัน ทุกสาขา ทุกสถานะ
+            {elsewhere.length > elsewhereItems.length && (
+              <span style={{ fontWeight: 400, color: "var(--text3)" }}>
+                {" "}· แสดง {elsewhereItems.length} จาก {elsewhere.length} พิมพ์ให้เจาะจงขึ้นเพื่อให้แคบลง
+              </span>
             )}
-            <button
-              type="button"
-              onClick={() => setQfSearch("")}
-              style={{
-                marginLeft: "auto", background: "var(--surface2)", border: "1.5px solid var(--border)",
-                borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700,
-                color: "var(--text2)", cursor: "pointer", fontFamily: "var(--font)",
-              }}
-            >
-              ✕ ล้างคำค้น
-            </button>
           </div>
-          {searchResults.length > 0 ? (
-            <>
-              <QueueDataTableMemo items={searchItems} showRoomCol searchMode {...tableProps} onJumpToDate={jumpToQueue} />
-              {searchResults.length > searchItems.length && (
-                <div style={{ padding: "8px 14px", borderTop: "1px solid var(--border)", fontSize: 12, color: "var(--text2)", fontWeight: 600 }}>
-                  แสดง {searchItems.length} จากที่เจอทั้งหมด {searchResults.length} คิว — เรียงจากที่ตรงกับคำค้นมากที่สุด
-                  <span style={{ fontWeight: 400, color: "var(--text3)" }}> · พิมพ์ชื่อให้ยาวขึ้นหรือใส่นามสกุล/เบอร์โทร เพื่อให้แคบลง</span>
-                </div>
-              )}
-              {searchStatus === "loading" && (
-                <div style={{ padding: "8px 14px", fontSize: 12, color: "var(--text3)" }}>⏳ กำลังค้นเพิ่มจากทั้งระบบ...</div>
-              )}
-            </>
-          ) : searchStatus === "loading" ? (
-            <div className="empty"><div className="e-icon">🔍</div><p>กำลังค้นหา...</p></div>
-          ) : searchStatus === "error" ? (
-            <div className="empty">
-              <div className="e-icon">⚠️</div>
-              <p>ค้นหาไม่สำเร็จ</p>
-              <p style={{ fontSize: 12, color: "var(--text3)", marginTop: 6, lineHeight: 1.7 }}>
-                ยังบอกไม่ได้ว่าลูกค้ารายนี้มีคิวหรือไม่ — กรุณาลองใหม่อีกครั้งก่อนตัดสินใจลงคิวใหม่
-              </p>
-            </div>
-          ) : (
-            /* ข้อความตรงนี้สำคัญ: ห้ามพูดว่า "ยังไม่มีคิว ไปบันทึกคิวก่อนเลย" เหมือนมุมมองรายวัน
-               เพราะตอนค้นหา คำตอบนั้นจะถูกอ่านว่า "ลูกค้าคนนี้ไม่มีคิว" แล้วหน้าร้านจะลงใหม่
-               ทับของเดิม ต้องบอกให้ชัดว่าค้นครบทั้งระบบแล้วจริง ๆ ถึงจะกล้าลงใหม่ */
-            <div className="empty">
-              <div className="e-icon">🔍</div>
-              <p>ไม่พบ "{searchTerm}" ในระบบเลย</p>
-              <p style={{ fontSize: 12, color: "var(--text3)", marginTop: 6, lineHeight: 1.7 }}>
-                ค้นครบทุกวันและทุกสาขาแล้ว ไม่จำกัดเฉพาะช่วงวันที่ด้านบน<br />
-                ถ้าสะกดชื่อไม่ตรง ลองพิมพ์แค่ชื่อต้นหรือเบอร์โทรแทน
-              </p>
-            </div>
-          )}
+          <QueueDataTableMemo items={elsewhereItems} showRoomCol searchMode {...tableProps} onJumpToDate={jumpToQueue} />
         </div>
-      ) : needsBranch ? (
+      )}
+
+      {needsBranch ? (
         <div className="card">
           <div className="empty">
             <div className="e-icon">🏢</div>
@@ -779,7 +800,16 @@ export default function QueueTablePage({
         <div className="card">
           <div className="empty">
             <div className="e-icon">📭</div>
-            <p>{isRange ? "ไม่มีคิวในช่วงวันที่เลือก" : "ยังไม่มีคิว — ไปบันทึกคิวก่อนเลย!"}</p>
+            {/* ตอนกำลังค้นหา ห้ามขึ้น "ไปบันทึกคิวก่อนเลย" — ประโยคนั้นคือต้นเหตุที่หน้าร้าน
+                เชื่อว่าลูกค้าไม่มีคิวแล้วลงใหม่ทับของเดิม (ดู #186) */}
+            <p>{searching
+              ? `ไม่เจอ "${searchTerm}" ใน${isRange ? "ช่วงวันที่นี้" : "วันที่เลือก"}`
+              : isRange ? "ไม่มีคิวในช่วงวันที่เลือก" : "ยังไม่มีคิว — ไปบันทึกคิวก่อนเลย!"}</p>
+            {searching && elsewhere.length > 0 && (
+              <p style={{ fontSize: 12, color: "var(--text3)", marginTop: 6, lineHeight: 1.7 }}>
+                แต่เจอในวันอื่น {elsewhere.length} คิว — กดดูได้จากแถบด้านบน
+              </p>
+            )}
           </div>
         </div>
       ) : (
@@ -1014,9 +1044,8 @@ export default function QueueTablePage({
       )}
 
       <div style={{ fontSize: 12, color: "var(--text3)", textAlign: "right", marginTop: 8 }}>
-        {searching
-          ? `พบ ${searchResults.length} คิว${searchResults.length > searchItems.length ? ` (แสดง ${searchItems.length})` : ""} • ค้นทั้งระบบ ไม่จำกัดช่วงวันที่`
-          : `แสดง ${filteredQueues.length} คิว${waitingInRangeTotal > 0 ? ` + คิวรอ ${waitingInRangeTotal}` : ""} • ${rangeLabel}`}
+        {`แสดง ${filteredQueues.length} คิว${waitingInRangeTotal > 0 ? ` + คิวรอ ${waitingInRangeTotal}` : ""} • ${rangeLabel}`}
+        {searching && elsewhere.length > 0 && ` • เจอที่อื่นอีก ${elsewhere.length}`}
       </div>
 
       {/* ── Delete Confirm Modal ── */}
