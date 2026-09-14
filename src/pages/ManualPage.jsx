@@ -545,9 +545,11 @@ function QuizTab({ currentUser, settings, setSettings, isSuperadmin, dbMissing, 
               ? <span className={delta >= 0 ? "good" : "bad"}>ก่อน → หลังเทรน: {delta > 0 ? "+" : ""}{delta} ข้อ ({pre.pct}% → {post.pct}%){post.pct >= passPct ? " — ผ่านเกณฑ์ 🎉" : ` — ยังไม่ถึงเกณฑ์ ${passPct}%`}</span>
               : <span>ทำ “รอบก่อนเทรน” ก่อนเปิดคู่มือ 1 ครั้ง แล้วทำ “รอบหลังเทรน” หลังอบรมอีก 1 ครั้ง คะแนนจะถูกส่งเข้าระบบให้ผู้ดูแลระบบเห็น{loadedFromDb ? "" : " (กำลังเชื่อมต่อ…)"}</span>}
           </div>
-          <div className="manual-toolbar-actions">
-            <button type="button" className="btn btn-secondary btn-sm" onClick={copySummary} disabled={!pre && !post}>{copied ? "✅ คัดลอกแล้ว" : "📋 คัดลอกสรุปคะแนน"}</button>
-          </div>
+          {isSuperadmin && (
+            <div className="manual-toolbar-actions">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={copySummary} disabled={!pre && !post}>{copied ? "✅ คัดลอกแล้ว" : "📋 คัดลอกสรุปคะแนน"}</button>
+            </div>
+          )}
         </div>
         <div className="card-body manual-quiz-head">
           <div className="manual-quiz-meta">
