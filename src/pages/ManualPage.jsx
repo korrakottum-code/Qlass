@@ -3,6 +3,7 @@ import { NAV_ITEMS, ROLES } from "../utils/constants";
 import { MANUAL_META, MANUAL_SECTIONS } from "../manual/manualContent";
 import { QUIZ_META, QUIZ_QUESTIONS } from "../manual/testContent";
 import { fetchQuizSettings, updateQuizSettings, fetchQuizResults, upsertQuizResult } from "../utils/supabaseService";
+import { exportQuizResults } from "../utils/exportService";
 
 const TABS = [
   { id: "guide", label: "📖 คู่มือการใช้งาน" },
@@ -373,6 +374,7 @@ function QuizAdminPanel({ currentUser, settings, setSettings, dbMissing, branche
               {loading ? "กำลังโหลดคะแนน…" : error ? `⚠️ ${error}` : `ทำก่อนเทรนแล้ว ${preDone} คน (เฉลี่ย ${avg("pre") ?? "-"}%) · ทำหลังเทรนแล้ว ${postDone} คน (เฉลี่ย ${avg("post") ?? "-"}%) · เกณฑ์ผ่านหลังเทรน ${passPct}%`}
             </span>
             <button type="button" className="btn btn-secondary btn-sm" onClick={copyAll} disabled={!people.length}>{copied ? "✅ คัดลอกแล้ว" : "📋 คัดลอกคะแนนทุกคน"}</button>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={!people.length} onClick={() => exportQuizResults(people, QUIZ_QUESTIONS, { branchName, roleLabel: (r) => ROLE_LABEL[r] || r || "-", passPct })}>📥 ดาวน์โหลด Excel</button>
           </div>
 
           {people.length > 0 && (
