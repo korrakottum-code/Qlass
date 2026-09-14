@@ -124,6 +124,8 @@ export const NAV_ITEMS = [
   { id: "room-schedule", label: "ตารางห้อง/เครื่อง",   icon: "📅" },
   { id: "staff",         label: "จัดการพนักงาน",        icon: "👥" },
   { id: "activity-log",  label: "ประวัติการลบ",          icon: "🔍" },
+  { section: "ช่วยเหลือ" },
+  { id: "manual",        label: "คู่มือการใช้งาน",        icon: "📖" },
 ];
 
 // ─── ROLES & PERMISSIONS ───
@@ -135,7 +137,7 @@ export const ROLES = [
     branchScope: "all",
     color: "#b45309",
     bg: "rgba(180,83,9,0.1)",
-    pages: ["ceo-dashboard","summary","capacity"],
+    pages: ["ceo-dashboard","summary","capacity","manual"],
   },
   {
     value: "superadmin",
@@ -143,7 +145,7 @@ export const ROLES = [
     branchScope: "all",
     color: "#dc2626",
     bg: "rgba(220,38,38,0.1)",
-    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","branches","procedures","promos","rooms","room-schedule","staff","activity-log"],
+    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","branches","procedures","promos","rooms","room-schedule","staff","activity-log","manual"],
   },
   {
     value: "head_admin",
@@ -151,7 +153,7 @@ export const ROLES = [
     branchScope: "all",
     color: "#7c3aed",
     bg: "rgba(124,58,237,0.1)",
-    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","procedures","promos","rooms","room-schedule","staff","activity-log"],
+    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","procedures","promos","rooms","room-schedule","staff","activity-log","manual"],
   },
   {
     value: "admin",
@@ -159,7 +161,7 @@ export const ROLES = [
     branchScope: "all",
     color: "#2563eb",
     bg: "rgba(37,99,235,0.1)",
-    pages: ["booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","room-schedule"],
+    pages: ["booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","room-schedule","manual"],
   },
   {
     value: "branch_manager",
@@ -167,7 +169,7 @@ export const ROLES = [
     branchScope: "single",
     color: "#059669",
     bg: "rgba(5,150,105,0.1)",
-    pages: ["booking","queue-table","waiting-queue","timeline","summary","export","tickets","rooms","room-schedule"],
+    pages: ["booking","queue-table","waiting-queue","timeline","summary","export","tickets","rooms","room-schedule","manual"],
   },
   {
     value: "cashier",
@@ -175,7 +177,7 @@ export const ROLES = [
     branchScope: "single",
     color: "#d97706",
     bg: "rgba(217,119,6,0.1)",
-    pages: ["booking","queue-table","waiting-queue","timeline","summary","export","tickets"],
+    pages: ["booking","queue-table","waiting-queue","timeline","summary","export","tickets","manual"],
   },
 ];
 

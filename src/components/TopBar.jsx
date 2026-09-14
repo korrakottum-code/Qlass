@@ -5,6 +5,11 @@ const PAGE_TITLES = {
   booking: "📝 บันทึกคิว",
   "booking-edit": "✏️ แก้ไขคิว",
   "queue-table": "📋 ตารางคิว",
+  "waiting-queue": "⏳ คิวรอ (Waiting Queue)",
+  timeline: "🗓️ Timeline คิว",
+  export: "📥 Export ข้อมูล",
+  tickets: "🎫 แจ้งปัญหาระบบ",
+  "activity-log": "🔍 ประวัติการลบ",
   branches: "🏢 จัดการสาขา",
   procedures: "💉 จัดการหัตถการ",
   promos: "🏷️ จัดการโปร/แพ็กเกจ",
@@ -14,6 +19,7 @@ const PAGE_TITLES = {
   capacity: "🟢 คิวว่าง (Capacity)",
   commission: "💰 ค่าคอมมิชชั่น",
   staff: "👥 จัดการพนักงาน",
+  manual: "📖 คู่มือการใช้งาน",
 };
 
 export default function TopBar({ page, isEditing, supabaseError }) {

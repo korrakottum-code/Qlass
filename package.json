@@ -8,7 +8,10 @@
     "build": "vite build",
     "lint": "eslint .",
     "test": "node --test",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "manual:docs": "node scripts/exportManual.mjs",
+    "manual:demo": "vite --config scripts/screenshot/vite.config.js --port 5199 --strictPort",
+    "manual:shots": "node scripts/screenshot/capture.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",
@@ -25,6 +28,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
+    "playwright-core": "^1.63.0",
     "vite": "^8.0.1"
   }
 }

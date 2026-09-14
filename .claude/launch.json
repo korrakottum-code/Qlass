@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "preview"],
       "port": 4173
+    },
+    {
+      "name": "Vite Demo (Mock Data)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "manual:demo"],
+      "port": 5199
     }
   ]
 }
