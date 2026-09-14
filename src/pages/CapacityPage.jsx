@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import { addDays } from "../utils/queueRanges";
 import { getTodayStr, formatThaiDate } from "../utils/helpers";
 import {
@@ -47,25 +47,39 @@ function StatCard({ label, value, sub, color }) {
   );
 }
 
-// การ์ดเดียวโชว์ M กับ T คู่กันในบรรทัดเดียว — เดิมแยกเป็น 2 การ์ดเต็ม ทำให้ล้นไปอยู่คนละแถวบนจอที่ไม่กว้างพอ
-function TypeSplitCard({ mFree, mCap, tFree, tCap }) {
+// การ์ดเดียวโชว์ห้องฉีด/ห้องเครื่องคู่กันในบรรทัดเดียว — เดิมแยกเป็น 2 การ์ดเต็ม ทำให้ล้นไปอยู่คนละแถวบนจอที่ไม่กว้างพอ
+// ตัวเลขหลักเป็น "% ว่าง" ไม่ใช่ชั่วโมง — เจ้าของงานอ่าน "3,087 ชม. จาก 3,691.5 ชม." แล้วแปลไม่ออกว่าว่างมากหรือน้อย
+// ต้องหารในหัวเอง ส่วนเปอร์เซ็นต์บอกได้ทันทีและเทียบข้ามฝั่งได้ทั้งที่ความจุสองฝั่งไม่เท่ากัน
+function TypeSplitCard({ mCell, tCell }) {
+  const sides = [
+    { key: "M", label: "ว่าง ห้องฉีด (M)", hint: "ฉีด / ดริป", cell: mCell, color: "var(--blue)" },
+    { key: "T", label: "ว่าง ห้องเครื่อง (T)", hint: "เลเซอร์ / ทรีตเมนต์", cell: tCell, color: "var(--green)" },
+  ];
   return (
     <div style={{
       padding: "12px 14px", borderRadius: 10,
       background: "var(--surface)", border: "1px solid var(--border)",
       display: "flex", gap: 18,
     }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 11, color: "var(--text3)" }}>ว่าง ห้องฉีด (M)</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "var(--blue)", marginTop: 4 }}>{blocksToHours(mFree).toLocaleString()} ชม.</div>
-        <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 2 }}>จาก {blocksToHours(mCap).toLocaleString()} ชม.</div>
-      </div>
-      <div style={{ width: 1, background: "var(--border)" }} />
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 11, color: "var(--text3)" }}>ว่าง ห้องเครื่อง (T)</div>
-        <div style={{ fontSize: 22, fontWeight: 800, color: "var(--green)", marginTop: 4 }}>{blocksToHours(tFree).toLocaleString()} ชม.</div>
-        <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 2 }}>จาก {blocksToHours(tCap).toLocaleString()} ชม.</div>
-      </div>
+      {sides.map((side, idx) => {
+        const pct = freePercent(side.cell);
+        return (
+          <Fragment key={side.key}>
+            {idx > 0 && <div style={{ width: 1, background: "var(--border)" }} />}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 11, color: "var(--text3)" }}>
+                {side.label} <span style={{ color: "var(--text3)" }}>· {side.hint}</span>
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: side.color, marginTop: 4 }}>
+                {pct === null ? "—" : `${pct}%`}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 2 }}>
+                {pct === null ? "ไม่มีห้องเปิดในช่วงนี้" : `จองแล้ว ${100 - pct}%`}
+              </div>
+            </div>
+          </Fragment>
+        );
+      })}
     </div>
   );
 }
@@ -121,6 +135,9 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
   const [range, setRange] = useState("7d"); // 7d | eom
   const [filterBranch, setFilterBranch] = useState("all");
   const [splitByType, setSplitByType] = useState(false);
+  // "ทั้งหมด" = รวมสองประเภทเข้าด้วยกันเหมือนเดิม, "M"/"T" = ดูประเภทเดียวทั้งหน้า
+  // (ตัวเลขบนการ์ด ตารางด้านล่าง และคำแนะนำ เปลี่ยนตามทั้งหมด ไม่ใช่แค่ตาราง)
+  const [typeFilter, setTypeFilter] = useState("all");
   const [selected, setSelected] = useState(null); // { branchId, date }
 
   const today = getTodayStr();
@@ -130,9 +147,12 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
     range === "7d" ? listDates(today, 7) : listDates(today, daysUntilEndOfMonth(today))
   ), [range, today]);
 
-  const visibleRooms = useMemo(() => (
-    filterBranch === "all" ? rooms : rooms.filter((r) => r.branchId === filterBranch)
-  ), [rooms, filterBranch]);
+  const visibleRooms = useMemo(() => rooms.filter((r) => (
+    (filterBranch === "all" || r.branchId === filterBranch)
+    // ห้องที่ไม่ได้ตั้งประเภทไว้ ถูกนับเป็น T ที่ computeCapacitySummary — ต้องใช้กติกาเดียวกันตรงนี้
+    // ไม่งั้นตัวหารบนการ์ดกับตัวเลขในตารางจะคนละชุด
+    && (typeFilter === "all" || (r.type === "M" ? "M" : "T") === typeFilter)
+  )), [rooms, filterBranch, typeFilter]);
 
   const summary = useMemo(() => computeCapacitySummary({
     rooms: visibleRooms, roomSchedules, queues, procedures, dates,
@@ -157,8 +177,16 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
     });
   }, [branches, filterBranch, summary, branchAverages, sortDir]);
 
+  // เลือกดูประเภทเดียวอยู่แล้ว การแยกสองแถวไม่มีความหมาย — ปิดไว้เงียบ ๆ ไม่ต้องล้างสถานะปุ่ม
+  const splitRows = splitByType && typeFilter === "all";
+  // บนจอมือถือการ์ดแคบมาก ป้ายยาวจะถูกตัดท้าย — ใช้คำสั้นที่ยังบอกได้ว่ากำลังดูห้องประเภทไหนอยู่
+  const typeShortLabel = typeFilter === "M" ? "ห้องฉีด" : typeFilter === "T" ? "ห้องเครื่อง" : "ห้อง";
   const totalPct = freePercent(summary.totals);
-  const freerType = summary.totals.byType.M.free >= summary.totals.byType.T.free ? "M" : "T";
+  // เทียบเป็น % ว่าง ไม่ใช่ชั่วโมงดิบ — ห้องเครื่องมีความจุมากกว่าห้องฉีดเกือบสองเท่า ถ้าเทียบชั่วโมง
+  // ฝั่งที่ใหญ่กว่าจะชนะเกือบทุกครั้งทั้งที่อาจแน่นกว่าจริง คำแนะนำโปรจะชี้ผิดฝั่ง
+  const mFreePct = freePercent(summary.totals.byType.M);
+  const tFreePct = freePercent(summary.totals.byType.T);
+  const freerType = (mFreePct ?? -1) >= (tFreePct ?? -1) ? "M" : "T";
 
   const selectedCell = selected
     ? summary.days.find((d) => d.date === selected.date)?.byBranch[selected.branchId]
@@ -189,19 +217,36 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </div>
+        {/* เดิมมีแค่ปุ่ม "แยก M/T" ซึ่งทำได้อย่างเดียวคือแสดงทั้งสองประเภทพร้อมกัน ดูทีละประเภทไม่ได้
+            และตัวย่อ M/T ลอย ๆ ไม่มีที่ไหนบอกว่าแปลว่าอะไร — เขียนเป็นคำเต็มคู่กับตัวย่อทุกจุด */}
         <div className="form-group" style={{ marginBottom: 0 }}>
-          <label className="form-label">ตารางด้านล่าง</label>
-          <button
-            onClick={() => setSplitByType((v) => !v)}
-            style={{
-              padding: "7px 14px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700,
-              border: splitByType ? "1.5px solid var(--accent)" : "1.5px solid var(--border)",
-              background: splitByType ? "var(--accent-soft, rgba(0,0,0,0.05))" : "var(--surface2)",
-              color: splitByType ? "var(--accent)" : "var(--text2)",
-            }}>
-            {splitByType ? "✓ แยก M/T แล้ว" : "แยก M/T"}
-          </button>
+          <label className="form-label">ประเภทห้อง</label>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[["all", "ทั้งหมด"], ["M", "ห้องฉีด (M)"], ["T", "ห้องเครื่อง (T)"]].map(([v, l]) => (
+              <button key={v} onClick={() => { setTypeFilter(v); setSelected(null); }} style={{
+                padding: "7px 14px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700,
+                border: typeFilter === v ? "1.5px solid var(--accent)" : "1.5px solid var(--border)",
+                background: typeFilter === v ? "var(--accent-soft, rgba(0,0,0,0.05))" : "var(--surface2)",
+                color: typeFilter === v ? "var(--accent)" : "var(--text2)",
+              }}>{l}</button>
+            ))}
+          </div>
         </div>
+        {typeFilter === "all" && (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">ตารางด้านล่าง</label>
+            <button
+              onClick={() => setSplitByType((v) => !v)}
+              style={{
+                padding: "7px 14px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700,
+                border: splitByType ? "1.5px solid var(--accent)" : "1.5px solid var(--border)",
+                background: splitByType ? "var(--accent-soft, rgba(0,0,0,0.05))" : "var(--surface2)",
+                color: splitByType ? "var(--accent)" : "var(--text2)",
+              }}>
+              {splitByType ? "✓ แยกสองแถวแล้ว" : "แยกฉีด / เครื่อง เป็นสองแถว"}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* คำเตือนพฤติกรรมการจอง — ตรวจกับฐานข้อมูลจริงแล้ว (2569-08-11): ลูกค้า ~55-60% จองภายใน
@@ -222,20 +267,22 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
           ตกไปอยู่คนละบรรทัดบนจอแคบ) ส่วนการ์ด M/T แยกเป็นแถวของตัวเองด้านล่าง */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-          <StatCard label="ความจุรวม" value={`${blocksToHours(summary.totals.capacity).toLocaleString()} ชม.`} sub={`${dates.length} วัน · ${visibleRooms.length} ห้อง`} />
+          {/* ปัดเศษทศนิยมทิ้งเฉพาะการ์ดนี้ — ความจุระดับพันชั่วโมง เศษ .5 ไม่มีความหมาย แต่ทำให้ตัวเลข
+              ยาวเกินการ์ดบนจอมือถือจนถูกตัดเป็น "3,691.5 ..." */}
+          <StatCard label="ความจุรวม" value={`${Math.round(blocksToHours(summary.totals.capacity)).toLocaleString()} ชม.`} sub={`${dates.length} วัน · ${visibleRooms.length} ${typeShortLabel}`} />
           <StatCard label="จองแล้ว" value={totalPct === null ? "—" : `${100 - totalPct}%`} sub={`${blocksToHours(summary.totals.booked).toLocaleString()} ชม.`} color="var(--blue)" />
           <StatCard label="ยังว่าง (รับเพิ่มได้)" value={totalPct === null ? "—" : `${totalPct}%`} sub={`${blocksToHours(summary.totals.free).toLocaleString()} ชม.`} color="var(--green)" />
         </div>
-        <TypeSplitCard
-          mFree={summary.totals.byType.M.free} mCap={summary.totals.byType.M.capacity}
-          tFree={summary.totals.byType.T.free} tCap={summary.totals.byType.T.capacity}
-        />
+        {/* เลือกดูประเภทเดียวอยู่ การ์ดคู่จะซ้ำกับการ์ด "ยังว่าง" ด้านบนเป๊ะ ๆ (อีกฝั่งเป็น 0 เสมอ) */}
+        {typeFilter === "all" && (
+          <TypeSplitCard mCell={summary.totals.byType.M} tCell={summary.totals.byType.T} />
+        )}
       </div>
 
       {/* คำแนะนำฝั่งการตลาด — บอกแค่ว่าห้องประเภทไหนว่างกว่า ไม่แจงชื่อโปร (เดิมสุ่มเอา 6 โปรแรก
           ที่ตรงประเภทห้องมาโชว์ ไม่มีเกณฑ์คัดจริง ทำให้ดูเหมือนระบบเลือกเอง — เอาออกดีกว่าใส่
           ข้อมูลที่อธิบายไม่ได้ว่าทำไมถูกเลือก) */}
-      {summary.totals.capacity > 0 && (
+      {summary.totals.capacity > 0 && typeFilter === "all" && (
         <div style={{
           marginBottom: 14, padding: "10px 14px", borderRadius: 10, fontSize: 13,
           background: "var(--surface2)", border: "1px solid var(--border)",
@@ -282,7 +329,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
             </thead>
             <tbody>
               {visibleBranches.map((b) => (
-                splitByType ? (
+                splitRows ? (
                   [["M", "ห้องฉีด (M)"], ["T", "ห้องเครื่อง (T)"]].map(([type, typeLabel], idx) => (
                     <tr key={`${b.id}_${type}`}>
                       <td style={{
@@ -381,7 +428,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
             background: `linear-gradient(to right, ${FREE_COLOR_STOPS.map((s) => `hsl(${s.h},${s.s}%,${s.l}%) ${s.pct}%`).join(", ")})`,
           }} />
           <span>ว่างมาก</span>
-          <span style={{ marginLeft: "auto" }}>กดช่องเพื่อดูรายละเอียดวัน/สาขานั้น · กด "แยก M/T" ด้านบนเพื่อแยกดูห้องฉีด/ห้องเครื่องแยกแถว</span>
+          <span style={{ marginLeft: "auto" }}>กดช่องเพื่อดูรายละเอียดวัน/สาขานั้น · เลือก "ประเภทห้อง" ด้านบนเพื่อดูเฉพาะห้องฉีด (M) หรือห้องเครื่อง (T)</span>
         </div>
       </div>
 
@@ -406,8 +453,15 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
             <div className="card-body" style={{ display: "flex", flexWrap: "wrap", gap: 16, fontSize: 13 }}>
               <div style={{ flex: "1 1 200px" }}>
                 <div style={{ fontWeight: 700, marginBottom: 6 }}>ภาพรวม</div>
-                <div>ว่าง <b style={{ color: "var(--green)" }}>{blocksToHours(selectedCell.free)} ชม.</b> จาก {blocksToHours(selectedCell.capacity)} ชม. ({freePercent(selectedCell)}%)</div>
-                <div style={{ marginTop: 4 }}>ห้องฉีด (M): ว่าง {blocksToHours(selectedCell.byType.M.free)} ชม. / ห้องเครื่อง (T): ว่าง {blocksToHours(selectedCell.byType.T.free)} ชม.</div>
+                {/* % มาก่อนชั่วโมง — อ่านแล้วรู้ทันทีว่าว่างมากหรือน้อย ส่วนชั่วโมงเก็บไว้ให้ดูว่าเหลือกี่ชั่วโมงจริง */}
+                <div>ว่าง <b style={{ color: "var(--green)" }}>{freePercent(selectedCell)}%</b> ({blocksToHours(selectedCell.free)} จาก {blocksToHours(selectedCell.capacity)} ชม.)</div>
+                {/* เดิมบรรทัดนี้เป็นชั่วโมงล้วน เทียบสองฝั่งไม่ได้เพราะความจุไม่เท่ากัน — ใช้ % ว่างให้ตรงกับการ์ดด้านบน
+                    และถ้ากำลังเลือกดูประเภทเดียวอยู่ ไม่ต้องโชว์ เพราะอีกฝั่งถูกกรองออกไปแล้วจะขึ้นเป็น "—%" ชวนงง */}
+                {typeFilter === "all" && (
+                  <div style={{ marginTop: 4 }}>
+                    ห้องฉีด (M): ว่าง {freePercent(selectedCell.byType.M) ?? "—"}% · ห้องเครื่อง (T): ว่าง {freePercent(selectedCell.byType.T) ?? "—"}%
+                  </div>
+                )}
               </div>
               <div style={{ flex: "1 1 200px" }}>
                 <div style={{ fontWeight: 700, marginBottom: 6 }}>ว่างช่วงไหนของวัน</div>
