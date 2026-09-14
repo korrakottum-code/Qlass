@@ -3,6 +3,7 @@ import { NAV_ITEMS, ROLES } from "../utils/constants";
 import { MANUAL_META, MANUAL_SECTIONS } from "../manual/manualContent";
 import { QUIZ_META, QUIZ_QUESTIONS } from "../manual/testContent";
 import { fetchQuizSettings, updateQuizSettings, fetchQuizResults, upsertQuizResult } from "../utils/supabaseService";
+import { exportQuizResults } from "../utils/exportService";
 
 const TABS = [
   { id: "guide", label: "📖 คู่มือการใช้งาน" },
@@ -373,6 +374,7 @@ function QuizAdminPanel({ currentUser, settings, setSettings, dbMissing, branche
               {loading ? "กำลังโหลดคะแนน…" : error ? `⚠️ ${error}` : `ทำก่อนเทรนแล้ว ${preDone} คน (เฉลี่ย ${avg("pre") ?? "-"}%) · ทำหลังเทรนแล้ว ${postDone} คน (เฉลี่ย ${avg("post") ?? "-"}%) · เกณฑ์ผ่านหลังเทรน ${passPct}%`}
             </span>
             <button type="button" className="btn btn-secondary btn-sm" onClick={copyAll} disabled={!people.length}>{copied ? "✅ คัดลอกแล้ว" : "📋 คัดลอกคะแนนทุกคน"}</button>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={!people.length} onClick={() => exportQuizResults(people, QUIZ_QUESTIONS, { branchName, roleLabel: (r) => ROLE_LABEL[r] || r || "-", passPct })}>📥 ดาวน์โหลด Excel</button>
           </div>
 
           {people.length > 0 && (
@@ -543,9 +545,11 @@ function QuizTab({ currentUser, settings, setSettings, isSuperadmin, dbMissing, 
               ? <span className={delta >= 0 ? "good" : "bad"}>ก่อน → หลังเทรน: {delta > 0 ? "+" : ""}{delta} ข้อ ({pre.pct}% → {post.pct}%){post.pct >= passPct ? " — ผ่านเกณฑ์ 🎉" : ` — ยังไม่ถึงเกณฑ์ ${passPct}%`}</span>
               : <span>ทำ “รอบก่อนเทรน” ก่อนเปิดคู่มือ 1 ครั้ง แล้วทำ “รอบหลังเทรน” หลังอบรมอีก 1 ครั้ง คะแนนจะถูกส่งเข้าระบบให้ผู้ดูแลระบบเห็น{loadedFromDb ? "" : " (กำลังเชื่อมต่อ…)"}</span>}
           </div>
-          <div className="manual-toolbar-actions">
-            <button type="button" className="btn btn-secondary btn-sm" onClick={copySummary} disabled={!pre && !post}>{copied ? "✅ คัดลอกแล้ว" : "📋 คัดลอกสรุปคะแนน"}</button>
-          </div>
+          {isSuperadmin && (
+            <div className="manual-toolbar-actions">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={copySummary} disabled={!pre && !post}>{copied ? "✅ คัดลอกแล้ว" : "📋 คัดลอกสรุปคะแนน"}</button>
+            </div>
+          )}
         </div>
         <div className="card-body manual-quiz-head">
           <div className="manual-quiz-meta">

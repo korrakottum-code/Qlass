@@ -288,6 +288,45 @@ export function exportBranchesData(branches, rooms) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// EXPORT QUIZ RESULTS (แบบทดสอบก่อน/หลังเทรน — ผู้ดูแลระบบ)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * people: [{ name, role, branchId, pre: {score,total,pct,submittedAt,attempts,answers}|null, post: ... }]
+ * questions: QUIZ_QUESTIONS (ไว้ทำชีต "ข้อที่ผิดบ่อย")
+ */
+export function exportQuizResults(people, questions, { branchName = () => "", roleLabel = (r) => r, passPct = 80 } = {}) {
+  const when = (iso) => (iso ? `${formatThaiDate(iso.slice(0, 10))} ${new Date(iso).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}` : "");
+  const rows = [[
+    "ชื่อ", "บทบาท", "สาขา",
+    "ก่อนเทรน (ข้อ)", "ก่อนเทรน %", "ทำก่อนเทรนเมื่อ",
+    "หลังเทรน (ข้อ)", "หลังเทรน %", "ทำหลังเทรนเมื่อ",
+    "เปลี่ยนแปลง (ข้อ)", "ผลหลังเทรน", "ทำหลังเทรนครั้งที่",
+  ]];
+  people.forEach((p) => {
+    const d = p.pre && p.post ? p.post.score - p.pre.score : "";
+    rows.push([
+      p.name, roleLabel(p.role), branchName(p.branchId) || "",
+      p.pre ? p.pre.score : "", p.pre ? p.pre.pct : "", p.pre ? when(p.pre.submittedAt) : "",
+      p.post ? p.post.score : "", p.post ? p.post.pct : "", p.post ? when(p.post.submittedAt) : "",
+      d, p.post ? (p.post.pct >= passPct ? "ผ่าน" : "ไม่ผ่าน") : "ยังไม่ทำ", p.post ? p.post.attempts || 1 : "",
+    ]);
+  });
+
+  // ชีต 2: ข้อไหนผิดบ่อย — ไว้ดูว่าควรเน้นสอนเรื่องอะไร
+  const qRows = [["ข้อ", "คำถาม", "ผิดรอบก่อนเทรน (คน)", "ผิดรอบหลังเทรน (คน)"]];
+  (questions || []).forEach((q, i) => {
+    const wrong = (round) => people.filter((p) => p[round] && p[round].answers && p[round].answers[q.id] !== undefined && p[round].answers[q.id] !== q.answer).length;
+    qRows.push([i + 1, q.q, wrong("pre"), wrong("post")]);
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, buildStyledSheet(rows, { numericCols: [3, 4, 6, 7, 9, 11] }), "คะแนนรายคน");
+  XLSX.utils.book_append_sheet(wb, buildStyledSheet(qRows, { numericCols: [0, 2, 3] }), "ข้อที่ผิดบ่อย");
+  XLSX.writeFile(wb, `คะแนนแบบทดสอบก่อนหลังเทรน_${getTodayStr()}.xlsx`);
+}
+
+// ═══════════════════════════════════════════════════════════
 // EXPORT STAFF DATA
 // ═══════════════════════════════════════════════════════════
 
