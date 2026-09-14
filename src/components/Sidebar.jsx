@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { NAV_ITEMS, ROLES } from "../utils/constants";
 
-export default function Sidebar({ currentPage, onNavigate, branchCount, queueCount, waitingQueueCount, currentUser, onLogout }) {
-  const [collapsed, setCollapsed] = useState(false);
+export default function Sidebar({ currentPage, onNavigate, branchCount, queueCount, waitingQueueCount, currentUser, onLogout, collapsed, onToggleCollapsed }) {
   const [isMobile, setIsMobile] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -84,7 +83,7 @@ export default function Sidebar({ currentPage, onNavigate, branchCount, queueCou
           )}
           {!isMobile && (
             <button
-              onClick={() => setCollapsed(!collapsed)}
+              onClick={onToggleCollapsed}
               style={{
                 position: "absolute",
                 right: collapsed ? "50%" : "10px",

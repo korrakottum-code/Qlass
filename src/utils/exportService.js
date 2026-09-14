@@ -1,4 +1,4 @@
-import { formatThaiDate, blockToTime } from "./helpers";
+import { formatThaiDate, blockToTime, getTodayStr } from "./helpers";
 import { filterQueuesForExport } from "./exportFilters";
 import * as XLSX from "xlsx";
 
@@ -283,7 +283,7 @@ export function exportBranchesData(branches, rooms) {
     ]);
   });
 
-  const filename = `ข้อมูลสาขา_${new Date().toISOString().split("T")[0]}.xlsx`;
+  const filename = `ข้อมูลสาขา_${getTodayStr()}.xlsx`;
   downloadXLSX(filename, rows, { numericCols: [1, 2, 3] });
 }
 
@@ -320,7 +320,7 @@ export function exportStaffData(staff, branches) {
     ]);
   });
 
-  const filename = `ข้อมูลพนักงาน_${new Date().toISOString().split("T")[0]}.xlsx`;
+  const filename = `ข้อมูลพนักงาน_${getTodayStr()}.xlsx`;
   // cols 6-8 = ค่าคอม (฿)
   downloadXLSX(filename, rows, { currencyCols: [6, 7, 8] });
 }
@@ -350,7 +350,7 @@ export function exportHnCustomers(hnCustomers) {
     ]);
   });
 
-  const filename = `HN_ลูกค้า_${new Date().toISOString().split("T")[0]}.xlsx`;
+  const filename = `HN_ลูกค้า_${getTodayStr()}.xlsx`;
   downloadXLSX(filename, rows);
 }
 
@@ -643,7 +643,12 @@ export function backupAllData({ queues, branches, rooms, procedures, promos, sta
   const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
   const link = document.createElement("a");
   const url = URL.createObjectURL(blob);
-  const date = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  // วันเวลาในชื่อไฟล์ต้องเป็นเวลาไทย ไม่ใช่ UTC — ไม่งั้นไฟล์ที่ดึงตอนเช้ามืดจะติดชื่อ
+  // เป็นเมื่อวาน แล้วไล่หาไฟล์ย้อนหลังไม่เจอ
+  const now = new Date();
+  const hhmmss = [now.getHours(), now.getMinutes(), now.getSeconds()]
+    .map((v) => String(v).padStart(2, "0")).join("-");
+  const date = `${getTodayStr()}T${hhmmss}`;
   link.setAttribute("href", url);
   link.setAttribute("download", `Qlass_backup_${date}.json`);
   link.style.visibility = "hidden";

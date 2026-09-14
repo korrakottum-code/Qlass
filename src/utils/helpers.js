@@ -80,14 +80,43 @@ export function getEmptyBookingForm() {
     promoId: "",
     price: "",
     note: "",
-    customerType: "new",
+    // ไม่เลือกประเภทให้ — ค่าที่ระบบเลือกให้ยังไงก็โดนกดผ่าน ฟอร์มจะหุบครึ่งล่างไว้
+    // จนกว่าแอดมินจะเลือกเอง (ดู typeChosen ใน BookingPage / TimelinePage)
+    customerType: "",
     date: getTodayStr(),
     timeBlock: null,
     durationBlocks: null,
     roomId: "",
     status: "pending",
     statusNote: "",
+    // ชื่อผู้บันทึกจริง — ใช้เมื่อบัญชีที่ล็อกอินเป็นบัญชีที่ใช้ร่วมกันหลายคน (บทบาท
+    // branch_manager) ไม่กระทบ recordedBy/ค่าคอม เป็นข้อความอิสระเพื่อตรวจสอบภายหลัง
+    recordedNote: "",
   };
+}
+
+// รวมชื่อผู้บันทึก (จากบัญชีที่ล็อกอิน/recordedBy) กับชื่อที่พิมพ์เพิ่ม (recordedNote)
+// เป็นข้อความเดียวสำหรับแสดงผลรายคิว เช่น บัญชี "หอกาญ" + พิมพ์ "โย" → "โย(หอกาญ)"
+// ไม่มี note ก็แสดงแค่ชื่อบัญชีเหมือนเดิมทุกจุด — ใช้ผลรวมยอด/ค่าคอมยังอิง recordedBy
+// ล้วน ๆ ไม่แตะฟังก์ชันนี้เลย
+export function formatRecorderLabel(recorder, note) {
+  const base = recorder ? (recorder.nickname || recorder.name) : "";
+  if (!base) return note ? note.trim() : "";
+  const trimmedNote = (note || "").trim();
+  return trimmedNote ? `${trimmedNote}(${base})` : base;
+}
+
+// ต้องพิมพ์ "ชื่อผู้บันทึกจริง" ไหม — เฉพาะบัญชีผู้จัดการสาขา (บัญชีเดียวใช้ร่วมกันหลายคน
+// หน้าร้าน) และเฉพาะคิวที่บัญชีนั้นเป็นเจ้าของ: ลงคิวใหม่ หรือแก้คิวที่บัญชีตัวเองลงไว้เอง
+//
+// แก้คิวที่บัญชีอื่นลงไว้ต้องไม่ถาม และต้องไม่เขียนทับชื่อเดิม: หน้าร้านเปิดคิวที่แอดมิน
+// ลงมาให้แล้วกดปิดเป็น "เสร็จแล้ว" เป็นงานประจำวัน ตอนบังคับกรอกทุกครั้ง ชื่อคนกดปิด
+// จะไปเกาะคิวของแอดมิน แล้วช่องผู้บันทึกขึ้นเป็น "เอมมี่(ยอน)" ซึ่งอ่านแล้วเหมือนเอมมี่
+// ลงคิวด้วยบัญชียอน ทั้งที่ยอนเป็นคนลงคิว เอมมี่แค่มาแก้ทีหลัง (เจอจริง 10 ก.ย. 2569)
+export function requiresRecorderNote(currentUser, originalQueue) {
+  if (currentUser?.role !== "branch_manager") return false;
+  if (!originalQueue) return true;
+  return originalQueue.recordedBy === currentUser.id;
 }
 
 export function getCustomerBadgeClass(type) {

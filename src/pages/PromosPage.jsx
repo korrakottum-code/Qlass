@@ -28,6 +28,7 @@ export default function PromosPage({ promos, procedures, onAdd, onEdit, onDelete
         </div>
       </div>
       <div className="card">
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -77,6 +78,7 @@ export default function PromosPage({ promos, procedures, onAdd, onEdit, onDelete
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </>
   );

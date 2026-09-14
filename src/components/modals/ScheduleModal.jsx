@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
-import { blockToTime } from "../../utils/helpers";
+import { blockToTime, getTodayStr } from "../../utils/helpers";
+import { addDays } from "../../utils/queueRanges";
 
 const DAY_NAMES = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 const DAY_NAMES_FULL = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัส", "ศุกร์", "เสาร์"];
@@ -80,7 +81,9 @@ function MiniCalendar({ selectedDates, onChange }) {
           if (!d) return <div key={idx} />;
           const ds = toDateStr(d);
           const selected = selectedDates.includes(ds);
-          const isToday = ds === today.toISOString().split("T")[0];
+          // เทียบ "วันนี้" ด้วยเวลาไทย — toISOString() เป็น UTC ช่วงเที่ยงคืนถึงเจ็ดโมงเช้า
+          // ปฏิทินจะไฮไลต์ผิดวัน (ไปเน้นเมื่อวานแทน)
+          const isToday = ds === getTodayStr();
           const isSun = (idx % 7) === 0;
           const isSat = (idx % 7) === 6;
           return (
@@ -110,15 +113,13 @@ function generateDates(repeatMode, singleDate, weekStart, monthYear, weekdays) {
   if (repeatMode === "single") return singleDate ? [singleDate] : [];
   if (repeatMode === "weekly") {
     if (!weekStart) return [];
-    const start = new Date(weekStart);
-    const monday = new Date(start);
-    monday.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    // คิดวันบนสตริง "YYYY-MM-DD" ล้วน — เดิมอ่านกลับด้วย toISOString() (UTC) ซึ่งได้ผล
+    // ถูกเฉพาะโซนเวลาบวกอย่างไทย ย้ายมาใช้ addDays ที่คิดด้วยเวลาเครื่อง ไม่ต้องลุ้น
+    const [wy, wm, wd] = weekStart.split("-").map(Number);
+    const start = new Date(wy, wm - 1, wd); // เวลาเครื่องล้วน — new Date("YYYY-MM-DD") ตีเป็น UTC
+    const mondayStr = addDays(weekStart, -((start.getDay() + 6) % 7));
     const dates = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
-      dates.push(d.toISOString().split("T")[0]);
-    }
+    for (let i = 0; i < 7; i++) dates.push(addDays(mondayStr, i));
     return dates;
   }
   if (repeatMode === "monthly") {
@@ -199,7 +200,8 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
   const [repeatMode, setRepeatMode] = useState("single");
   const [date, setDate] = useState(data?.date || "");
   const [weekStart, setWeekStart] = useState("");
-  const todayYM = new Date().toISOString().slice(0, 7);
+  // เดือนเริ่มต้นของโหมดรายเดือน — เวลาไทยเช่นกัน ไม่งั้นเช้าวันที่ 1 จะเปิดมาเป็นเดือนก่อน
+  const todayYM = getTodayStr().slice(0, 7);
   const [monthYear, setMonthYear] = useState(todayYM);
   const [weekdays, setWeekdays] = useState([]);
   const [pickedDates, setPickedDates] = useState([]); // สำหรับ calendar mode

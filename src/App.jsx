@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { PROCEDURE_CATEGORIES, ROLES } from "./utils/constants";
 
-import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed, buildOverdueMoveNote, roleAtLeast, isActiveQueueStatus } from "./utils/helpers";
+import { getEmptyBookingForm, getTodayStr, formatThaiDate, canViewAllBranches, filterByUserBranch, blockToTime, isRoomRangeClosed, buildOverdueMoveNote, roleAtLeast, isActiveQueueStatus, requiresRecorderNote } from "./utils/helpers";
 import { findUncoveredRanges, mergeRanges } from "./utils/queueRanges";
 
 // ขอบบนของช่วงที่ "ไม่มีวันหมด" — การโหลดที่ไม่ใส่ untilDate จะได้คิวล่วงหน้าทุกวันมาด้วย
@@ -16,6 +16,7 @@ import {
   mapRoomScheduleRow, mapRoomProcedureRow, deleteBedSwitchClosures,
   createBranch, updateBranch, deleteBranch as deleteBranchDB,
   createProcedure, updateProcedure, deleteProcedure as deleteProcedureDB,
+  getAllProcedureAreas, createProcedureArea, updateProcedureArea, deleteProcedureArea as deleteProcedureAreaDB,
   createPromo, updatePromo, deletePromo as deletePromoDB,
   createRoom, updateRoom, deleteRoom as deleteRoomDB,
   createRoomSchedule, updateRoomSchedule, deleteRoomSchedule as deleteRoomScheduleDB,
@@ -24,7 +25,7 @@ import {
   getAllCategories, createCategory as createCategoryDB, deleteCategory as deleteCategoryDB,
   fetchTickets, createTicketDB, updateTicketDB, deleteTicketDB,
   createActivityLog, fetchActivityLogs,
-  mapQueueRow, fetchQueuesForRoomDate
+  mapQueueRow, fetchQueuesForRoomDate, fetchWaitingQueues, searchQueues
 } from "./utils/supabaseService";
 import { supabase } from "./utils/supabaseClient";
 import { learnFromCorrection } from "./utils/smartParser";
@@ -38,6 +39,7 @@ import { reconcileRealtimeQueue, reconcileRealtimeById, reconcileRealtimeRoomPro
 import { getBedSwitchState, buildBedSwitchClosure, listQueuesOnBed, isSamePlacement } from "./utils/bedSwitch";
 import { buildRescheduledQueue } from "./utils/rescheduleQueue";
 import { buildRoomProcedureIndex, isProcedureAllowedInRoom, shouldEnforceOnSave, procedureRoomBlockMessage } from "./utils/roomProcedures";
+import { buildProcedureAreaIndex } from "./utils/procedureAreas";
 
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
@@ -85,6 +87,9 @@ export default function App() {
   // [{ roomId, procedureId }] — เตียงไหนรับหัตถการอะไร. เตียงที่ไม่มีแถวเลย = ยังไม่ตั้งค่า
   // ให้ใช้กติกาเดิม M/T (ดู src/utils/roomProcedures.js)
   const [roomProcedures, setRoomProcedures] = useState([]);
+  // [{ id, procedureId, name, blocks, ... }] — บริเวณของหัตถการ (Diode: รักแร้/แขน/ขา/hollywood)
+  // หัตถการที่ไม่มีแถวเลย = ยังไม่ตั้งค่า ต้องทำงานเหมือนเดิมทุกอย่าง (ดู src/utils/procedureAreas.js)
+  const [procedureAreas, setProcedureAreas] = useState([]);
   const [queues, setQueues] = useState([]);
   const [categories, setCategories] = useState(PROCEDURE_CATEGORIES);
   const [staff, setStaff] = useState([]);
@@ -100,6 +105,9 @@ export default function App() {
   });
 
   // ─── UI state ───
+  // สถานะหุบไซด์บาร์อยู่ที่นี่ ไม่ใช่ในไซด์บาร์ เพราะ .main ต้องรู้ด้วยว่าจะขยายเต็มพื้นที่เมื่อไหร่
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const toggleSidebar = useCallback(() => setSidebarCollapsed(v => !v), []);
   const [page, setPage] = useState(() => {
     try { return localStorage.getItem("qlass_page") || "booking"; } catch { return "booking"; }
   });
@@ -176,7 +184,7 @@ export default function App() {
         since.setDate(since.getDate() - 30);
         const sinceDate = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, "0")}-${String(since.getDate()).padStart(2, "0")}`;
 
-        const [branchData, procedureData, promoData, roomData, scheduleData, recentQueues, categoryData, ticketData, roomProcedureData] = await Promise.all([
+        const [branchData, procedureData, promoData, roomData, scheduleData, recentQueues, categoryData, ticketData, roomProcedureData, procedureAreaData] = await Promise.all([
           getAllBranches(),
           getAllProcedures(),
           getAllPromos(),
@@ -188,6 +196,9 @@ export default function App() {
           // ล้มแล้วคืน [] = ทุกเตียงถือว่ายังไม่ตั้งค่า → กติกาเดิม M/T. ยอมให้ล็อกหลุด
           // ดีกว่าปล่อยให้ทั้งแอปโหลดไม่ขึ้นเพราะตารางเดียว
           getAllRoomProcedures().catch(() => []),
+          // ล้มแล้วคืน [] = ทุกหัตถการถือว่ายังไม่ตั้งค่าบริเวณ → ฟอร์มเหมือนเดิมเป๊ะ
+          // ยอมให้ฟีเจอร์บริเวณหายไปชั่วคราว ดีกว่าทั้งแอปโหลดไม่ขึ้นเพราะตารางเดียว
+          getAllProcedureAreas().catch(() => []),
         ]);
         setBranches(branchData || []);
         setProcedures(procedureData || []);
@@ -195,6 +206,7 @@ export default function App() {
         setRooms(roomData || []);
         setRoomSchedules(scheduleData || []);
         setRoomProcedures(roomProcedureData || []);
+        setProcedureAreas(procedureAreaData || []);
         setQueues(recentQueues || []);
         // Phase 2a ดึง sinceDate เป็นต้นไปโดยไม่จำกัดขอบบน → ครอบคลุมคิวล่วงหน้าทุกวันแล้ว
         const initialRange = [{ from: sinceDate, to: FUTURE_DATE }];
@@ -334,6 +346,12 @@ export default function App() {
     [roomProcedures]
   );
 
+  // Map<procedureId, area[]> — หัตถการที่ไม่มี key = ยังไม่ตั้งค่าบริเวณ = พฤติกรรมเดิม
+  const procedureAreaIndex = useMemo(
+    () => buildProcedureAreaIndex(procedureAreas),
+    [procedureAreas]
+  );
+
   const filteredRoomSchedules = useMemo(() => {
     const allowedRoomIds = new Set(filteredRooms.map((r) => r.id));
     return roomSchedules.filter((s) => allowedRoomIds.has(s.roomId));
@@ -462,6 +480,17 @@ export default function App() {
       return;
     }
 
+    // ─── บัญชีผู้จัดการสาขาใช้ร่วมกันหลายคนหน้าร้าน (recorded_by ยังเป็นบัญชีเดิม
+    // เสมอ ไม่กระทบค่าคอม/สถิติ) — บังคับพิมพ์ชื่อผู้บันทึกจริงตอนลงคิวใหม่ และตอนแก้
+    // คิวที่บัญชีตัวเองลงไว้เอง เพื่อตรวจสอบย้อนหลังได้ว่าคิวนี้ใครเป็นคนทำจริง
+    // แก้คิวที่บัญชีอื่นลงไว้ไม่ถาม (ดู requiresRecorderNote ใน helpers.js)
+    const editingOriginal = editingQueueId ? queues.find((q) => q.id === editingQueueId) : null;
+    const recorderNoteRequired = requiresRecorderNote(currentUser, editingOriginal);
+    if (recorderNoteRequired && !form.recordedNote?.trim()) {
+      showToast("error", "บัญชีนี้ใช้ร่วมกันหลายคน กรุณาระบุชื่อผู้บันทึกจริงก่อนบันทึก");
+      return;
+    }
+
     // ─── ตรวจสอบวันย้อนหลัง ───
     if (!editingQueueId && form.date < getTodayStr()) {
       showToast("error", "ไม่สามารถบันทึกคิวย้อนหลังได้");
@@ -572,7 +601,11 @@ export default function App() {
     const useServerCreate = !editingQueueId && shouldUseServerQueueCreate(currentUser, submitForm);
     try {
       if (editingQueueId) {
-        await updateQueue(editingQueueId, submitForm);
+        // ชื่อผู้บันทึกจริงเป็นของคิว ไม่ใช่ของคนที่เปิดฟอร์ม — คนที่ไม่มีสิทธิ์แก้ช่องนี้
+        // (ดู requiresRecorderNote) ต้องส่งค่าเดิมกลับไปเสมอ ไม่ใช่ค่าว่างจากฟอร์ม
+        await updateQueue(editingQueueId, recorderNoteRequired
+          ? submitForm
+          : { ...submitForm, recordedNote: editingOriginal?.recordedNote || "" });
         showToast(
           revertedToWaitingQueue ? "error" : "success",
           revertedToWaitingQueue
@@ -645,6 +678,13 @@ export default function App() {
 
   // ย้ายคิวที่เลยเวลายืนยันเข้าคิวรอ (กดเอง ไม่ auto) — เคลียร์ห้อง/เวลาทิ้งเพื่อปล่อย slot ให้คิวอื่น
   // เก็บห้อง/เวลาเดิมไว้เป็นข้อความใน statusNote แทน ไม่เพิ่มคอลัมน์ใหม่
+  //
+  // ห้ามล้าง durationBlocks: สิ่งที่ปล่อย slot คือการล้างห้องกับเวลา ไม่ใช่ความยาวคิว
+  // ล้างแล้ว trigger ฝั่ง DB จะเติมค่าเริ่มต้นของหัตถการกลับมาแทน คิว Diode ที่ลูกค้า
+  // จอง Hollywood+ขา (50 นาที) จึงกลายเป็น 15 นาทีเงียบ ๆ พอเรียกกลับเข้ามา แอดมิน
+  // จับลงช่อง 15 นาที แล้วหน้างานทำจริง 50 นาที = ล้นไปชนคิวถัดไป
+  // ตอนไม่มีระบบบริเวณเรื่องนี้ไม่มีพิษภัยเพราะทุกคิวใช้ค่าเริ่มต้นเท่ากันหมด
+  // ความยาวที่ค้างอยู่บนคิวรอไม่กินที่ใคร — ทุกจุดที่นับ slot ข้ามคิวที่ timeBlock เป็น null
   const moveToWaitingQueue = useCallback(async (q) => {
     const room = rooms.find((r) => r.id === q.roomId);
     try {
@@ -653,7 +693,6 @@ export default function App() {
         status: "waiting_queue",
         roomId: "",
         timeBlock: null,
-        durationBlocks: null,
         statusNote: buildOverdueMoveNote(q, room),
       });
       setQueues((prev) => prev.map((x) => (x.id === q.id ? updated : x)));
@@ -710,6 +749,41 @@ export default function App() {
       await job;
     }
   }, [mergeFetchedQueues]);
+
+  // ─── คิวรอที่ค้างมานานกว่าหน้าต่าง 30 วันตอนเปิดแอป ───
+  // คิวรอไม่มีวันนัดจริง คอลัมน์ date คือวันที่ลงคิวไว้เฉย ๆ คนที่ลงคิวรอไว้เดือนก่อนจึงอยู่
+  // นอกหน้าต่างที่โหลดตอนเปิด แล้วค้นหาไม่เจอทั้งที่ยังรออยู่ — ตามมาทีหลังแบบไม่บล็อกหน้าจอ
+  // ไม่ mark loadedRanges: ก้อนนี้เลือกด้วยสถานะ ไม่ใช่ช่วงวัน คิวสถานะอื่นของวันเดียวกันยังไม่ได้โหลด
+  const loadWaitingBacklog = useCallback(async () => {
+    const key = "WAITING";
+    if (rangeInFlightRef.current.has(key)) return rangeInFlightRef.current.get(key);
+    const job = (async () => {
+      const deletedIds = deletedDuringHistoryLoadRef.current ?? new Set();
+      deletedDuringHistoryLoadRef.current = deletedIds;
+      try {
+        mergeFetchedQueues(await fetchWaitingQueues(), deletedIds);
+      } catch (error) {
+        // ล้มแล้วเงียบไว้: หน้าอื่นยังใช้ได้ครบ เสียแค่คิวรอเก่ากว่า 30 วันที่ยังค้นไม่เจอ
+        console.error("loadWaitingBacklog failed:", error);
+      } finally {
+        rangeInFlightRef.current.delete(key);
+        if (rangeInFlightRef.current.size === 0) deletedDuringHistoryLoadRef.current = null;
+      }
+    })();
+    rangeInFlightRef.current.set(key, job);
+    return job;
+  }, [mergeFetchedQueues]);
+
+  // ต้องรอให้ setQueues ของการโหลดหลักลงก่อน ไม่งั้นก้อนนั้นเขียนทับคิวรอที่ merge เข้ามาแล้ว
+  useEffect(() => { if (isDataReady) loadWaitingBacklog(); }, [isDataReady, loadWaitingBacklog]);
+
+  // ค้นหาคิวด้วยชื่อ/เบอร์ ทั้งตาราง ไม่ผูกช่วงวันที่ที่หน้าจอเปิดอยู่
+  // ไม่ merge เข้า state หลัก — ผลค้นหาเป็นของชั่วคราวสำหรับหน้าที่เรียกเท่านั้น
+  // กรองตามสิทธิ์สาขาก่อนส่งคืนเสมอ (ฐานข้อมูลคืนมาทุกสาขา)
+  const searchQueuesForUser = useCallback(async (term) => {
+    const rows = await searchQueues(term);
+    return filterByUserBranch(rows, currentUser);
+  }, [currentUser]);
 
   // ปุ่ม Backup: โหลดทั้งตาราง (keyset) ตอนกดเท่านั้น แล้ว mark ว่ามีครบทุกช่วง
   const loadAllQueues = useCallback(async () => {
@@ -781,15 +855,23 @@ export default function App() {
     recordClientDiagnostic("write_outcome", { outcome: "started" });
     try {
       if (payload.status === "rescheduled") {
+        // สร้างคิวใหม่ให้ได้ก่อน ค่อยปิดคิวเดิม — ปิดเดิมไปแล้วเพิ่งรู้ว่าไม่มีช่องใหม่
+        // เท่ากับคิวหายจากตารางทั้งใบ ต้องตรวจให้จบก่อนแตะอะไรสักอย่าง
+        const orig = queues.find((q) => q.id === id);
+        const rescheduledQueue = buildRescheduledQueue(orig, payload, getTodayStr());
+        if (!rescheduledQueue && (payload.date !== undefined || payload.timeBlock !== undefined)) {
+          // เลื่อนไปช่องเดิมเป๊ะ ๆ = ไม่ได้เลื่อนจริง (ดู isSameRescheduleSlot) ปล่อยผ่านแล้ว
+          // จะได้คู่แฝด "เลื่อนออก + เลื่อนมา" ที่ช่องเดียวกัน กินเตียงทั้งที่ไม่มีลูกค้า
+          showToast("error", "ยังไม่ได้เปลี่ยนวันหรือเวลา — เลือกวันหรือเวลาใหม่ก่อนถึงจะเลื่อนได้");
+          recordClientDiagnostic("write_outcome", { outcome: "rejected" });
+          return;
+        }
+
         // คิวเดิม: เปลี่ยนแค่ status + statusNote ไม่แตะ date/timeBlock
         await updateQueueStatusDB(id, {
           status: "rescheduled",
           statusNote: payload.statusNote || "",
         });
-
-        // สร้างคิวใหม่ที่วันใหม่ สถานะ rescheduled_in
-        const orig = queues.find((q) => q.id === id);
-        const rescheduledQueue = buildRescheduledQueue(orig, payload, getTodayStr());
         if (rescheduledQueue) await createQueue(rescheduledQueue);
       } else {
         await updateQueueStatusDB(id, payload);
@@ -830,6 +912,73 @@ export default function App() {
     setModal(null);
     showToast("success", "บันทึกหัตถการเรียบร้อย");
   }, [showToast]);
+
+  // ─── บริเวณของหัตถการ ───
+  // ไม่แตะคิวที่ลงไปแล้ว: เวลาของคิวถูกตรึงไว้ในตัวคิวเองตั้งแต่ freeze_queue_duration
+  // แก้/ลบบริเวณจึงมีผลกับคิวที่ลงใหม่เท่านั้น
+  const saveProcedureArea = useCallback(async (data) => {
+    const blocks = Number(data.blocks);
+    if (!data.procedureId || !String(data.name || "").trim() || !(blocks >= 1 && blocks <= 48)) {
+      showToast("error", "กรอกชื่อบริเวณ และเวลา 5–240 นาที");
+      return false;
+    }
+    try {
+      if (data.id) {
+        const updated = await updateProcedureArea(data.id, { name: String(data.name).trim(), blocks });
+        setProcedureAreas((prev) => prev.map((a) => (a.id === data.id ? updated : a)));
+      } else {
+        const sortOrder = (procedureAreas.filter((a) => a.procedureId === data.procedureId).length + 1) * 10;
+        const created = await createProcedureArea({
+          procedureId: data.procedureId,
+          name: String(data.name).trim(),
+          blocks,
+          sortOrder,
+        });
+        setProcedureAreas((prev) => [...prev, created]);
+      }
+      showToast("success", "บันทึกบริเวณเรียบร้อย");
+      return true;
+    } catch (error) {
+      console.error("saveProcedureArea failed:", error);
+      showToast("error", error?.code === "23505" ? "มีบริเวณชื่อนี้ในหัตถการนี้แล้ว" : "บันทึกบริเวณไม่สำเร็จ");
+      // คืน false ให้หน้าเก็บสิ่งที่พิมพ์ไว้ — บันทึกไม่ผ่านแล้วยังต้องพิมพ์ใหม่คือของหาย
+      return false;
+    }
+  }, [procedureAreas, showToast]);
+
+  const deleteProcedureArea = useCallback(async (id) => {
+    try {
+      await deleteProcedureAreaDB(id);
+      setProcedureAreas((prev) => prev.filter((a) => a.id !== id));
+      showToast("success", "ลบบริเวณแล้ว");
+    } catch (error) {
+      console.error("deleteProcedureArea failed:", error);
+      showToast("error", "ลบบริเวณไม่สำเร็จ");
+    }
+  }, [showToast]);
+
+  // สวิตช์ปิดฉุกเฉินของหัตถการหนึ่ง ๆ — ลบบริเวณทั้งชุดในคลิกเดียว
+  // ต้องมีเป็นปุ่มเดียว ไม่ใช่ให้ไล่กดกากบาททีละอัน: ตอนหน้าร้านมีปัญหาแล้วต้องรีบปิด
+  // การกด 9 ครั้งพร้อมยืนยัน 9 รอบคือของที่พังตอนที่ต้องใช้มากที่สุด
+  const disableProcedureAreas = useCallback(async (procedureId) => {
+    const targets = procedureAreas.filter((a) => a.procedureId === procedureId);
+    if (targets.length === 0) return;
+    try {
+      // ลบทีละแถวแต่ยิงพร้อมกัน — ล้มบางแถวก็ยังลบที่เหลือได้ ไม่ค้างครึ่ง ๆ กลาง ๆ แบบเงียบ
+      const results = await Promise.allSettled(targets.map((a) => deleteProcedureAreaDB(a.id)));
+      const goneIds = new Set(targets.filter((_, i) => results[i].status === "fulfilled").map((a) => a.id));
+      setProcedureAreas((prev) => prev.filter((a) => !goneIds.has(a.id)));
+      const failed = targets.length - goneIds.size;
+      if (failed > 0) {
+        showToast("error", `ปิดได้ ${goneIds.size} จาก ${targets.length} บริเวณ — ที่เหลือลองอีกครั้ง`);
+      } else {
+        showToast("success", "ปิดบริเวณทั้งหมดแล้ว หน้าลงคิวกลับไปใช้เวลาปกติทันที");
+      }
+    } catch (error) {
+      console.error("disableProcedureAreas failed:", error);
+      showToast("error", "ปิดบริเวณไม่สำเร็จ");
+    }
+  }, [procedureAreas, showToast]);
 
   const savePromo = useCallback(async (data) => {
     if (data.id) {
@@ -1019,7 +1168,18 @@ export default function App() {
 
   // ─── Delete helpers ───
   const deleteBranch = useCallback(async (id) => {
-    await deleteBranchDB(id);
+    try {
+      await deleteBranchDB(id);
+    } catch (error) {
+      // ฐานข้อมูลห้ามลบสาขาที่ยังมีคิว/ห้องอยู่ (migration 20260912150000) — เดิมลบตามทอด
+      // คิวทั้งสาขาหายด้วยปุ่มเดียว ตอนนี้โดนปฏิเสธ ต้องบอกเหตุผลให้ชัด ไม่ใช่เงียบไปเฉย ๆ
+      if (error?.code === "23503") {
+        showToast("error", "ลบสาขานี้ไม่ได้ — ยังมีคิวหรือห้องผูกอยู่ ต้องย้าย/ลบของพวกนั้นก่อน");
+        return;
+      }
+      showToast("error", "ลบสาขาไม่สำเร็จ กรุณาลองอีกครั้ง");
+      throw error;
+    }
     setBranches(prev => prev.filter(b => b.id !== id));
     showToast("success", "ลบสาขาแล้ว");
   }, [showToast]);
@@ -1027,6 +1187,8 @@ export default function App() {
   const deleteProcedure = useCallback(async (id) => {
     await deleteProcedureDB(id);
     setProcedures(prev => prev.filter(p => p.id !== id));
+    // DB ลบให้อยู่แล้วด้วย on delete cascade — ล้าง state ตามไม่ให้ค้างเป็นบริเวณกำพร้า
+    setProcedureAreas(prev => prev.filter(a => a.procedureId !== id));
     showToast("success", "ลบหัตถการแล้ว");
   }, [showToast]);
 
@@ -1206,19 +1368,29 @@ export default function App() {
     return <LoginScreen staff={staff} onLogin={handleLogin} supabaseError={supabaseError} serverSessionEnabled={useServerSession} />;
   }
 
+  // เดือนปัจจุบันตามเวลาไทย ("YYYY-MM") — ใช้ร่วมกันทั้งสองตัวเลขข้างเมนู
+  const thisMonthPrefix = getTodayStr().slice(0, 7);
+
   return (
     <div className="app">
       <Sidebar
         currentPage={page}
         onNavigate={navigateTo}
         branchCount={filteredBranches.length}
-        queueCount={filteredQueues.filter(q => (q.status || "pending") !== "waiting_queue" && q.date?.startsWith(new Date().toISOString().slice(0, 7)) && ["new", "old"].includes(q.customerType)).length}
-        waitingQueueCount={filteredQueues.filter(q => (q.status || "pending") === "waiting_queue").length}
+        // ตัวเลขข้างเมนูทั้งสองอันนับ "เดือนนี้" เหมือนกัน จะได้อ่านเทียบกันได้
+        // ใช้ getTodayStr() (เวลาไทย) ไม่ใช่ toISOString() ที่เป็น UTC — ต้นเดือนก่อน 07:00
+        // ตามเวลาไทย UTC ยังเป็นเดือนก่อน ตัวเลขจะเพี้ยนไปทั้งวันโดยไม่มีใครรู้
+        queueCount={filteredQueues.filter(q => (q.status || "pending") !== "waiting_queue" && q.date?.startsWith(thisMonthPrefix) && ["new", "old"].includes(q.customerType)).length}
+        // คิวรอทั้งก้อนถูกโหลดมาครบตั้งแต่ #180 (รวมของเก่าหลายเดือน) — ตัวเลขตรงนี้จงใจ
+        // นับเฉพาะเดือนนี้ ไม่ใช่ยอดค้างทั้งหมด ส่วนยอดค้างทั้งหมดดูได้ในหน้าคิวรอ/ตารางคิว
+        waitingQueueCount={filteredQueues.filter(q => (q.status || "pending") === "waiting_queue" && q.date?.startsWith(thisMonthPrefix)).length}
         currentUser={currentUser}
         onLogout={handleLogout}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={toggleSidebar}
       />
 
-      <div className="main">
+      <div className={`main${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
         <div className="main-shell">
           {refreshRequired && (
             <div role="status" style={{
@@ -1287,6 +1459,7 @@ export default function App() {
                 promos={promos}
                 roomSchedules={filteredRoomSchedules}
                 roomProcedureIndex={roomProcedureIndex}
+                procedureAreaIndex={procedureAreaIndex}
                 queues={filteredQueues}
                 onSubmit={handleBookingSubmit}
                 onQuickAddPromo={quickAddPromo}
@@ -1296,9 +1469,18 @@ export default function App() {
                   setLastParseSnapshot({ rawText, fields });
                 }}
                 onBulkBooking={async (allFields) => {
+                  // ประเภทลูกค้าต้องมาจากข้อความจริง ๆ เท่านั้น — แถวไหนตัวแยกอ่านไม่ออก
+                  // ให้ข้ามไป ไม่เดาเป็น "ลูกค้าใหม่" ให้ (เจ้าของเลือกแนวนี้ 2026-09-09)
+                  // ที่บันทึกไปแล้วจึงเชื่อถือได้ทุกแถว ส่วนที่ข้ามจะบอกจำนวนให้ไปลงเองทีละคิว
+                  const VALID_TYPES = ["new", "old", "course"];
                   let created = 0;
+                  let skippedNoType = 0;
                   for (const fields of allFields) {
                     if (!fields.name && !fields.phone) continue;
+                    if (!VALID_TYPES.includes(fields.customerType)) {
+                      skippedNoType++;
+                      continue;
+                    }
                     try {
                       await createQueue({
                         name: fields.name || "",
@@ -1309,7 +1491,7 @@ export default function App() {
                         promoId: fields.promoId || "",
                         price: fields.price || "",
                         note: fields.note || "",
-                        customerType: fields.customerType || "new",
+                        customerType: fields.customerType,
                         date: fields.date || getTodayStr(),
                         timeBlock: fields.timeBlock ?? null,
                         status: "waiting",
@@ -1322,8 +1504,12 @@ export default function App() {
                       console.error("Bulk booking error:", err);
                     }
                   }
-                  if (created > 0) {
+                  if (created > 0 && skippedNoType > 0) {
+                    showToast("success", `สร้าง ${created} คิว — ข้าม ${skippedNoType} คิวที่ไม่รู้ประเภทลูกค้า กรุณาลงเองทีละคิว`);
+                  } else if (created > 0) {
                     showToast("success", `สร้าง ${created} คิวเรียบร้อย!`);
+                  } else if (skippedNoType > 0) {
+                    showToast("error", `ไม่ได้สร้างสักคิว — ทั้ง ${skippedNoType} คิวไม่ได้ระบุประเภทลูกค้าในข้อความ (ลูกค้าใหม่ / เก่า / ใช้คอร์ส)`);
                   }
                 }}
                 todayStats={todayStats}
@@ -1346,6 +1532,7 @@ export default function App() {
                 onUpdateStatus={(q) => setModal({ type: "status", data: q })}
                 onMoveToWaitingQueue={moveToWaitingQueue}
                 onRangeNeeded={ensureQueueRange}
+                onSearchQueues={searchQueuesForUser}
               />
             )}
 
@@ -1379,6 +1566,10 @@ export default function App() {
                 onAdd={() => setModal({ type: "procedure", data: null })}
                 onEdit={(p) => setModal({ type: "procedure", data: p })}
                 onDelete={deleteProcedure}
+                procedureAreas={procedureAreas}
+                onSaveArea={saveProcedureArea}
+                onDeleteArea={deleteProcedureArea}
+                onDisableAreas={disableProcedureAreas}
                 onAddCategory={addCategory}
                 onDeleteCategory={deleteCategory}
               />
@@ -1418,11 +1609,18 @@ export default function App() {
                 promos={promos}
                 roomSchedules={filteredRoomSchedules}
                 roomProcedureIndex={roomProcedureIndex}
+                procedureAreaIndex={procedureAreaIndex}
                 currentUser={currentUser}
                 onToggleBedSwitch={(room, date) => setModal({ type: "bed-switch", data: { room, date } })}
                 showToast={showToast}
                 onAbandonDraft={() => { timelineServerQueueRequestIdRef.current = null; }}
                 onSubmitBooking={async (bookingForm) => {
+                  // บัญชีผู้จัดการสาขาใช้ร่วมกันหลายคนหน้าร้าน — กันเผื่อ (ปุ่มฝั่ง UI
+                  // ก็ disabled ไว้แล้ว) กติกาเดียวกับหน้าบันทึกคิว ดู handleBookingSubmit
+                  if (requiresRecorderNote(currentUser, null) && !bookingForm.recordedNote?.trim()) {
+                    showToast("error", "บัญชีนี้ใช้ร่วมกันหลายคน กรุณาระบุชื่อผู้บันทึกจริงก่อนบันทึก");
+                    return false;
+                  }
                   // เตียงรับหัตถการนี้ไหม — Timeline สร้างคิวใหม่เสมอ จึงตรวจทุกครั้ง
                   if (bookingForm.roomId && bookingForm.procedureId) {
                     const roomObj = rooms.find((r) => r.id === bookingForm.roomId);

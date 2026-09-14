@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient";
+import { searchWords } from "./queueSearch";
 import { fetchAllByUuidRanges, HISTORY_PAGE_SIZE } from "./queueHistoryPagination";
 import { getServerSessionToken } from "./sessionAuth";
 import { buildQueueStatusUpdate } from "./queueStatusUpdate";
@@ -123,6 +124,77 @@ export async function deleteProcedure(id) {
     .delete()
     .eq("id", id);
   
+  if (error) throw error;
+}
+
+// ═══════════════════════════════════════════════════════════
+// PROCEDURE AREAS — บริเวณของหัตถการ (Diode: รักแร้ / แขน / ขา / hollywood ...)
+// หัตถการที่ไม่มีแถวที่นี่ = ยังไม่ตั้งค่า ฝั่งแอปต้องทำงานเหมือนเดิม
+// กติกาทั้งหมดอยู่ใน src/utils/procedureAreas.js
+// ═══════════════════════════════════════════════════════════
+
+export function mapProcedureAreaRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    procedureId: row.procedure_id,
+    name: row.name || "",
+    blocks: row.blocks,
+    sortOrder: row.sort_order ?? 0,
+    active: row.active !== false,
+  };
+}
+
+export async function fetchProcedureAreas() {
+  const { data, error } = await supabase
+    .from("procedure_areas")
+    .select("*")
+    .order("sort_order", { ascending: true });
+
+  if (error) throw error;
+  return (data || []).map(mapProcedureAreaRow);
+}
+
+export async function createProcedureArea(area) {
+  const { data, error } = await supabase
+    .from("procedure_areas")
+    .insert([{
+      procedure_id: area.procedureId,
+      name: area.name,
+      blocks: area.blocks,
+      sort_order: area.sortOrder ?? 0,
+    }])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapProcedureAreaRow(data);
+}
+
+export async function updateProcedureArea(id, area) {
+  const payload = {};
+  if (area.name !== undefined) payload.name = area.name;
+  if (area.blocks !== undefined) payload.blocks = area.blocks;
+  if (area.sortOrder !== undefined) payload.sort_order = area.sortOrder;
+  if (area.active !== undefined) payload.active = area.active;
+
+  const { data, error } = await supabase
+    .from("procedure_areas")
+    .update(payload)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapProcedureAreaRow(data);
+}
+
+export async function deleteProcedureArea(id) {
+  const { error } = await supabase
+    .from("procedure_areas")
+    .delete()
+    .eq("id", id);
+
   if (error) throw error;
 }
 
@@ -618,6 +690,7 @@ export function mapQueueRow(q) {
     status: q.status,
     statusNote: q.status_note || "",
     recordedBy: q.recorded_by,
+    recordedNote: q.recorded_note || "",
     createdAt: q.created_at,
     statusUpdatedAt: q.status_updated_at,
   };
@@ -723,10 +796,11 @@ export async function createQueue(queue) {
       status: queue.status,
       status_note: queue.statusNote,
       recorded_by: queue.recordedBy || null,
+      recorded_note: queue.recordedNote || null,
     }])
     .select()
     .single();
-  
+
   if (error) throw error;
   return {
     id: data.id,
@@ -745,6 +819,7 @@ export async function createQueue(queue) {
     status: data.status,
     statusNote: data.status_note || "",
     recordedBy: data.recorded_by,
+    recordedNote: data.recorded_note || "",
     createdAt: data.created_at,
     statusUpdatedAt: data.status_updated_at,
   };
@@ -769,11 +844,14 @@ export async function updateQueue(id, queue) {
       status: queue.status,
       status_note: queue.statusNote,
       status_updated_at: new Date().toISOString(),
+      // ผู้บันทึก (recorded_by) ไม่เปลี่ยนตอนแก้ไข ยังคงเป็นบัญชีตอนสร้างคิวเสมอ —
+      // แก้ได้เฉพาะข้อความชื่อจริงที่พิมพ์เพิ่ม (recorded_note) เท่านั้น
+      recorded_note: queue.recordedNote || null,
     })
     .eq("id", id)
     .select()
     .single();
-  
+
   if (error) throw error;
   return {
     id: data.id,
@@ -792,6 +870,7 @@ export async function updateQueue(id, queue) {
     status: data.status,
     statusNote: data.status_note || "",
     recordedBy: data.recorded_by,
+    recordedNote: data.recorded_note || "",
     createdAt: data.created_at,
     statusUpdatedAt: data.status_updated_at,
   };
@@ -970,6 +1049,7 @@ export async function deleteCategory(name) {
 
 export const getAllBranches = fetchBranches;
 export const getAllProcedures = fetchProcedures;
+export const getAllProcedureAreas = fetchProcedureAreas;
 export const getAllPromos = fetchPromos;
 export const getAllRooms = fetchRooms;
 export const getAllRoomSchedules = fetchRoomSchedules;
@@ -978,6 +1058,50 @@ export const getAllQueues = fetchQueues;
 
 // ─── ดึงคิวเฉพาะห้อง+วัน (สำหรับเช็ค conflict จาก DB สด ก่อน save) ───
 // query เล็กมาก (ห้องเดียว วันเดียว) เร็ว ไม่กระทบ performance
+// คิวรอทั้งหมดที่ยังค้างอยู่ ไม่จำกัดวันที่
+//
+// คิวรอไม่มี "วันนัด" จริง — คอลัมน์ date คือวันที่ลงคิวไว้เฉย ๆ คนที่ลงคิวรอไว้เมื่อเดือน
+// ที่แล้วจึงอยู่นอกหน้าต่าง 30 วันที่แอปโหลดตอนเปิด แล้วค้นหาในหน้าตารางคิว/คิวรอไม่เจอ
+// ทั้งที่ยังรออยู่จริง — ตารางนี้เล็ก (หลักร้อยแถว) โหลดทั้งก้อนได้ ไม่ต้องแบ่งช่วงวัน
+export async function fetchWaitingQueues() {
+  const PAGE_SIZE = 1000;
+  const rows = [];
+  for (let page = 0; ; page += 1) {
+    const { data, error } = await supabase
+      .from("queues").select("*")
+      .eq("status", "waiting_queue")
+      .order("id", { ascending: true })
+      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+    if (error) throw error;
+    const batch = data || [];
+    rows.push(...batch);
+    if (batch.length < PAGE_SIZE) break;
+  }
+  return rows.map(mapQueueRow);
+}
+
+// ค้นหาคิวด้วยชื่อ/เบอร์ ทั้งตาราง ไม่จำกัดวันที่และสาขา
+//
+// พนักงานหน้าร้านพิมพ์ชื่อลูกค้าเพื่อ "ตามหาคน" ไม่ใช่ "กรองตารางของวันนี้" — ถ้าค้นแค่
+// ในช่วงวันที่ที่เปิดดูอยู่ ลูกค้าที่จองไว้วันอื่นจะหาไม่เจอ แล้วหน้าร้านจะเชื่อว่าไม่มีคิว
+// แล้วลงใหม่ทับของเดิม (เจอจริงหน้าร้าน 12 ก.ย. 2569)
+//
+// วัดบนข้อมูลจริง 179,000 แถว หลังมีดัชนี trigram (migration 20260912090000):
+// ค้นชื่อ+นามสกุล 0.84ms, ไม่เจอเลย 0.33ms, คำสั้น 3 ตัวอักษร ~68ms (สั้นเกินใช้ดัชนี)
+// ก่อนมีดัชนีคือ 337ms / 288ms และโตตามจำนวนแถว — อย่าถอดดัชนีออก
+// เรียกแบบ debounce ตอนพิมพ์ ไม่ได้ยิงทุกตัวอักษร
+export async function searchQueues(term, { limit = 200 } = {}) {
+  const words = searchWords(term);
+  if (words.length === 0) return [];
+  // ทีละคำ AND กัน (PostgREST: .or() หลายครั้ง = AND ระหว่างก้อน) พิมพ์ "ชื่อ นามสกุล"
+  // จึงเจอแม้ในฐานข้อมูลเว้นวรรคไม่เท่ากัน ดูเหตุผลที่ searchWords
+  let query = supabase.from("queues").select("*");
+  for (const w of words) query = query.or(`name.ilike.%${w}%,phone.ilike.%${w}%`);
+  const { data, error } = await query.order("date", { ascending: false }).limit(limit);
+  if (error) throw error;
+  return (data || []).map(mapQueueRow);
+}
+
 export async function fetchQueuesForRoomDate(roomId, date) {
   if (!roomId || !date) return [];
   const { data, error } = await supabase

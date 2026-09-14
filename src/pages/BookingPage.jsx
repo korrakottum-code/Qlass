@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { CUSTOMER_TYPES, ROOM_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
-import { WORK_BLOCKS, blockToTime, formatThaiDate, getEmptyBookingForm, getTodayStr, isActiveQueueStatus } from "../utils/helpers";
+import { WORK_BLOCKS, blockToTime, formatRecorderLabel, formatThaiDate, getEmptyBookingForm, getTodayStr, isActiveQueueStatus, requiresRecorderNote } from "../utils/helpers";
 import { proceduresForRoom, isRoomConfigured, roomLockLabel } from "../utils/roomProcedures";
+import { areasForProcedure, durationFromAreas, keepValidAreaIds } from "../utils/procedureAreas";
 import SmartParseBox from "../components/SmartParseBox";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
@@ -24,11 +25,13 @@ function StatusBadge({ status }) {
 export default function BookingPage({
   form, setForm, editingQueueId, setEditingQueueId, onAbandonDraft,
   branches, rooms, procedures, promos,
-  roomSchedules, queues, roomProcedureIndex,
+  roomSchedules, queues, roomProcedureIndex, procedureAreaIndex,
   onSubmit, onQuickAddPromo, onSmartApply, onBulkBooking, parseHints, todayStats,
   currentUser, showToast,
 }) {
   const [showQuickPromo, setShowQuickPromo] = useState(false);
+  // ค้น HN เจอ = ขึ้นคำใบ้ว่าเคยมีประวัติ แต่ไม่เลือกประเภทให้
+  const [hnMatched, setHnMatched] = useState(false);
   const [qpName, setQpName] = useState("");
   const [qpPrice, setQpPrice] = useState("");
   const [qpProcedureId, setQpProcedureId] = useState("");
@@ -45,6 +48,9 @@ export default function BookingPage({
     setWaitingQueueToggleAllowed(!editingQueueId || form.status === "waiting_queue");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingQueueId]);
+  // ช่อง "ชื่อผู้บันทึกจริง" — ขึ้นเฉพาะคิวที่บัญชีนี้เป็นเจ้าของ (ลงใหม่ หรือแก้ของตัวเอง)
+  const editingOriginal = editingQueueId ? queues.find((q) => q.id === editingQueueId) : null;
+  const showRecorderNote = requiresRecorderNote(currentUser, editingOriginal);
   const { isSaving: isBookingSaving, run: runBookingSubmit } = useSubmissionLock();
   const { isSaving: isQuickPromoSaving, run: runQuickPromoSave } = useSubmissionLock();
   // Rooms for selected branch
@@ -103,6 +109,56 @@ export default function BookingPage({
     const p = procedures.find((x) => x.id === form.procedureId);
     return p ? p.blocks : 0;
   }, [form.procedureId, procedures]);
+
+  // เลือกประเภทลูกค้าแล้วหรือยัง — ตัวเปิด/ปิดครึ่งล่างของฟอร์มทั้งหมด
+  // คิวเก่าที่เปิดมาแก้มีประเภทครบทุกคิวอยู่แล้ว จึงกางให้เองโดยไม่ต้องกดซ้ำ
+  const typeChosen = !!form.customerType;
+
+  // ในส่วนที่หุบมีค่าอยู่แล้วหรือยัง — เกิดจากการวางข้อความให้ระบบแยกให้
+  // ถ้าไม่บอก แอดมินจะเห็นว่า "เติมข้อมูลให้ 8 ช่อง" แล้วมองไม่เห็นสักช่องเพราะโดนหุบ
+  // จงใจไม่บอกเป็นตัวเลข เพราะกล่องวิเคราะห์นับรวมชื่อ/เบอร์/วันที่ที่อยู่นอกส่วนที่หุบด้วย
+  // เลขสองที่จะไม่ตรงกัน แล้วคนอ่านจะสงสัยว่าอีกสองช่องหายไปไหน
+  const prefilledBelowCount = useMemo(() => {
+    const filled = [form.branchId, form.roomId, form.procedureId, form.promoId, form.note]
+      .filter((v) => v !== "" && v !== null && v !== undefined).length;
+    return filled + (form.timeBlock !== null ? 1 : 0) + (form.price !== "" && form.price != null ? 1 : 0);
+  }, [form.branchId, form.roomId, form.procedureId, form.promoId, form.note, form.timeBlock, form.price]);
+
+  // ─── บริเวณของหัตถการ (Diode: รักแร้ / แขน / ขา / hollywood ...) ───
+  // หัตถการที่ยังไม่ตั้งค่าบริเวณ → [] → ไม่มีอะไรโผล่ ฟอร์มเหมือนเดิมทุกอย่าง
+  const selectedAreas = useMemo(
+    () => areasForProcedure(procedureAreaIndex, form.procedureId),
+    [procedureAreaIndex, form.procedureId]
+  );
+
+  // ตัดบริเวณของหัตถการเก่าที่ค้างในฟอร์มทิ้งเสมอ กันเวลาเพี้ยนตอนสลับหัตถการ
+  const pickedAreaIds = useMemo(
+    () => keepValidAreaIds(procedureAreaIndex, form.procedureId, form.areaIds),
+    [procedureAreaIndex, form.procedureId, form.areaIds]
+  );
+
+  // กดบริเวณ = เขียนเวลารวมลง durationBlocks ช่องเดิม (ช่องเดียวกับที่ปุ่ม +/- ใช้)
+  // ไม่เลือกบริเวณเลย → null → ตกไปใช้ค่าปกติของหัตถการเหมือนเดิม
+  function toggleArea(areaId) {
+    setForm((f) => {
+      const current = keepValidAreaIds(procedureAreaIndex, f.procedureId, f.areaIds);
+      const next = current.includes(areaId)
+        ? current.filter((id) => id !== areaId)
+        : [...current, areaId];
+      return {
+        ...f,
+        areaIds: next,
+        durationBlocks: durationFromAreas(procedureAreaIndex, f.procedureId, next),
+      };
+    });
+  }
+
+  // เวลารวมของบริเวณที่ติ๊กไว้ — แยกจาก activeDur เพราะแอดมินยังกด +/- ทับทีหลังได้
+  // ถ้าสองค่านี้ไม่ตรงกันแปลว่าปรับเอง ต้องบอกให้เห็น ไม่งั้นตัวเลขบนจอขัดกันเงียบ ๆ
+  const areaSumBlocks = useMemo(
+    () => durationFromAreas(procedureAreaIndex, form.procedureId, pickedAreaIds) ?? 0,
+    [procedureAreaIndex, form.procedureId, pickedAreaIds]
+  );
 
   // Effective duration (override หรือ default จาก procedure) — 0 เมื่อไม่มี procedure
   const activeDur = selectedProcBlocks > 0 ? (form.durationBlocks ?? selectedProcBlocks) : 0;
@@ -290,6 +346,27 @@ export default function BookingPage({
               />
             </div>
 
+            {/* บัญชีผู้จัดการสาขาใช้ร่วมกันหลายคนหน้าร้าน — บังคับพิมพ์ชื่อผู้บันทึกจริง
+                ตอนลงคิวใหม่ และตอนแก้คิวที่บัญชีตัวเองลงไว้เอง (เห็นเฉพาะบทบาทนี้ บัญชีอื่น
+                ไม่มีช่องนี้ ไม่มีอะไรเปลี่ยน) ค่านี้ไม่กระทบผู้ได้ค่าคอม/สถิติ — ยังนับรวม
+                เป็นบัญชีผู้จัดการเหมือนเดิมทุกจุด
+                แก้คิวที่บัญชีอื่นลงไว้จะไม่มีช่องนี้ และชื่อเดิมบนคิวไม่ถูกเขียนทับ */}
+            {showRecorderNote && (
+              <div className="form-group full">
+                <label className="form-label">
+                  <span className="req">*</span> ชื่อผู้บันทึกจริง
+                  <span style={{ fontWeight: 400, color: "var(--text3)", marginLeft: 6, fontSize: 11 }}>
+                    — บัญชีนี้ใช้ร่วมกันหลายคน ต้องระบุทุกครั้งว่าใครเป็นคนบันทึก
+                  </span>
+                </label>
+                <input
+                  placeholder="เช่น โย"
+                  value={form.recordedNote || ""}
+                  onChange={(e) => setForm((f) => ({ ...f, recordedNote: e.target.value }))}
+                />
+              </div>
+            )}
+
             {/* HN Lookup — full width row */}
             <div className="form-group full">
               <HnLookup
@@ -297,19 +374,34 @@ export default function BookingPage({
                 name={form.name}
                 onSelect={(c) => {
                   const fullName = `${c.firstname} ${c.lastname}`.trim();
+                  // ไม่เลือกประเภทให้ — เคยเลือก "ลูกค้าเก่า" อัตโนมัติ แต่คนมี HN แล้วมาใช้คอร์ส
+                  // ก็เยอะ ค่าที่ระบบเลือกให้ยังไงก็โดนกดผ่าน (ข้อมูล มิ.ย.-ก.ย. 2026: คิวที่
+                  // ไม่ใช่ครั้งแรกของเบอร์นั้น 22% ยังติ๊กว่า "ลูกค้าใหม่") บอกใบ้ได้ แต่ห้ามเลือกแทน
+                  setHnMatched(true);
                   setForm((f) => ({
                     ...f,
                     name: fullName || f.name,
                     phone: c.telephone || f.phone,
-                    customerType: "old",
                   }));
                 }}
               />
             </div>
 
-            {/* ประเภทลูกค้า */}
+            {/* ประเภทลูกค้า — ต้องเลือกเองเสมอ ระบบไม่เลือกให้ ส่วนที่เหลือของฟอร์มหุบอยู่จนกว่าจะเลือก */}
             <div className="form-group full">
-              <label className="form-label">ประเภทลูกค้า</label>
+              <label className="form-label">
+                <span className="req">*</span> ประเภทลูกค้า
+                {!typeChosen && (
+                  <span style={{ fontWeight: 600, color: "var(--amber)", marginLeft: 6, fontSize: 11 }}>
+                    — ยังไม่ได้เลือก
+                  </span>
+                )}
+              </label>
+              {hnMatched && !typeChosen && (
+                <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 6 }}>
+                  🔎 เบอร์นี้เคยมีประวัติในระบบ — เลือกเองว่าเป็น ลูกค้าเก่า หรือ ใช้คอร์ส
+                </div>
+              )}
               <div className="type-options">
                 {CUSTOMER_TYPES.map((ct) => (
                   <button
@@ -323,15 +415,39 @@ export default function BookingPage({
               </div>
             </div>
 
+            {/* ─── ตั้งแต่ตรงนี้ลงไปหุบไว้จนกว่าจะเลือกประเภทลูกค้า ───
+                กันการรูดผ่านค่าที่ระบบเลือกให้ ซึ่งไปผูกกับเรตค่าคอมมิชชั่นและตัวเลข
+                "ต้นทุนต่อลูกค้าใหม่" ในหน้า CEO — เตือนตอนกดบันทึกไม่พอ เพราะกรอกจนจบ
+                แล้วค่อยโดนตีกลับคือเสียงานเปล่า ๆ */}
+            {!typeChosen && (
+              <div className="form-group full" style={{
+                border: "1.5px dashed var(--border2)", borderRadius: "var(--radius-sm)",
+                background: "var(--surface2)", padding: "14px 16px", textAlign: "center",
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text2)" }}>
+                  👆 เลือกประเภทลูกค้าก่อน แล้วส่วนที่เหลือจะเปิดให้กรอก
+                </div>
+                {prefilledBelowCount > 0 && (
+                  <div style={{ fontSize: 11, color: "var(--amber)", fontWeight: 600, marginTop: 6 }}>
+                    ข้อมูลที่กรอกไว้แล้วยังอยู่ครบ — เลือกประเภทเพื่อดูและแก้ไข
+                  </div>
+                )}
+              </div>
+            )}
+
+            {typeChosen && (<>
             {/* ลงคิวรอ (Waiting Queue) */}
             {waitingQueueToggleAllowed && (
               <div className="form-group full">
                 <button
                   type="button"
                   onClick={() => {
+                    // ล้างห้อง/เวลาเท่านั้น — ความยาวคิวคือสิ่งที่ลูกค้าจองไว้ ไม่ใช่ตำแหน่งบนตาราง
+                    // ล้างด้วยแล้วสลับกลับ คิวที่เลือกบริเวณไว้ 50 นาทีจะเหลือ 15 นาทีเงียบ ๆ
+                    // ทั้งที่ปุ่มบริเวณยังติ๊กค้างอยู่ (ดู moveToWaitingQueue ใน App.jsx — จุดเดียวกัน)
                     setForm((f) => f.status === "waiting_queue"
                       ? { ...f, status: "pending" }
-                      : { ...f, status: "waiting_queue", roomId: "", timeBlock: null, durationBlocks: null }
+                      : { ...f, status: "waiting_queue", roomId: "", timeBlock: null }
                     );
                   }}
                   style={{
@@ -404,7 +520,7 @@ export default function BookingPage({
               <label className="form-label">หัตถการหลักที่สนใจ</label>
               <select
                 value={form.procedureId}
-                onChange={(e) => setForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "", durationBlocks: null, timeBlock: null }))}
+                onChange={(e) => setForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "", durationBlocks: null, areaIds: [], timeBlock: null }))}
               >
                 <option value="">-- เลือกหัตถการ --</option>
                 {filteredProcedures.map((p) => (
@@ -508,6 +624,55 @@ export default function BookingPage({
                 </div>
               )}
             </div>
+
+            {/* บริเวณที่ทำ — โผล่เฉพาะหัตถการที่ตั้งค่าบริเวณไว้แล้ว
+                หัตถการที่ยังไม่ตั้งค่า ฟอร์มเหมือนเดิมทุกอย่าง (ดู src/utils/procedureAreas.js) */}
+            {selectedAreas.length > 0 && (
+              <div className="form-group full">
+                <label className="form-label">
+                  บริเวณที่ทำ
+                  <span style={{ fontWeight: 400, color: "var(--text3)", marginLeft: 6, fontSize: 11 }}>
+                    เลือกได้หลายจุด ระบบบวกเวลาให้เอง — ไม่เลือกก็ได้ จะใช้เวลาปกติ {selectedProcBlocks * 5} นาที
+                  </span>
+                </label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {selectedAreas.map((a) => {
+                    const on = pickedAreaIds.includes(a.id);
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => toggleArea(a.id)}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 6,
+                          padding: "6px 12px", borderRadius: 20, cursor: "pointer",
+                          border: `1.5px solid ${on ? "var(--accent)" : "var(--border2)"}`,
+                          background: on ? "var(--accent)" : "var(--surface2)",
+                          color: on ? "#fff" : "var(--text)",
+                          fontSize: 13, fontWeight: 600,
+                        }}
+                      >
+                        {on ? "✓ " : ""}{a.name}
+                        <span style={{
+                          fontSize: 10, fontFamily: "var(--mono)", fontWeight: 700,
+                          opacity: 0.85,
+                        }}>
+                          {a.blocks * 5}น
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {pickedAreaIds.length > 0 && (
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)", marginTop: 6, display: "inline-block" }}>
+                    ⏱ รวม {areaSumBlocks * 5} นาที ({pickedAreaIds.length} บริเวณ)
+                    {areaSumBlocks !== activeDur && (
+                      <span style={{ color: "var(--amber)" }}> · ปรับเองเป็น {activeDur * 5} นาที</span>
+                    )}
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* ราคา + วันที่ */}
             <div className="form-group">
@@ -626,14 +791,16 @@ export default function BookingPage({
                 onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
               />
             </div>
+            </>)}
           </div>
 
+          {typeChosen && (
           <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
             {currentUser && !editingQueueId && (
               <span style={{ fontSize: 12, color: "var(--text2)", marginRight: "auto", display: "flex", alignItems: "center", gap: 5 }}>
                 📝 บันทึกโดย:
                 <span style={{ fontWeight: 700, color: "var(--accent)" }}>
-                  {currentUser.nickname || currentUser.name}
+                  {formatRecorderLabel(currentUser, form.recordedNote)}
                 </span>
               </span>
             )}
@@ -642,6 +809,7 @@ export default function BookingPage({
               {editingQueueId ? "💾 บันทึกการแก้ไข" : "✅ บันทึกคิว"}
             </button>
           </div>
+          )}
         </div>
       </div>
 

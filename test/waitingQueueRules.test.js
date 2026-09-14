@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   isOverdueUnconfirmed,
   isOverdueMoveNote,
@@ -37,4 +38,41 @@ test("overdue-move note prefix separates moved queues from plain walk-in waiting
   assert.equal(isOverdueMoveNote(""), false);
   assert.equal(isOverdueMoveNote(undefined), false);
   assert.equal(isOverdueMoveNote(null), false);
+});
+
+// ─── ย้ายเข้าคิวรอแล้วความยาวคิวต้องไม่หาย ───
+// เจอตอนตรวจผลกระทบของระบบ "บริเวณ": ทั้งสองทางที่ย้ายคิวเข้าคิวรอเคยล้าง
+// durationBlocks ทิ้งด้วย ซึ่ง trigger ฝั่ง DB จะเติมค่าเริ่มต้นของหัตถการกลับมา
+// คิว Diode ที่ลูกค้าจอง Hollywood+ขา (50 นาที) จึงกลายเป็น 15 นาทีเงียบ ๆ
+// พอเรียกกลับเข้ามา แอดมินจับลงช่อง 15 นาที แล้วหน้างานทำจริง 50 = ล้นชนคิวถัดไป
+//
+// สิ่งที่ปล่อย slot ให้คิวอื่นคือการล้าง "ห้อง" กับ "เวลา" ไม่ใช่ความยาวคิว
+// เป็น text guard เพราะตรรกะอยู่ใน handler ของ component ไม่ใช่โมดูลล้วน
+
+const appSource = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+const bookingSource = readFileSync(new URL("../src/pages/BookingPage.jsx", import.meta.url), "utf8");
+
+test("ย้ายเข้าคิวรอ (App.jsx): ล้างห้อง/เวลา แต่เก็บความยาวคิวไว้", () => {
+  const start = appSource.indexOf("const moveToWaitingQueue");
+  assert.ok(start > 0, "หา moveToWaitingQueue ไม่เจอ");
+  const body = appSource.slice(start, start + 900);
+  assert.match(body, /roomId: ""/);
+  assert.match(body, /timeBlock: null/);
+  assert.ok(!/durationBlocks: null/.test(body),
+    "ห้ามล้าง durationBlocks — คิวที่เลือกบริเวณไว้จะเหลือเวลาค่าเริ่มต้นของหัตถการ");
+});
+
+test("ปุ่มลงคิวรอ (หน้าบันทึกคิว): ล้างห้อง/เวลา แต่เก็บความยาวคิวไว้", () => {
+  const start = bookingSource.indexOf('status: "waiting_queue", roomId: ""');
+  assert.ok(start > 0, "หาปุ่มสลับลงคิวรอไม่เจอ");
+  const line = bookingSource.slice(start, start + 120);
+  assert.match(line, /timeBlock: null/);
+  assert.ok(!/durationBlocks: null/.test(line),
+    "ห้ามล้าง durationBlocks — ปุ่มบริเวณยังติ๊กค้างแต่เวลากลับไปเป็นค่าเริ่มต้น");
+});
+
+test("ล้างความยาวคิวได้เฉพาะตอนที่ควรล้างเท่านั้น", () => {
+  // เปลี่ยนหัตถการ (ค่าเก่าเป็นของหัตถการอื่น) และปุ่ม reset ที่ผู้ใช้กดเอง — สองอย่างนี้ล้างถูกแล้ว
+  const clears = [...bookingSource.matchAll(/durationBlocks: null/g)].length;
+  assert.equal(clears, 2, `หน้าบันทึกคิวล้าง durationBlocks ${clears} จุด — ควรมีแค่ 2 (เปลี่ยนหัตถการ + ปุ่ม reset)`);
 });

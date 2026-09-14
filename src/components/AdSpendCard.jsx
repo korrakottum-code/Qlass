@@ -50,6 +50,8 @@ const fmtBaht = (n) =>
 
 export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queues = [], staff = [] }) {
   const [rows, setRows] = useState(null);
+  // เปิดหน้าสรุปมาให้การ์ดหุบไว้ก่อน — ตัวเลขรวมโชว์อยู่บนหัวการ์ดแล้ว กางเมื่ออยากดูรายวัน
+  const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastFetched, setLastFetched] = useState(null);
@@ -182,10 +184,16 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
     >
       <div
         className="card-header"
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}
+        onClick={() => setOpen((o) => !o)}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, cursor: "pointer", userSelect: "none" }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <h3 style={{ margin: 0 }}>💰 ค่าโฆษณา (ทุกช่องทาง)</h3>
+          {!error && (
+            <span style={{ fontSize: 12, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--green)", background: "rgba(34,197,94,0.12)", borderRadius: 10, padding: "2px 10px", whiteSpace: "nowrap" }}>
+              {loading && rows === null ? "กำลังโหลด…" : fmtBaht(rangeTotal)}
+            </span>
+          )}
           <span style={{ fontSize: 11, color: "var(--text3)" }}>
             จาก Google Sheet — รีเฟรชทุก 1 ชม.
           </span>
@@ -197,7 +205,7 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
             </span>
           )}
           <button
-            onClick={load}
+            onClick={(e) => { e.stopPropagation(); load(); }}
             disabled={loading}
             style={{
               padding: "4px 10px",
@@ -213,10 +221,11 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
           >
             {loading ? "⏳" : "🔄"}
           </button>
+          <span style={{ fontSize: 18, color: "var(--text3)", transition: "transform 0.2s", transform: open ? "rotate(0deg)" : "rotate(-90deg)", display: "inline-block" }}>▾</span>
         </div>
       </div>
 
-      <div style={{ padding: "12px 16px" }}>
+      <div style={{ padding: "12px 16px", display: open ? undefined : "none" }}>
         {error && (
           <div style={{ padding: "10px 14px", background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.3)", borderRadius: 8, color: "#dc2626", fontSize: 13, fontWeight: 600 }}>
             ⚠️ โหลดข้อมูลไม่ได้: {error}

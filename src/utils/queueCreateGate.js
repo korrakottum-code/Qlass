@@ -40,7 +40,9 @@ export function buildServerQueuePayload(form) {
     promo_id: form.promoId || null,
     price: form.price === "" || form.price == null ? null : String(form.price),
     note: form.note ?? "",
-    customer_type: form.customerType || "new",
+    // ส่งค่าว่างไปตรง ๆ ไม่เติม "new" ให้ — เซิร์ฟเวอร์ปฏิเสธเองถ้าไม่ได้เลือกประเภท
+    // (ดู 20260909020000_create_queue_v1_require_customer_type) ค่าที่ระบบเดาให้คือรูรั่ว
+    customer_type: form.customerType || "",
     status: form.status || "pending",
     date: form.date || null,
     time_block: form.timeBlock ?? null,

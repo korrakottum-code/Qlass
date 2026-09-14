@@ -1,14 +1,17 @@
 import { useState, useMemo, useEffect } from "react";
-import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed, roleAtLeast } from "../utils/helpers";
+import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed, roleAtLeast, requiresRecorderNote } from "../utils/helpers";
+import { addDays } from "../utils/queueRanges";
+import { CUSTOMER_TYPES } from "../utils/constants";
 import { getBedSwitchState } from "../utils/bedSwitch";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
 import { proceduresForRoom, roomLockLabel } from "../utils/roomProcedures";
+import { areasForProcedure, durationFromAreas, keepValidAreaIds } from "../utils/procedureAreas";
 
 // สถานะที่ยังถือว่า "ยังไม่ยืนยัน" — ปุ่มย้ายเข้าคิวรอใน popover ใช้ได้เฉพาะกลุ่มนี้
 const UNCONFIRMED_STATUSES = ["pending", "follow1", "follow2", "follow3"];
 
-export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], roomProcedureIndex, currentUser, onSubmitBooking, onAbandonDraft, onEditQueue, onMoveToWaitingQueue, onToggleBedSwitch, showToast, onRangeNeeded }) {
+export default function TimelinePage({ queues, branches, rooms, procedures, promos, roomSchedules = [], roomProcedureIndex, procedureAreaIndex, currentUser, onSubmitBooking, onAbandonDraft, onEditQueue, onMoveToWaitingQueue, onToggleBedSwitch, showToast, onRangeNeeded }) {
   const [date, setDate] = useState(getTodayStr());
   // เลื่อนไปวันเก่ากว่า 30 วัน → ขอให้ App โหลดวันนั้น
   useEffect(() => { if (date) onRangeNeeded?.(date, date); }, [date, onRangeNeeded]);
@@ -20,6 +23,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
     : (branches[0]?.id || "");
   const [popup, setPopup] = useState(null); // { q, room, block, x, y }
   const [bookingForm, setBookingForm] = useState(null); // mini booking popup form
+  // ค้น HN เจอ = ขึ้นคำใบ้ว่าเคยมีประวัติ แต่ไม่เลือกประเภทให้
+  const [hnMatched, setHnMatched] = useState(false);
   const { isSaving: saving, run: runBookingSubmit } = useSubmissionLock();
   const isMobile = typeof window !== "undefined" && window.innerWidth <= 640;
   const [outsideTapHint, setOutsideTapHint] = useState(false);
@@ -40,7 +45,9 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
     return Boolean(
       f.name?.trim() || f.phone?.trim() || f.procedureId || f.promoId ||
       f.note?.trim() || (f.price !== "" && f.price != null && Number(f.price) !== 0) ||
-      f.customerType !== "new"
+      // เดิมเทียบ !== "new" เพราะฟอร์มเปล่าเคยตั้ง "new" ไว้ให้ ตอนนี้ฟอร์มเปล่าเป็นค่าว่าง
+      // ถ้าไม่แก้ ป๊อปอัปที่เพิ่งเปิดจะถือว่า "กรอกไปแล้ว" ทุกครั้ง กดนอกกรอบปิดไม่ได้เลย
+      Boolean(f.customerType)
     );
   }
 
@@ -50,9 +57,10 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   }
 
   function navigate(dir) {
-    const d = new Date(date);
-    d.setDate(d.getDate() + dir);
-    setDate(d.toISOString().slice(0, 10));
+    // บวก/ลบวันบนสตริง "YYYY-MM-DD" ตรง ๆ — เดิมแปลงผ่าน Date แล้วอ่านกลับด้วย
+    // toISOString() (UTC) ซึ่งบังเอิญได้ผลถูกเฉพาะโซนเวลาบวกอย่างไทย อ่านแล้วต้องนั่ง
+    // พิสูจน์ว่าหักล้างกันพอดี ใช้ addDays ที่คิดด้วยเวลาเครื่องล้วนแทน ชัดเจนกว่า
+    setDate(addDays(date, dir));
   }
 
   const filteredRooms = useMemo(() => {
@@ -555,6 +563,27 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
           ? proceduresForRoom(roomProcedureIndex, room, procedures)
           : procedures;
         const selectedProc = procedures.find((p) => p.id === bookingForm.procedureId);
+        // บริเวณของหัตถการที่เลือก — หัตถการที่ยังไม่ตั้งค่า = [] = ป๊อปอัปหน้าตาเดิมทุกอย่าง
+        const bookingAreas = areasForProcedure(procedureAreaIndex, bookingForm.procedureId);
+        const bookingAreaIds = keepValidAreaIds(procedureAreaIndex, bookingForm.procedureId, bookingForm.areaIds);
+        const bookingDur = bookingForm.durationBlocks ?? selectedProc?.blocks ?? 1;
+        // เลือกประเภทลูกค้าแล้วหรือยัง — ตัวเปิด/ปิดส่วนที่เหลือของป๊อปอัป
+        const typeChosen = !!bookingForm.customerType;
+        // กดบริเวณ = เขียนเวลารวมลง durationBlocks ที่ onSubmitBooking อ่านอยู่แล้ว
+        // (ทั้งตัวตรวจห้องปิดและตัวตรวจคิวชนใน App.jsx ใช้ค่านี้) ไม่เลือกเลย → null → ค่าปกติ
+        const toggleBookingArea = (areaId) => {
+          setBookingForm((f) => {
+            const current = keepValidAreaIds(procedureAreaIndex, f.procedureId, f.areaIds);
+            const next = current.includes(areaId)
+              ? current.filter((id) => id !== areaId)
+              : [...current, areaId];
+            return {
+              ...f,
+              areaIds: next,
+              durationBlocks: durationFromAreas(procedureAreaIndex, f.procedureId, next),
+            };
+          });
+        };
         const availablePromos = promos.filter((p) => !p.procedureId || p.procedureId === bookingForm.procedureId);
         // โน้ตรายวัน + ป้ายเครื่องของเตียงนี้ — หัวคอลัมน์โชว์ได้แค่บรรทัดเดียว ตรงนี้คือที่เดียวที่อ่านครบ
         const bookingRoomNotes = roomScheduleNotesByRoomId[bookingForm.roomId] || [];
@@ -616,26 +645,137 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                       phone={bookingForm.phone}
                       name={bookingForm.name}
                       onSelect={(c) => {
+                        // ไม่เลือกประเภทให้ — กติกาเดียวกับหน้าบันทึกคิว คนมี HN แล้วมาใช้คอร์สก็เยอะ
                         const fullName = `${c.firstname} ${c.lastname}`.trim();
+                        setHnMatched(true);
                         setBookingForm((f) => ({
                           ...f,
                           name: fullName || f.name,
                           phone: c.telephone || f.phone,
-                          customerType: "old",
                         }));
                       }}
                     />
                   </div>
                 </div>
 
+                {/* บัญชีผู้จัดการสาขาใช้ร่วมกันหลายคนหน้าร้าน — บังคับพิมพ์ชื่อผู้บันทึกจริง
+                    กติกาเดียวกับหน้าบันทึกคิว (ดู BookingPage.jsx) ป๊อปอัปนี้สร้างคิวใหม่
+                    เสมอ จึงถามทุกครั้ง ไม่กระทบผู้ได้ค่าคอม/สถิติ — recordedBy ยังเป็น
+                    บัญชีผู้จัดการเหมือนเดิม */}
+                {requiresRecorderNote(currentUser, null) && (
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>
+                      ชื่อผู้บันทึกจริง * — บัญชีนี้ใช้ร่วมกันหลายคน
+                    </label>
+                    <input style={{ width: "100%", fontSize: 13 }} value={bookingForm.recordedNote || ""}
+                      onChange={(e) => setBookingForm((f) => ({ ...f, recordedNote: e.target.value }))}
+                      placeholder="เช่น โย" />
+                  </div>
+                )}
+
+                {/* ประเภทลูกค้า — ย้ายขึ้นมาไว้ตรงนี้และต้องเลือกเองเสมอ กติกาเดียวกับหน้าบันทึกคิว
+                    ส่วนที่เหลือของฟอร์มหุบอยู่จนกว่าจะเลือก */}
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>
+                    ประเภทลูกค้า *
+                    {!typeChosen && <span style={{ color: "var(--amber)", fontWeight: 700 }}> — ยังไม่ได้เลือก</span>}
+                  </label>
+                  {hnMatched && !typeChosen && (
+                    <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 4 }}>
+                      🔎 เบอร์นี้เคยมีประวัติ — เลือกเองว่าเป็น ลูกค้าเก่า หรือ ใช้คอร์ส
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {CUSTOMER_TYPES.map((ct) => {
+                      const on = bookingForm.customerType === ct.value;
+                      return (
+                        <button
+                          key={ct.value}
+                          type="button"
+                          onClick={() => setBookingForm((f) => ({ ...f, customerType: ct.value }))}
+                          style={{
+                            flex: 1, padding: "7px 4px", borderRadius: 8, cursor: "pointer",
+                            border: `1.5px solid ${on ? "var(--accent)" : "var(--border2)"}`,
+                            background: on ? "var(--accent)" : "var(--surface2)",
+                            color: on ? "#fff" : "var(--text)",
+                            fontSize: 12, fontWeight: 700, lineHeight: 1.3,
+                          }}
+                        >
+                          {ct.emoji} {ct.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {!typeChosen && (
+                  <div style={{
+                    border: "1.5px dashed var(--border2)", borderRadius: 8,
+                    background: "var(--surface2)", padding: "12px 14px", textAlign: "center",
+                    fontSize: 12.5, fontWeight: 700, color: "var(--text2)",
+                  }}>
+                    👆 เลือกประเภทลูกค้าก่อน แล้วส่วนที่เหลือจะเปิดให้กรอก
+                  </div>
+                )}
+
+                {typeChosen && (<>
                 <div>
                   <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>หัตถการ</label>
                   <select style={{ width: "100%", fontSize: 13 }} value={bookingForm.procedureId}
-                    onChange={(e) => setBookingForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "" }))}>
+                    onChange={(e) => setBookingForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "", areaIds: [], durationBlocks: null }))}>
                     <option value="">— เลือกหัตถการ —</option>
                     {roomProcs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </div>
+
+                {/* บริเวณที่ทำ — โผล่เฉพาะหัตถการที่ตั้งค่าบริเวณไว้ (ดู src/utils/procedureAreas.js)
+                    ต้องมีที่นี่ด้วย ไม่ใช่แค่หน้าบันทึกคิว เพราะแอดมินลงคิวจากหน้านี้เป็นหลัก */}
+                {bookingAreas.length > 0 && (
+                  <div>
+                    <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>
+                      บริเวณที่ทำ <span style={{ color: "var(--text3)" }}>— เลือกได้หลายจุด ไม่เลือกก็ได้</span>
+                    </label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {bookingAreas.map((a) => {
+                        const on = bookingAreaIds.includes(a.id);
+                        return (
+                          <button
+                            key={a.id}
+                            type="button"
+                            onClick={() => toggleBookingArea(a.id)}
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 4,
+                              padding: "4px 9px", borderRadius: 20, cursor: "pointer",
+                              border: `1.5px solid ${on ? "var(--accent)" : "var(--border2)"}`,
+                              background: on ? "var(--accent)" : "var(--surface2)",
+                              color: on ? "#fff" : "var(--text)",
+                              fontSize: 12, fontWeight: 600, lineHeight: 1.4,
+                            }}
+                          >
+                            {on ? "✓ " : ""}{a.name}
+                            <span style={{ fontSize: 9, fontFamily: "var(--mono)", fontWeight: 700, opacity: 0.85 }}>
+                              {a.blocks * 5}น
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Timeline เป็นตารางช่องเวลา — ต้องเห็นว่าคิวนี้กินถึงกี่โมง ป๊อปอัปเดิมไม่เคยบอก */}
+                {selectedProc && bookingForm.timeBlock !== null && (
+                  <div style={{
+                    fontSize: 12, fontWeight: 700,
+                    color: bookingAreaIds.length > 0 ? "var(--accent)" : "var(--text3)",
+                    background: "var(--surface2)", borderRadius: 8, padding: "6px 10px",
+                  }}>
+                    ⏱ {blockToTime(bookingForm.timeBlock)}–{blockToTime(bookingForm.timeBlock + bookingDur)} ({bookingDur * 5} นาที)
+                    {bookingAreaIds.length > 0
+                      ? ` · ${bookingAreaIds.length} บริเวณ`
+                      : bookingAreas.length > 0 ? " · ค่าปกติ" : ""}
+                  </div>
+                )}
 
                 {availablePromos.length > 0 && (
                   <div>
@@ -651,22 +791,11 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                   </div>
                 )}
 
-                <div style={{ display: "flex", gap: 8 }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>ราคา (บาท)</label>
-                    <input type="number" style={{ width: "100%", fontSize: 13 }} value={bookingForm.price}
-                      onChange={(e) => setBookingForm((f) => ({ ...f, price: e.target.value }))}
-                      placeholder="0" />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>ประเภทลูกค้า</label>
-                    <select style={{ width: "100%", fontSize: 13 }} value={bookingForm.customerType}
-                      onChange={(e) => setBookingForm((f) => ({ ...f, customerType: e.target.value }))}>
-                      <option value="new">ลูกค้าใหม่</option>
-                      <option value="old">ลูกค้าเก่า</option>
-                      <option value="course">ใช้คอร์ส</option>
-                    </select>
-                  </div>
+                <div>
+                  <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>ราคา (บาท)</label>
+                  <input type="number" style={{ width: "100%", fontSize: 13 }} value={bookingForm.price}
+                    onChange={(e) => setBookingForm((f) => ({ ...f, price: e.target.value }))}
+                    placeholder="0" />
                 </div>
 
                 <div>
@@ -675,6 +804,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                     onChange={(e) => setBookingForm((f) => ({ ...f, note: e.target.value }))}
                     placeholder="หมายเหตุ (ถ้ามี)" />
                 </div>
+                </>)}
               </div>
 
               {outsideTapHint && (
@@ -686,9 +816,11 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
               {/* Actions */}
               <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
                 <button className="btn btn-secondary" onClick={closeBookingForm}>ยกเลิก</button>
+                {typeChosen && (
                 <button
                   className="btn btn-primary"
-                  disabled={saving || !bookingForm.name.trim() || !bookingForm.phone.trim()}
+                  disabled={saving || !bookingForm.name.trim() || !bookingForm.phone.trim()
+                    || (requiresRecorderNote(currentUser, null) && !bookingForm.recordedNote?.trim())}
                   onClick={async () => {
                     if (!onSubmitBooking) return;
                     const submission = await runBookingSubmit(() => onSubmitBooking(bookingForm));
@@ -697,6 +829,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                 >
                   {saving ? "กำลังบันทึก..." : "✅ บันทึกคิว"}
                 </button>
+                )}
               </div>
             </div>
           </div>
