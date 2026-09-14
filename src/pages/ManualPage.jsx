@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { NAV_ITEMS, ROLES } from "../utils/constants";
 import { MANUAL_META, MANUAL_SECTIONS } from "../manual/manualContent";
 import { QUIZ_META, QUIZ_QUESTIONS } from "../manual/testContent";
+import { fetchQuizSettings, updateQuizSettings, fetchQuizResults, upsertQuizResult } from "../utils/supabaseService";
 
 const TABS = [
   { id: "guide", label: "📖 คู่มือการใช้งาน" },
@@ -273,18 +274,151 @@ function GuideTab({ sections, currentUser, showAll, setShowAll, canToggle }) {
   );
 }
 
-function formatWhen(iso) {
+function formatWhen(iso) { // รับทั้ง ISO string และ Date
   if (!iso) return "";
   const d = new Date(iso);
   return `${d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" })} ${d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
-function QuizTab({ currentUser }) {
+const CLOSED_SETTINGS = { preOpen: false, postOpen: false, updatedAt: null };
+const MIGRATION_HINT = "ยังไม่ได้ติดตั้งตารางแบบทดสอบในฐานข้อมูล (migration 20260914100000_quiz_results) — แจ้งผู้พัฒนาให้รันก่อน แท็บนี้ถึงจะเปิดให้พนักงานได้";
+
+// ─── แผงผู้ดูแลระบบ: เปิด/ปิดรอบ และคะแนนของทุกคน ───
+function QuizAdminPanel({ currentUser, settings, setSettings, dbMissing, branches, refreshKey }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [open, setOpen] = useState(true);
+  const branchName = (id) => branches?.find((b) => b.id === id)?.name || "";
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    fetchQuizResults()
+      .then((r) => { if (alive) { setRows(r); setError(null); } })
+      .catch((e) => { if (alive) setError(e?.message || "โหลดคะแนนไม่สำเร็จ"); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [refreshKey]);
+
+  async function toggle(key) {
+    const next = { ...settings, [key]: !settings[key] };
+    const label = key === "preOpen" ? "รอบก่อนเทรน" : "รอบหลังเทรน";
+    if (!window.confirm(`${next[key] ? "เปิด" : "ปิด"}${label}ให้พนักงานทุกคน${next[key] ? " — แท็บแบบทดสอบจะโผล่ในเมนูคู่มือของทุกคนทันที" : ""}?`)) return;
+    setSaving(true);
+    try {
+      const saved = await updateQuizSettings(next, currentUser?.nickname || currentUser?.name || null);
+      setSettings(saved);
+    } catch (e) {
+      window.alert(`บันทึกสวิตช์ไม่สำเร็จ: ${e?.message || "ลองใหม่อีกครั้ง"}`);
+    } finally { setSaving(false); }
+  }
+
+  // รวมเป็นรายคน: {staffId, name, role, branchId, pre, post}
+  const people = useMemo(() => {
+    const map = new Map();
+    for (const r of rows) {
+      const cur = map.get(r.staffId) || { staffId: r.staffId, name: r.staffName, role: r.staffRole, branchId: r.branchId, pre: null, post: null };
+      cur[r.round] = r;
+      if (!cur.name) cur.name = r.staffName;
+      map.set(r.staffId, cur);
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "th"));
+  }, [rows]);
+  const preDone = people.filter((p) => p.pre).length;
+  const postDone = people.filter((p) => p.post).length;
+  const avg = (key) => { const xs = people.filter((p) => p[key]).map((p) => p[key].pct); return xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null; };
+  const passPct = QUIZ_META.passPct;
+
+  async function copyAll() {
+    const lines = [`คะแนนแบบทดสอบก่อน/หลังเทรน Qlass — ${formatWhen(new Date())}`, `ทำก่อนเทรน ${preDone} คน (เฉลี่ย ${avg("pre") ?? "-"}%) · ทำหลังเทรน ${postDone} คน (เฉลี่ย ${avg("post") ?? "-"}%)`, ""];
+    for (const p of people) {
+      const f = (r) => (r ? `${r.score}/${r.total} (${r.pct}%)` : "ยังไม่ทำ");
+      const d = p.pre && p.post ? ` → ${p.post.score - p.pre.score >= 0 ? "+" : ""}${p.post.score - p.pre.score}` : "";
+      lines.push(`${p.name} (${ROLE_LABEL[p.role] || p.role || "-"}${branchName(p.branchId) ? " · " + branchName(p.branchId) : ""}): ก่อน ${f(p.pre)} · หลัง ${f(p.post)}${p.post ? (p.post.pct >= passPct ? " ผ่าน" : " ไม่ผ่าน") : ""}${d}`);
+    }
+    const text = lines.join("\n");
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }
+    catch { window.prompt("คัดลอกข้อความนี้", text); }
+  }
+
+  return (
+    <div className="card manual-admin">
+      <div className="card-body manual-admin-head" onClick={() => setOpen((o) => !o)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") setOpen((o) => !o); }}>
+        <b>🛠️ ผู้ดูแลระบบ: เปิดรอบและดูคะแนนทุกคน</b>
+        <span className="manual-admin-sub">{dbMissing ? "ยังไม่ได้ติดตั้งตาราง" : `ก่อนเทรน ${settings.preOpen ? "เปิด" : "ปิด"} · หลังเทรน ${settings.postOpen ? "เปิด" : "ปิด"} · ทำแล้ว ${preDone}/${postDone} คน`}</span>
+        <span className="manual-admin-caret">{open ? "▾" : "▸"}</span>
+      </div>
+      {open && (
+        <div className="card-body">
+          {dbMissing && <div className="manual-quiz-missing">⚠️ {MIGRATION_HINT}</div>}
+          <div className="manual-admin-switches">
+            {QUIZ_META.rounds.map((r) => {
+              const key = r.id === "pre" ? "preOpen" : "postOpen";
+              const on = !!settings[key];
+              return (
+                <button key={r.id} type="button" disabled={saving || dbMissing} className={`manual-switch ${on ? "on" : ""}`} onClick={() => toggle(key)}>
+                  <span className="manual-switch-dot" />
+                  <span>{r.label}: <b>{on ? "เปิดอยู่" : "ปิดอยู่"}</b></span>
+                </button>
+              );
+            })}
+            <span className="manual-admin-hint">แนะนำ: เปิด “รอบก่อนเทรน” ให้ทำก่อนอบรม แล้วปิด → หลังอบรมค่อยเปิด “รอบหลังเทรน” — พนักงานเห็นแท็บแบบทดสอบเฉพาะตอนที่มีรอบเปิดอยู่</span>
+          </div>
+
+          <div className="manual-admin-tools">
+            <span className="manual-quiz-meta">
+              {loading ? "กำลังโหลดคะแนน…" : error ? `⚠️ ${error}` : `ทำก่อนเทรนแล้ว ${preDone} คน (เฉลี่ย ${avg("pre") ?? "-"}%) · ทำหลังเทรนแล้ว ${postDone} คน (เฉลี่ย ${avg("post") ?? "-"}%) · เกณฑ์ผ่านหลังเทรน ${passPct}%`}
+            </span>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={copyAll} disabled={!people.length}>{copied ? "✅ คัดลอกแล้ว" : "📋 คัดลอกคะแนนทุกคน"}</button>
+          </div>
+
+          {people.length > 0 && (
+            <div className="table-scroll">
+              <table className="manual-admin-table">
+                <thead>
+                  <tr><th>ชื่อ</th><th>บทบาท</th><th>สาขา</th><th>ก่อนเทรน</th><th>หลังเทรน</th><th>เปลี่ยนแปลง</th><th>ผลหลังเทรน</th><th>ทำล่าสุด</th></tr>
+                </thead>
+                <tbody>
+                  {people.map((p) => {
+                    const d = p.pre && p.post ? p.post.score - p.pre.score : null;
+                    const last = [p.pre?.submittedAt, p.post?.submittedAt].filter(Boolean).sort().pop();
+                    return (
+                      <tr key={p.staffId}>
+                        <td><b>{p.name}</b></td>
+                        <td>{ROLE_LABEL[p.role] || p.role || "-"}</td>
+                        <td>{branchName(p.branchId) || (p.role && ROLES.find((x) => x.value === p.role)?.branchScope === "all" ? "ทุกสาขา" : "-")}</td>
+                        <td>{p.pre ? `${p.pre.score}/${p.pre.total} (${p.pre.pct}%)${p.pre.attempts > 1 ? ` ×${p.pre.attempts}` : ""}` : <span className="manual-dim">ยังไม่ทำ</span>}</td>
+                        <td>{p.post ? `${p.post.score}/${p.post.total} (${p.post.pct}%)${p.post.attempts > 1 ? ` ×${p.post.attempts}` : ""}` : <span className="manual-dim">ยังไม่ทำ</span>}</td>
+                        <td className={d === null ? "" : d >= 0 ? "good" : "bad"}>{d === null ? "—" : `${d > 0 ? "+" : ""}${d} ข้อ`}</td>
+                        <td>{p.post ? <span className={`manual-quiz-score ${p.post.pct >= passPct ? "good" : "bad"}`}>{p.post.pct >= passPct ? "ผ่าน" : "ไม่ผ่าน"}</span> : "—"}</td>
+                        <td className="manual-dim">{formatWhen(last)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {!loading && !error && people.length === 0 && <div className="manual-dim">ยังไม่มีใครทำแบบทดสอบ</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuizTab({ currentUser, settings, setSettings, isSuperadmin, dbMissing, branches }) {
   const questions = QUIZ_QUESTIONS;
   const passPct = QUIZ_META.passPct;
+  // ผลของฉัน: อ่านจากฐานข้อมูลก่อน (เห็นข้ามเครื่อง) ถ้าอ่านไม่ได้ใช้ที่เก็บในเครื่องนี้แทน
   const [results, setResults] = useState(() => loadResults(currentUser));
-  // เริ่มที่รอบก่อนเทรน ถ้าทำแล้วไปรอบหลังเทรน
-  const [round, setRound] = useState(() => (loadResults(currentUser).pre ? "post" : "pre"));
+  const [loadedFromDb, setLoadedFromDb] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const openRounds = QUIZ_META.rounds.filter((r) => (r.id === "pre" ? settings.preOpen : settings.postOpen) || isSuperadmin);
+  const [round, setRound] = useState(() => openRounds[0]?.id || "pre");
   const saved = results[round] || null;
   const [answers, setAnswers] = useState(() => saved?.answers || {});
   const [checked, setChecked] = useState(() => !!saved);
@@ -295,7 +429,31 @@ function QuizTab({ currentUser }) {
     try { localStorage.setItem(storageKey(currentUser), JSON.stringify(results)); } catch { /* ignore */ }
   }, [results, currentUser]);
 
+  useEffect(() => {
+    if (!currentUser?.id || dbMissing) return;
+    let alive = true;
+    fetchQuizResults({ staffId: currentUser.id }).then((rows) => {
+      if (!alive) return;
+      const next = {};
+      for (const r of rows) next[r.round] = { score: r.score, total: r.total, pct: r.pct, at: r.submittedAt, answers: r.answers || {}, attempts: r.attempts };
+      setResults(next);
+      setLoadedFromDb(true);
+      const cur = next[round] || null;
+      setAnswers(cur?.answers || {});
+      setChecked(!!cur);
+    }).catch(() => { /* ใช้ค่าจากเครื่องนี้ต่อไป */ });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id, dbMissing]);
+
+  // รอบที่กำลังดูถูกปิดไปแล้ว → เด้งไปรอบที่เปิด
+  useEffect(() => {
+    if (!openRounds.some((r) => r.id === round) && openRounds[0]) switchRound(openRounds[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.preOpen, settings.postOpen]);
+
   const roundInfo = QUIZ_META.rounds.find((r) => r.id === round);
+  const roundOpen = openRounds.some((r) => r.id === round);
   const score = useMemo(() => questions.reduce((n, qq) => n + (answers[qq.id] === qq.answer ? 1 : 0), 0), [questions, answers]);
   const answeredCount = questions.filter((qq) => answers[qq.id] !== undefined).length;
   const pct = questions.length ? Math.round((score / questions.length) * 100) : 0;
@@ -309,10 +467,9 @@ function QuizTab({ currentUser }) {
     setMissing([]);
   }
   function reset() {
-    setResults((p) => { const n = { ...p }; delete n[round]; return n; });
-    setAnswers({}); setChecked(false); setMissing([]);
+    setAnswers({}); setChecked(false); setMissing([]); setSaveError(null);
   }
-  function check() {
+  async function check() {
     const miss = questions.map((qq, i) => (answers[qq.id] === undefined ? i + 1 : null)).filter(Boolean);
     if (miss.length > 0) {
       setMissing(miss);
@@ -321,8 +478,25 @@ function QuizTab({ currentUser }) {
     }
     setMissing([]);
     setChecked(true);
-    setResults((p) => ({ ...p, [round]: { score, total: questions.length, pct, at: new Date().toISOString(), answers } }));
+    const entry = { score, total: questions.length, pct, at: new Date().toISOString(), answers, attempts: (results[round]?.attempts || 0) + 1 };
+    setResults((p) => ({ ...p, [round]: entry }));
     setTimeout(() => document.getElementById("manual-quiz-top")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    if (currentUser?.id && !dbMissing) {
+      try {
+        await upsertQuizResult({ staffId: currentUser.id, staffName: currentUser.nickname || currentUser.name || "-", staffRole: currentUser.role, branchId: currentUser.branchId || null, round, score, total: questions.length, pct, answers });
+        setSaveError(null);
+        setRefreshKey((k) => k + 1);
+      } catch (e) {
+        setSaveError(`ส่งคะแนนเข้าระบบไม่สำเร็จ (${e?.message || "เน็ตหลุด"}) — ผลเก็บไว้ในเครื่องนี้แล้ว กด “ส่งคะแนนอีกครั้ง” เมื่อเน็ตกลับมา`);
+      }
+    }
+  }
+  async function resend() {
+    const r = results[round]; if (!r || !currentUser?.id) return;
+    try {
+      await upsertQuizResult({ staffId: currentUser.id, staffName: currentUser.nickname || currentUser.name || "-", staffRole: currentUser.role, branchId: currentUser.branchId || null, round, score: r.score, total: r.total, pct: r.pct, answers: r.answers });
+      setSaveError(null); setRefreshKey((k) => k + 1);
+    } catch (e) { setSaveError(`ยังส่งไม่สำเร็จ (${e?.message || "เน็ตหลุด"})`); }
   }
   function answer(qq, ci) {
     setAnswers((p) => ({ ...p, [qq.id]: ci }));
@@ -351,21 +525,23 @@ function QuizTab({ currentUser }) {
 
   return (
     <div className="manual-main manual-quiz" id="manual-quiz-top">
+      {isSuperadmin && <QuizAdminPanel currentUser={currentUser} settings={settings} setSettings={setSettings} dbMissing={dbMissing} branches={branches} refreshKey={refreshKey} />}
       <div className="card">
         <div className="card-body manual-quiz-rounds">
           {QUIZ_META.rounds.map((r) => {
             const res = results[r.id];
+            const isOpen = openRounds.some((x) => x.id === r.id);
             return (
-              <button key={r.id} type="button" className={`manual-round ${round === r.id ? "active" : ""} ${res ? "done" : ""}`} onClick={() => switchRound(r.id)}>
-                <span className="manual-round-label">{r.label}</span>
-                <span className="manual-round-score">{res ? `${res.score}/${res.total} (${res.pct}%)` : "ยังไม่ได้ทำ"}</span>
+              <button key={r.id} type="button" disabled={!isOpen && !res} className={`manual-round ${round === r.id ? "active" : ""} ${res ? "done" : ""}`} onClick={() => switchRound(r.id)}>
+                <span className="manual-round-label">{r.label}{!isOpen && <span className="manual-round-closed"> · ยังไม่เปิด</span>}</span>
+                <span className="manual-round-score">{res ? `${res.score}/${res.total} (${res.pct}%)` : isOpen ? "ยังไม่ได้ทำ" : "รอผู้ดูแลระบบเปิด"}</span>
               </button>
             );
           })}
           <div className="manual-round-summary">
             {delta !== null
               ? <span className={delta >= 0 ? "good" : "bad"}>ก่อน → หลังเทรน: {delta > 0 ? "+" : ""}{delta} ข้อ ({pre.pct}% → {post.pct}%){post.pct >= passPct ? " — ผ่านเกณฑ์ 🎉" : ` — ยังไม่ถึงเกณฑ์ ${passPct}%`}</span>
-              : <span>ทำ “รอบก่อนเทรน” ก่อนเปิดคู่มือ 1 ครั้ง แล้วทำ “รอบหลังเทรน” หลังอบรมอีก 1 ครั้ง ระบบจะเทียบคะแนนให้</span>}
+              : <span>ทำ “รอบก่อนเทรน” ก่อนเปิดคู่มือ 1 ครั้ง แล้วทำ “รอบหลังเทรน” หลังอบรมอีก 1 ครั้ง คะแนนจะถูกส่งเข้าระบบให้ผู้ดูแลระบบเห็น{loadedFromDb ? "" : " (กำลังเชื่อมต่อ…)"}</span>}
           </div>
           <div className="manual-toolbar-actions">
             <button type="button" className="btn btn-secondary btn-sm" onClick={copySummary} disabled={!pre && !post}>{copied ? "✅ คัดลอกแล้ว" : "📋 คัดลอกสรุปคะแนน"}</button>
@@ -377,14 +553,19 @@ function QuizTab({ currentUser }) {
             <br />
             {checked
               ? <span className={`manual-quiz-score ${round === "post" ? (passed ? "good" : "bad") : ""}`}>คะแนน {score}/{questions.length} ({pct}%) · ทำเมื่อ {formatWhen(saved?.at)}{round === "post" ? (passed ? " — ผ่านเกณฑ์ 🎉" : ` — ยังไม่ถึงเกณฑ์ ${passPct}% ดูเฉลยสีแดงด้านล่าง อ่านคู่มือหัวข้อนั้น แล้วกด “ทำใหม่”`) : " — ดูเฉลยได้ แต่แนะนำให้อ่านคู่มือแล้วค่อยทำรอบหลังเทรน"}</span>
-              : <span>ตอบแล้ว {answeredCount}/{questions.length} ข้อ · ตอบครบแล้วกด “ตรวจคำตอบ” (ปุ่มมีทั้งบนและล่าง) ผลจะถูกเก็บไว้ในเครื่องนี้ภายใต้ชื่อ {currentUser?.nickname || currentUser?.name || "คุณ"}</span>}
+              : roundOpen
+                ? <span>ตอบแล้ว {answeredCount}/{questions.length} ข้อ · ตอบครบแล้วกด “ตรวจคำตอบ” (ปุ่มมีทั้งบนและล่าง) คะแนนจะถูกส่งเข้าระบบในชื่อ {currentUser?.nickname || currentUser?.name || "คุณ"}</span>
+                : <span>รอบนี้ยังไม่เปิด รอผู้ดูแลระบบเปิดก่อน</span>}
           </div>
           <div className="manual-toolbar-actions">
             {!checked
-              ? <button type="button" className="btn btn-primary btn-sm" onClick={check}>ตรวจคำตอบ</button>
-              : <button type="button" className="btn btn-secondary btn-sm" onClick={() => { if (window.confirm(`ล้างผล${roundInfo.label}แล้วทำใหม่?`)) reset(); }}>ทำใหม่</button>}
+              ? <button type="button" className="btn btn-primary btn-sm" onClick={check} disabled={!roundOpen}>ตรวจคำตอบ</button>
+              : <button type="button" className="btn btn-secondary btn-sm" disabled={!roundOpen} onClick={() => { if (window.confirm(`ทำ${roundInfo.label}ใหม่? คะแนนใหม่จะทับคะแนนเดิม และผู้ดูแลระบบจะเห็นว่าทำครั้งที่ ${(results[round]?.attempts || 1) + 1}`)) reset(); }}>ทำใหม่</button>}
           </div>
         </div>
+        {saveError && (
+          <div className="manual-quiz-missing">⚠️ {saveError} <button type="button" className="btn btn-secondary btn-sm" onClick={resend}>ส่งคะแนนอีกครั้ง</button></div>
+        )}
         {missing.length > 0 && (
           <div className="manual-quiz-missing">⚠️ ยังตอบไม่ครบ อีก {missing.length} ข้อ: ข้อ {missing.join(", ")} — ตอบให้ครบแล้วกดตรวจอีกครั้ง (ข้อที่ยังไม่ตอบมีกรอบสีส้ม)</div>
         )}
@@ -406,7 +587,7 @@ function QuizTab({ currentUser }) {
                 if (checked && chosen === ci && !correct) cls += " wrong";
                 return (
                   <label key={ci} className={cls}>
-                    <input type="radio" name={`q-${qq.id}`} disabled={checked} checked={chosen === ci} onChange={() => answer(qq, ci)} />
+                    <input type="radio" name={`q-${qq.id}`} disabled={checked || !roundOpen} checked={chosen === ci} onChange={() => answer(qq, ci)} />
                     <span>{c}</span>
                   </label>
                 );
@@ -425,19 +606,19 @@ function QuizTab({ currentUser }) {
         {!checked
           ? <>
               <span>{roundInfo.label} · ตอบแล้ว {answeredCount}/{questions.length} ข้อ</span>
-              <button type="button" className="btn btn-primary" onClick={check}>ตรวจคำตอบ</button>
+              <button type="button" className="btn btn-primary" onClick={check} disabled={!roundOpen}>ตรวจคำตอบ</button>
             </>
           : <>
               <span className={`manual-quiz-score ${round === "post" ? (passed ? "good" : "bad") : ""}`}>{roundInfo.label} · คะแนน {score}/{questions.length} ({pct}%)</span>
-              {round === "pre" && !post && <button type="button" className="btn btn-primary" onClick={() => switchRound("post")}>ไปทำรอบหลังเทรน →</button>}
-              <button type="button" className="btn btn-secondary" onClick={() => { if (window.confirm(`ล้างผล${roundInfo.label}แล้วทำใหม่?`)) reset(); }}>ทำใหม่</button>
+              {round === "pre" && !post && openRounds.some((r) => r.id === "post") && <button type="button" className="btn btn-primary" onClick={() => switchRound("post")}>ไปทำรอบหลังเทรน →</button>}
+              <button type="button" className="btn btn-secondary" disabled={!roundOpen} onClick={() => { if (window.confirm(`ทำ${roundInfo.label}ใหม่? คะแนนใหม่จะทับคะแนนเดิม`)) reset(); }}>ทำใหม่</button>
             </>}
       </div>
     </div>
   );
 }
 
-export default function ManualPage({ currentUser }) {
+export default function ManualPage({ currentUser, branches = [] }) {
   const [tab, setTab] = useState(() => {
     try { return localStorage.getItem("qlass_manual_tab") || "guide"; } catch { return "guide"; }
   });
@@ -445,7 +626,23 @@ export default function ManualPage({ currentUser }) {
 
   const allowed = roleAllowedPages(currentUser?.role);
   const canToggle = ROLES.find((r) => r.value === currentUser?.role)?.branchScope === "all";
+  const isSuperadmin = currentUser?.role === "superadmin";
   const [showAll, setShowAll] = useState(false);
+
+  // สวิตช์รอบแบบทดสอบจากฐานข้อมูล — อ่านไม่ได้ (ยังไม่รัน migration / เน็ตหลุด) = ปิดทั้งสองรอบ
+  const [settings, setSettings] = useState(CLOSED_SETTINGS);
+  const [dbMissing, setDbMissing] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetchQuizSettings()
+      .then((s) => { if (alive) { setSettings(s); setDbMissing(false); } })
+      .catch(() => { if (alive) { setSettings(CLOSED_SETTINGS); setDbMissing(true); } });
+    return () => { alive = false; };
+  }, []);
+
+  const quizVisible = isSuperadmin || settings.preOpen || settings.postOpen;
+  const tabs = TABS.filter((t) => t.id !== "quiz" || quizVisible);
+  const activeTab = tab === "quiz" && !quizVisible ? "guide" : tab;
 
   const sections = useMemo(() => {
     if (showAll && canToggle) return MANUAL_SECTIONS;
@@ -462,14 +659,14 @@ export default function ManualPage({ currentUser }) {
           </div>
         </div>
         <div className="manual-tabs">
-          {TABS.map((t) => (
-            <button key={t.id} type="button" className={`manual-tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>
+          {tabs.map((t) => (
+            <button key={t.id} type="button" className={`manual-tab ${activeTab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>
           ))}
         </div>
       </div>
 
-      {tab === "guide" && <GuideTab sections={sections} currentUser={currentUser} showAll={showAll} setShowAll={setShowAll} canToggle={canToggle} />}
-      {tab === "quiz" && <QuizTab currentUser={currentUser} />}
+      {activeTab === "guide" && <GuideTab sections={sections} currentUser={currentUser} showAll={showAll} setShowAll={setShowAll} canToggle={canToggle} />}
+      {activeTab === "quiz" && <QuizTab currentUser={currentUser} settings={settings} setSettings={setSettings} isSuperadmin={isSuperadmin} dbMissing={dbMissing} branches={branches} />}
     </div>
   );
 }

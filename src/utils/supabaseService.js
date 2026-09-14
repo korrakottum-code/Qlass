@@ -199,6 +199,88 @@ export async function deleteProcedureArea(id) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// QUIZ — แบบทดสอบก่อน/หลังเทรน (เมนูคู่มือ): สวิตช์เปิดรอบ + ผลคะแนนของทุกคน
+// ตาราง quiz_settings (แถวเดียว) / quiz_results (1 คน 1 รอบ 1 แถว)
+// ยังไม่ได้รัน migration → ฟังก์ชันอ่านจะ throw ผู้เรียกต้องถือว่า "ปิดอยู่" ไม่ให้แอปล้ม
+// ═══════════════════════════════════════════════════════════
+
+export function mapQuizResultRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    staffId: row.staff_id,
+    staffName: row.staff_name || "",
+    staffRole: row.staff_role || "",
+    branchId: row.branch_id || null,
+    round: row.round,
+    score: row.score,
+    total: row.total,
+    pct: row.pct,
+    answers: row.answers || {},
+    attempts: row.attempts ?? 1,
+    submittedAt: row.submitted_at,
+  };
+}
+
+export async function fetchQuizSettings() {
+  const { data, error } = await supabase
+    .from("quiz_settings")
+    .select("pre_open, post_open, updated_at")
+    .eq("id", "global")
+    .maybeSingle();
+  if (error) throw error;
+  return { preOpen: !!data?.pre_open, postOpen: !!data?.post_open, updatedAt: data?.updated_at || null };
+}
+
+export async function updateQuizSettings({ preOpen, postOpen }, updatedBy = null) {
+  const { data, error } = await supabase
+    .from("quiz_settings")
+    .upsert([{ id: "global", pre_open: !!preOpen, post_open: !!postOpen, updated_at: new Date().toISOString(), updated_by: updatedBy }], { onConflict: "id" })
+    .select("pre_open, post_open, updated_at")
+    .single();
+  if (error) throw error;
+  return { preOpen: !!data.pre_open, postOpen: !!data.post_open, updatedAt: data.updated_at };
+}
+
+// ทุกแถว (ผู้ดูแลระบบดูคะแนนทุกคน) หรือเฉพาะของ staffId เดียว
+export async function fetchQuizResults({ staffId = null } = {}) {
+  let query = supabase.from("quiz_results").select("*").order("submitted_at", { ascending: false });
+  if (staffId) query = query.eq("staff_id", staffId);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []).map(mapQuizResultRow);
+}
+
+// ทำใหม่ = ทับแถวเดิมของ (คน, รอบ) และนับ attempts เพิ่ม
+export async function upsertQuizResult(result) {
+  const { data: existing } = await supabase
+    .from("quiz_results")
+    .select("attempts")
+    .eq("staff_id", result.staffId)
+    .eq("round", result.round)
+    .maybeSingle();
+  const { data, error } = await supabase
+    .from("quiz_results")
+    .upsert([{
+      staff_id: result.staffId,
+      staff_name: result.staffName,
+      staff_role: result.staffRole || null,
+      branch_id: result.branchId || null,
+      round: result.round,
+      score: result.score,
+      total: result.total,
+      pct: result.pct,
+      answers: result.answers || {},
+      attempts: (existing?.attempts || 0) + 1,
+      submitted_at: new Date().toISOString(),
+    }], { onConflict: "staff_id,round" })
+    .select()
+    .single();
+  if (error) throw error;
+  return mapQuizResultRow(data);
+}
+
+// ═══════════════════════════════════════════════════════════
 // PROMOS
 // ═══════════════════════════════════════════════════════════
 

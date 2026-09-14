@@ -265,6 +265,25 @@ export async function updateProcedureArea(id, a) { return clone(upsert(DB.proced
 export async function deleteProcedureArea(id) { remove(DB.procedureAreas, id); }
 export const getAllProcedureAreas = fetchProcedureAreas;
 
+// ─── quiz (แบบทดสอบก่อน/หลังเทรน) ───
+DB.quizSettings = { preOpen: true, postOpen: false, updatedAt: new Date().toISOString() };
+DB.quizResults = [
+  { id: "qr1", staffId: "s2", staffName: "แนน", staffRole: "cashier", branchId: "b1", round: "pre", score: 18, total: 30, pct: 60, answers: {}, attempts: 1, submittedAt: new Date(Date.now() - 2 * 86400e3).toISOString() },
+  { id: "qr2", staffId: "s2", staffName: "แนน", staffRole: "cashier", branchId: "b1", round: "post", score: 27, total: 30, pct: 90, answers: {}, attempts: 1, submittedAt: new Date(Date.now() - 3600e3).toISOString() },
+  { id: "qr3", staffId: "s4", staffName: "จอย", staffRole: "cashier", branchId: "b2", round: "pre", score: 14, total: 30, pct: 47, answers: {}, attempts: 1, submittedAt: new Date(Date.now() - 2 * 86400e3).toISOString() },
+  { id: "qr4", staffId: "s6", staffName: "เจ๊หมวย", staffRole: "branch_manager", branchId: "b1", round: "pre", score: 21, total: 30, pct: 70, answers: {}, attempts: 2, submittedAt: new Date(Date.now() - 86400e3).toISOString() },
+  { id: "qr5", staffId: "s6", staffName: "เจ๊หมวย", staffRole: "branch_manager", branchId: "b1", round: "post", score: 22, total: 30, pct: 73, answers: {}, attempts: 1, submittedAt: new Date(Date.now() - 1800e3).toISOString() },
+  { id: "qr6", staffId: "s8", staffName: "มิ้นท์", staffRole: "admin", branchId: null, round: "pre", score: 25, total: 30, pct: 83, answers: {}, attempts: 1, submittedAt: new Date(Date.now() - 86400e3).toISOString() },
+];
+export async function fetchQuizSettings() { await delay(); return { ...DB.quizSettings }; }
+export async function updateQuizSettings(s) { DB.quizSettings = { ...DB.quizSettings, ...s, updatedAt: new Date().toISOString() }; return { ...DB.quizSettings }; }
+export async function fetchQuizResults({ staffId = null } = {}) { await delay(); return clone(DB.quizResults.filter((r) => !staffId || r.staffId === staffId)); }
+export async function upsertQuizResult(r) {
+  const cur = DB.quizResults.find((x) => x.staffId === r.staffId && x.round === r.round);
+  const row = { ...(cur || { id: uid("qr") }), ...r, attempts: (cur?.attempts || 0) + 1, submittedAt: new Date().toISOString() };
+  return clone(upsert(DB.quizResults, row));
+}
+
 // ─── tickets / categories / logs / HN ───
 export async function fetchTickets() { await delay(); return clone(DB.tickets); }
 export async function createTicketDB(t) { const row = { imageUrls: [], adminNotes: "", ...t, id: uid("t"), createdAt: new Date().toISOString() }; DB.tickets.unshift(row); return clone(row); }

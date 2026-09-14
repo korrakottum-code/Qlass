@@ -1819,7 +1819,7 @@ export default function App() {
             )}
 
             {page === "manual" && (
-              <ManualPage currentUser={currentUser} />
+              <ManualPage currentUser={currentUser} branches={branches} />
             )}
           </div>
         </div>
