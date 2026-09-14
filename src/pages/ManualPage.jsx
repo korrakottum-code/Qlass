@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { NAV_ITEMS, ROLES } from "../utils/constants";
 import { MANUAL_META, MANUAL_SECTIONS } from "../manual/manualContent";
 import { QUIZ_META, QUIZ_QUESTIONS } from "../manual/testContent";
-import { fetchQuizSettings, updateQuizSettings, fetchQuizResults, upsertQuizResult } from "../utils/supabaseService";
+import { fetchQuizSettings, updateQuizSettings, fetchQuizResults, upsertQuizResult, deleteQuizResults } from "../utils/supabaseService";
 import { exportQuizResults } from "../utils/exportService";
 
 const TABS = [
@@ -285,7 +285,7 @@ const CLOSED_SETTINGS = { preOpen: false, postOpen: false, updatedAt: null };
 const MIGRATION_HINT = "ยังไม่ได้ติดตั้งตารางแบบทดสอบในฐานข้อมูล (migration 20260914100000_quiz_results) — แจ้งผู้พัฒนาให้รันก่อน แท็บนี้ถึงจะเปิดให้พนักงานได้";
 
 // ─── แผงผู้ดูแลระบบ: เปิด/ปิดรอบ และคะแนนของทุกคน ───
-function QuizAdminPanel({ currentUser, settings, setSettings, dbMissing, branches, refreshKey }) {
+function QuizAdminPanel({ currentUser, settings, setSettings, dbMissing, branches, refreshKey, onCleared }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -333,6 +333,23 @@ function QuizAdminPanel({ currentUser, settings, setSettings, dbMissing, branche
   const avg = (key) => { const xs = people.filter((p) => p[key]).map((p) => p[key].pct); return xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null; };
   const passPct = QUIZ_META.passPct;
 
+  async function clearPerson(p) {
+    if (!window.confirm(`ล้างผลของ ${p.name} ทั้งรอบก่อนและหลังเทรน? ลบแล้วกู้คืนไม่ได้ ${p.name} จะทำใหม่ได้ตั้งแต่รอบก่อนเทรน`)) return;
+    try {
+      await deleteQuizResults({ staffId: p.staffId });
+      setRows((r) => r.filter((x) => x.staffId !== p.staffId));
+      if (p.staffId === currentUser?.id) onCleared?.();
+    } catch (e) { window.alert(`ล้างไม่สำเร็จ: ${e?.message || "ลองใหม่อีกครั้ง"}`); }
+  }
+  async function clearAll() {
+    if (!window.confirm(`ล้างผลของทุกคน (${people.length} คน) ทั้งสองรอบ? ใช้ตอนจะเริ่มเทรนรอบใหม่ ลบแล้วกู้คืนไม่ได้ — แนะนำกด “ดาวน์โหลด Excel” เก็บไว้ก่อน`)) return;
+    if (!window.confirm("ยืนยันอีกครั้ง: ลบคะแนนทุกคนจริง ๆ?")) return;
+    try {
+      await deleteQuizResults();
+      setRows([]);
+      onCleared?.();
+    } catch (e) { window.alert(`ล้างไม่สำเร็จ: ${e?.message || "ลองใหม่อีกครั้ง"}`); }
+  }
   async function copyAll() {
     const lines = [`คะแนนแบบทดสอบก่อน/หลังเทรน Qlass — ${formatWhen(new Date())}`, `ทำก่อนเทรน ${preDone} คน (เฉลี่ย ${avg("pre") ?? "-"}%) · ทำหลังเทรน ${postDone} คน (เฉลี่ย ${avg("post") ?? "-"}%)`, ""];
     for (const p of people) {
@@ -375,13 +392,14 @@ function QuizAdminPanel({ currentUser, settings, setSettings, dbMissing, branche
             </span>
             <button type="button" className="btn btn-secondary btn-sm" onClick={copyAll} disabled={!people.length}>{copied ? "✅ คัดลอกแล้ว" : "📋 คัดลอกคะแนนทุกคน"}</button>
             <button type="button" className="btn btn-secondary btn-sm" disabled={!people.length} onClick={() => exportQuizResults(people, QUIZ_QUESTIONS, { branchName, roleLabel: (r) => ROLE_LABEL[r] || r || "-", passPct })}>📥 ดาวน์โหลด Excel</button>
+            <button type="button" className="btn btn-danger btn-sm" disabled={!people.length || dbMissing} onClick={clearAll}>🗑️ ล้างผลทุกคน</button>
           </div>
 
           {people.length > 0 && (
             <div className="table-scroll">
               <table className="manual-admin-table">
                 <thead>
-                  <tr><th>ชื่อ</th><th>บทบาท</th><th>สาขา</th><th>ก่อนเทรน</th><th>หลังเทรน</th><th>เปลี่ยนแปลง</th><th>ผลหลังเทรน</th><th>ทำล่าสุด</th></tr>
+                  <tr><th>ชื่อ</th><th>บทบาท</th><th>สาขา</th><th>ก่อนเทรน</th><th>หลังเทรน</th><th>เปลี่ยนแปลง</th><th>ผลหลังเทรน</th><th>ทำล่าสุด</th><th></th></tr>
                 </thead>
                 <tbody>
                   {people.map((p) => {
@@ -397,6 +415,7 @@ function QuizAdminPanel({ currentUser, settings, setSettings, dbMissing, branche
                         <td className={d === null ? "" : d >= 0 ? "good" : "bad"}>{d === null ? "—" : `${d > 0 ? "+" : ""}${d} ข้อ`}</td>
                         <td>{p.post ? <span className={`manual-quiz-score ${p.post.pct >= passPct ? "good" : "bad"}`}>{p.post.pct >= passPct ? "ผ่าน" : "ไม่ผ่าน"}</span> : "—"}</td>
                         <td className="manual-dim">{formatWhen(last)}</td>
+                        <td><button type="button" className="btn btn-secondary btn-sm" title="ล้างผลของคนนี้ทั้งสองรอบ ให้ทำใหม่ได้" onClick={() => clearPerson(p)}>🗑️ ล้างผล</button></td>
                       </tr>
                     );
                   })}
@@ -527,7 +546,7 @@ function QuizTab({ currentUser, settings, setSettings, isSuperadmin, dbMissing, 
 
   return (
     <div className="manual-main manual-quiz" id="manual-quiz-top">
-      {isSuperadmin && <QuizAdminPanel currentUser={currentUser} settings={settings} setSettings={setSettings} dbMissing={dbMissing} branches={branches} refreshKey={refreshKey} />}
+      {isSuperadmin && <QuizAdminPanel currentUser={currentUser} settings={settings} setSettings={setSettings} dbMissing={dbMissing} branches={branches} refreshKey={refreshKey} onCleared={() => { setResults({}); setAnswers({}); setChecked(false); setMissing([]); }} />}
       <div className="card">
         <div className="card-body manual-quiz-rounds">
           {QUIZ_META.rounds.map((r) => {
@@ -558,7 +577,7 @@ function QuizTab({ currentUser, settings, setSettings, isSuperadmin, dbMissing, 
             {checked
               ? <span className={`manual-quiz-score ${round === "post" ? (passed ? "good" : "bad") : ""}`}>คะแนน {score}/{questions.length} ({pct}%) · ทำเมื่อ {formatWhen(saved?.at)}{round === "post" ? (passed ? " — ผ่านเกณฑ์ 🎉" : ` — ยังไม่ถึงเกณฑ์ ${passPct}% ดูเฉลยสีแดงด้านล่าง อ่านคู่มือหัวข้อนั้น แล้วกด “ทำใหม่”`) : " — ดูเฉลยได้ แต่แนะนำให้อ่านคู่มือแล้วค่อยทำรอบหลังเทรน"}</span>
               : roundOpen
-                ? <span>ตอบแล้ว {answeredCount}/{questions.length} ข้อ · ตอบครบแล้วกด “ตรวจคำตอบ” (ปุ่มมีทั้งบนและล่าง) คะแนนจะถูกส่งเข้าระบบในชื่อ {currentUser?.nickname || currentUser?.name || "คุณ"}</span>
+                ? <span>ตอบแล้ว {answeredCount}/{questions.length} ข้อ · ตอบครบแล้วกด “ตรวจคำตอบ” (ปุ่มมีทั้งบนและล่าง) คะแนนจะถูกส่งเข้าระบบในชื่อ {currentUser?.nickname || currentUser?.name || "คุณ"}{saved ? ` — กำลังทำใหม่ คะแนนเดิม ${saved.score}/${saved.total} ยังอยู่ในระบบจนกว่าจะกดตรวจรอบนี้` : ""}</span>
                 : <span>รอบนี้ยังไม่เปิด รอผู้ดูแลระบบเปิดก่อน</span>}
           </div>
           <div className="manual-toolbar-actions">
