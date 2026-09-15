@@ -32,7 +32,7 @@ import { learnFromCorrection } from "./utils/smartParser";
 import { checkFreshRoomBookingConflict } from "./utils/bookingConflict";
 import { shouldUseServerQueueCreate, createQueueOnServer } from "./utils/serverQueueCreate";
 import { extractQueueCreateErrorCode, queueCreateErrorMessage } from "./utils/queueCreateGate";
-import { fetchAuthenticatedStaff, fetchLoginDirectory, getReleaseStatus, getServerSessionToken, loginWithPin, restoreServerSession, revokeServerSession, useServerSession, flushClientDiagnostics, createStaffServer, updateStaffServer, deleteStaffServer } from "./utils/sessionAuth";
+import { fetchAuthenticatedStaff, fetchLoginDirectory, getReleaseStatus, getServerSessionToken, loginWithPin, restoreServerSession, revokeServerSession, useServerSession, flushClientDiagnostics, createStaffServer, updateStaffServer, deleteStaffServer, createBranchServer, updateBranchServer, deleteBranchServer } from "./utils/sessionAuth";
 import { recordClientDiagnostic } from "./utils/clientDiagnostics";
 import { controlledRefreshEnabled, getControlledRefreshStatus, serverDiagnosticsEnabled, flushClientDiagnostics as flushDiagnostics } from "./utils/clientObservability";
 import { reconcileRealtimeQueue, reconcileRealtimeById, reconcileRealtimeRoomProcedure } from "./utils/realtimeQueueState";
@@ -889,12 +889,19 @@ export default function App() {
   }, [showToast, queues, currentUser]);
 
   // ═══════ CRUD HELPERS ═══════
+  // การเขียนตาราง "สาขา" ย้ายไปฝั่งเซิร์ฟเวอร์แล้ว (แพทเทิร์นเดียวกับพนักงาน) เพื่อจะปิดสิทธิ์
+  // เขียนของคีย์ที่ฝังอยู่ในหน้าเว็บได้ — คีย์นั้นใครเปิดหน้าเว็บก็อ่านได้ ถ้ายังเขียนได้อยู่
+  // แปลว่าคนนอกสร้าง/แก้/ลบสาขาได้ด้วย
   const saveBranch = useCallback(async (data) => {
     if (data.id) {
-      const updated = await updateBranch(data.id, data);
+      const updated = useServerSession
+        ? await updateBranchServer(getServerSessionToken(), data.id, data)
+        : await updateBranch(data.id, data);
       setBranches(prev => prev.map(b => b.id === data.id ? updated : b));
     } else {
-      const created = await createBranch(data);
+      const created = useServerSession
+        ? await createBranchServer(getServerSessionToken(), data)
+        : await createBranch(data);
       setBranches(prev => [...prev, created]);
     }
     setModal(null);
@@ -1169,11 +1176,14 @@ export default function App() {
   // ─── Delete helpers ───
   const deleteBranch = useCallback(async (id) => {
     try {
-      await deleteBranchDB(id);
+      if (useServerSession) await deleteBranchServer(getServerSessionToken(), id);
+      else await deleteBranchDB(id);
     } catch (error) {
       // ฐานข้อมูลห้ามลบสาขาที่ยังมีคิว/ห้องอยู่ (migration 20260912150000) — เดิมลบตามทอด
       // คิวทั้งสาขาหายด้วยปุ่มเดียว ตอนนี้โดนปฏิเสธ ต้องบอกเหตุผลให้ชัด ไม่ใช่เงียบไปเฉย ๆ
-      if (error?.code === "23503") {
+      // ทางเซิร์ฟเวอร์ส่งกลับมาเป็นข้อความ branch_in_use ส่วนทางตรงเป็นรหัส 23503 — ต้องรับทั้งคู่
+      // ไม่งั้นพอสลับมาใช้ทางเซิร์ฟเวอร์ ข้อความจะเปลี่ยนเป็น "ลองอีกครั้ง" แล้วผู้ใช้กดวนไม่จบ
+      if (error?.code === "23503" || error?.message === "branch_in_use") {
         showToast("error", "ลบสาขานี้ไม่ได้ — ยังมีคิวหรือห้องผูกอยู่ ต้องย้าย/ลบของพวกนั้นก่อน");
         return;
       }
