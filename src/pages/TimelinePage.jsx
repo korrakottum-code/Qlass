@@ -6,7 +6,7 @@ import { getBedSwitchState } from "../utils/bedSwitch";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
 import { proceduresForRoom, roomLockLabel } from "../utils/roomProcedures";
-import { areasForProcedure, durationFromAreas, keepValidAreaIds } from "../utils/procedureAreas";
+import { areasForProcedure, durationFromAreas, keepValidAreaIds, areaNamesText } from "../utils/procedureAreas";
 
 // สถานะที่ยังถือว่า "ยังไม่ยืนยัน" — ปุ่มย้ายเข้าคิวรอใน popover ใช้ได้เฉพาะกลุ่มนี้
 const UNCONFIRMED_STATUSES = ["pending", "follow1", "follow2", "follow3"];
@@ -499,7 +499,12 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
               {popup.q.procName && (
                 <div style={{ display: "flex", gap: 8 }}>
                   <span style={{ color: "var(--text3)", minWidth: 56 }}>หัตถการ</span>
-                  <span style={{ fontWeight: 600 }}>{popup.q.procName}</span>
+                  <span style={{ fontWeight: 600 }}>
+                    {popup.q.procName}
+                    {popup.q.areaNames && (
+                      <span style={{ fontWeight: 400, color: "var(--text3)" }}> ({popup.q.areaNames})</span>
+                    )}
+                  </span>
                 </div>
               )}
               {popup.q.promoName && (
@@ -581,6 +586,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
               ...f,
               areaIds: next,
               durationBlocks: durationFromAreas(procedureAreaIndex, f.procedureId, next),
+              areaNames: areaNamesText(procedureAreaIndex, f.procedureId, next),
             };
           });
         };
@@ -722,7 +728,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                 <div>
                   <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>หัตถการ</label>
                   <select style={{ width: "100%", fontSize: 13 }} value={bookingForm.procedureId}
-                    onChange={(e) => setBookingForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "", areaIds: [], durationBlocks: null }))}>
+                    onChange={(e) => setBookingForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "", areaIds: [], areaNames: "", durationBlocks: null }))}>
                     <option value="">— เลือกหัตถการ —</option>
                     {roomProcs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>

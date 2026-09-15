@@ -71,6 +71,9 @@ test("payload maps the booking form to the create_queue_v1 contract", () => {
     date: "2026-08-07",
     time_block: 120,
     duration_blocks: null,
+    // บริเวณที่เลือก (16 ก.ย. 2569 เป็นต้นไป) — ไม่ได้ส่ง areaNames มาในฟอร์มทดสอบนี้
+    // เลยต้องเป็นข้อความว่าง ไม่ใช่ null (ดู test/areaNamesDisplay.test.js)
+    area_names: "",
   });
   // Empty-string price must reach the server as null, not "" (Goal 12 metadata
   // and the PR #119 regression both depend on optional fields staying null).

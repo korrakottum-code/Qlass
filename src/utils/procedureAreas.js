@@ -91,3 +91,19 @@ export function keepValidAreaIds(index, procedureId, selectedIds) {
   const valid = new Set(areasForProcedure(index, procedureId).map((a) => a.id));
   return (selectedIds || []).filter((id) => valid.has(id));
 }
+
+/**
+ * ข้อความสรุปบริเวณที่เลือก ไว้แปะต่อท้ายชื่อหัตถการตอนแสดงผล (เช่น "รักแร้, ขา")
+ * เรียงตามลำดับที่ตั้งค่าไว้ใน procedure_areas (sortOrder) เสมอ ไม่ใช่ลำดับที่กด —
+ * กันไม่ให้ข้อความสลับที่ไปมาตามลำดับนิ้วที่คลิก
+ * ไม่ได้เลือกเลย / หัตถการนี้ไม่มีบริเวณ → "" (ไม่ใช่ null — ช่องนี้เป็นข้อความในฟอร์ม
+ * เสมอ ผู้เรียกไม่ต้องเช็ค null ก่อนต่อสตริง)
+ */
+export function areaNamesText(index, procedureId, selectedIds) {
+  const wanted = new Set(selectedIds || []);
+  if (wanted.size === 0) return "";
+  return areasForProcedure(index, procedureId)
+    .filter((a) => wanted.has(a.id))
+    .map((a) => a.name)
+    .join(", ");
+}
