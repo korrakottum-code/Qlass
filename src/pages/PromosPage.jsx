@@ -69,7 +69,9 @@ export default function PromosPage({ promos, procedures, onAdd, onEdit, onDelete
                       <button className="btn btn-sm btn-secondary" onClick={() => onReorder(p.id, "up")} disabled={i === 0} title="ขึ้น">▲</button>
                       <button className="btn btn-sm btn-secondary" onClick={() => onReorder(p.id, "down")} disabled={i === filteredPromos.length - 1} title="ลง">▼</button>
                       <button className="btn btn-sm btn-secondary" onClick={() => onEdit(p)}>✏️</button>
-                      <button className="btn btn-sm btn-danger" onClick={() => onDelete(p.id)}>🗑️</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => {
+                        if (window.confirm(`ลบโปร "${p.name}" ออกจากระบบ?`)) onDelete(p.id);
+                      }}>🗑️</button>
                     </div>
                   </td>
                 </tr>

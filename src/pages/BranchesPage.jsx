@@ -23,7 +23,12 @@ export default function BranchesPage({ branches, rooms, onAdd, onEdit, onDelete 
                 <td>
                   <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
                     <button className="btn btn-sm btn-secondary" onClick={() => onEdit(b)}>✏️</button>
-                    <button className="btn btn-sm btn-danger" onClick={() => onDelete(b.id)}>🗑️</button>
+                    {/* เดิมกดปุ่มนี้ = ลบทันที ไม่มีจังหวะให้ทบทวน พลาดนิ้วครั้งเดียวก็หายได้
+                        ตอนนี้สาขาทุกอันมีคิวผูกอยู่ ฐานข้อมูลเลยกันไว้ให้ (FK RESTRICT) แต่สาขา
+                        ที่เพิ่งสร้างยังไม่มีคิว จะลบหลุดได้จริง ๆ — ต้องถามก่อนเหมือนหน้าพนักงาน */}
+                    <button className="btn btn-sm btn-danger" onClick={() => {
+                      if (window.confirm(`ลบสาขา "${b.name}" ออกจากระบบ?`)) onDelete(b.id);
+                    }}>🗑️</button>
                   </div>
                 </td>
               </tr>
