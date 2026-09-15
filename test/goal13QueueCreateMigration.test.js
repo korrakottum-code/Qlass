@@ -9,7 +9,7 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 // (scripts/goal13_apply_production_function.py) — การแก้ฟังก์ชันทำด้วยไฟล์ migration ใหม่
 const original = read("../supabase/migrations/20260724192700_goal13_create_queue_v1.sql");
 // ไฟล์ล่าสุดที่นิยามฟังก์ชัน = กติกาที่ใช้จริงตอนนี้
-const current = read("../supabase/migrations/20260913100000_create_queue_v1_rescheduled_frees_slot.sql");
+const current = read("../supabase/migrations/20260916080000_create_queue_v1_stale_request_guard.sql");
 
 test("ไฟล์ติดตั้งครั้งแรกต้องคงเดิม (สคริปต์ติดตั้งตรวจ checksum ไฟล์นี้)", () => {
   assert.match(original, /security definer\s+set search_path = ''/i);
@@ -49,6 +49,7 @@ const CHAIN = [
   "20260909020000_create_queue_v1_require_customer_type.sql",
   "20260913090000_create_queue_v1_request_id_payload_guard.sql",
   "20260913100000_create_queue_v1_rescheduled_frees_slot.sql",
+  "20260916080000_create_queue_v1_stale_request_guard.sql",
 ];
 
 const guardsOf = (src) => [...src.matchAll(/message = '([a-z_]+)'/g)].map((m) => m[1]);

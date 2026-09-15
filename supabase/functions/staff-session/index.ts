@@ -67,7 +67,7 @@ const queueCreateErrors = new Set([
   "invalid_queue_payload", "past_date_not_allowed", "invalid_branch", "branch_forbidden",
   "invalid_room", "room_required", "invalid_procedure", "invalid_duration",
   "procedure_required", "invalid_promo", "invalid_time", "room_closed", "room_conflict",
-  "request_id_forbidden", "invalid_session", "forbidden",
+  "request_id_forbidden", "request_id_stale", "invalid_session", "forbidden",
 ]);
 const diagnosticEventNames = new Set([
   "client_error", "initial_load", "realtime_status", "render_error", "write_outcome",
