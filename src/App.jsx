@@ -33,6 +33,7 @@ import { checkFreshRoomBookingConflict } from "./utils/bookingConflict";
 import { shouldUseServerQueueCreate, createQueueOnServer } from "./utils/serverQueueCreate";
 import { extractQueueCreateErrorCode, queueCreateErrorMessage } from "./utils/queueCreateGate";
 import { fetchAuthenticatedStaff, fetchLoginDirectory, getReleaseStatus, getServerSessionToken, loginWithPin, restoreServerSession, revokeServerSession, useServerSession, flushClientDiagnostics, createStaffServer, updateStaffServer, deleteStaffServer, createBranchServer, updateBranchServer, deleteBranchServer } from "./utils/sessionAuth";
+import { serverErrorCode } from "./utils/sessionApi";
 import { recordClientDiagnostic } from "./utils/clientDiagnostics";
 import { controlledRefreshEnabled, getControlledRefreshStatus, serverDiagnosticsEnabled, flushClientDiagnostics as flushDiagnostics } from "./utils/clientObservability";
 import { reconcileRealtimeQueue, reconcileRealtimeById, reconcileRealtimeRoomProcedure } from "./utils/realtimeQueueState";
@@ -1181,9 +1182,11 @@ export default function App() {
     } catch (error) {
       // ฐานข้อมูลห้ามลบสาขาที่ยังมีคิว/ห้องอยู่ (migration 20260912150000) — เดิมลบตามทอด
       // คิวทั้งสาขาหายด้วยปุ่มเดียว ตอนนี้โดนปฏิเสธ ต้องบอกเหตุผลให้ชัด ไม่ใช่เงียบไปเฉย ๆ
-      // ทางเซิร์ฟเวอร์ส่งกลับมาเป็นข้อความ branch_in_use ส่วนทางตรงเป็นรหัส 23503 — ต้องรับทั้งคู่
+      // ทางเซิร์ฟเวอร์ตอบ 409 พร้อมรหัส branch_in_use ส่วนทางตรงเป็นรหัส 23503 — ต้องรับทั้งคู่
       // ไม่งั้นพอสลับมาใช้ทางเซิร์ฟเวอร์ ข้อความจะเปลี่ยนเป็น "ลองอีกครั้ง" แล้วผู้ใช้กดวนไม่จบ
-      if (error?.code === "23503" || error?.message === "branch_in_use") {
+      // รหัสจากเซิร์ฟเวอร์อยู่ใน body ไม่ได้อยู่ใน error.message ต้องขุดออกมาด้วย serverErrorCode
+      const serverCode = await serverErrorCode(error);
+      if (error?.code === "23503" || serverCode === "branch_in_use") {
         showToast("error", "ลบสาขานี้ไม่ได้ — ยังมีคิวหรือห้องผูกอยู่ ต้องย้าย/ลบของพวกนั้นก่อน");
         return;
       }

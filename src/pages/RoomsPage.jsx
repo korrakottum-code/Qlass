@@ -185,7 +185,9 @@ export default function RoomsPage({
                       <td>
                         <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
                           <button className="btn btn-sm btn-secondary" onClick={() => onEdit(r)}>✏️</button>
-                          <button className="btn btn-sm btn-danger" onClick={() => onDelete(r.id)}>🗑️</button>
+                          <button className="btn btn-sm btn-danger" onClick={() => {
+                            if (window.confirm(`ลบห้อง "${r.name}" ออกจากระบบ?`)) onDelete(r.id);
+                          }}>🗑️</button>
                         </div>
                       </td>
                     </tr>

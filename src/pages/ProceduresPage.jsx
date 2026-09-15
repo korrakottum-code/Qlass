@@ -172,7 +172,9 @@ export default function ProceduresPage({
                 <td>
                   <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
                     <button className="btn btn-sm btn-secondary" onClick={() => onEdit(p)}>✏️</button>
-                    <button className="btn btn-sm btn-danger" onClick={() => onDelete(p.id)}>🗑️</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => {
+                      if (window.confirm(`ลบหัตถการ "${p.name}" ออกจากระบบ?`)) onDelete(p.id);
+                    }}>🗑️</button>
                   </div>
                 </td>
               </tr>

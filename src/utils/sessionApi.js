@@ -1,3 +1,18 @@
+// คำตอบที่ไม่ใช่ 2xx จาก Edge Function มาถึงฝั่งเรียกเป็น FunctionsHttpError ซึ่ง message
+// เป็นข้อความกลาง ๆ ว่า "non-2xx status code" ไม่ใช่รหัสเหตุผลที่เซิร์ฟเวอร์ส่งมา ตัวรหัสจริง
+// อยู่ใน body ที่อ่านได้จาก error.context — ถ้าไม่ขุดออกมา หน้าจอจะขึ้นข้อความกลาง ๆ แทนเหตุผลจริง
+// (แพทเทิร์นเดียวกับ extractQueueCreateErrorCode ใน queueCreateGate.js)
+export async function serverErrorCode(error) {
+  const res = error?.context;
+  if (!res || typeof res.json !== "function") return null;
+  try {
+    const body = typeof res.clone === "function" ? await res.clone().json() : await res.json();
+    return typeof body?.error === "string" ? body.error : null;
+  } catch {
+    return null;
+  }
+}
+
 export function createSessionApi(invoke) {
   async function callSessionFunction(body) {
     const { data, error } = await invoke("staff-session", { body });
