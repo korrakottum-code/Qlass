@@ -63,6 +63,14 @@ function publicStaff(staff: Record<string, unknown>) {
 
 const authenticatedRoles = new Set(["ceo", "superadmin", "head_admin", "admin", "branch_manager", "cashier"]);
 const staffManagementRoles = new Set(["superadmin", "head_admin"]);
+// หน้า "จัดการสาขา" เปิดให้ superadmin คนเดียวใน constants.js — ฝั่งเซิร์ฟเวอร์ต้องเข้มเท่ากัน
+// ไม่ใช่เชื่อว่าเบราว์เซอร์ซ่อนเมนูให้แล้วจะไม่มีใครยิงตรงเข้ามา
+const branchManagementRoles = new Set(["superadmin"]);
+
+function branchName(value: unknown) {
+  const name = String(value ?? "").trim();
+  return name.length >= 1 && name.length <= 80 ? name : null;
+}
 const queueCreateErrors = new Set([
   "invalid_queue_payload", "past_date_not_allowed", "invalid_branch", "branch_forbidden",
   "invalid_room", "room_required", "invalid_procedure", "invalid_duration",
@@ -242,6 +250,52 @@ Deno.serve(async (req) => {
       }
       const { error } = await supabase.from("staff").delete().eq("id", body.staffId);
       if (error) throw error;
+      return response({ ok: true }, 200, origin);
+    }
+
+    if (body?.action === "branch_create" || body?.action === "branch_update") {
+      const current = await findSession(body.token);
+      if (!current) return response({ error: "invalid_session" }, 401, origin);
+      if (!branchManagementRoles.has(String(current.user.role ?? ""))) {
+        return response({ error: "forbidden" }, 403, origin);
+      }
+
+      const name = branchName(body.branch?.name);
+      if (!name) return response({ error: "invalid_branch_payload" }, 400, origin);
+
+      if (body.action === "branch_update") {
+        if (typeof body.branchId !== "string" || body.branchId.length === 0) {
+          return response({ error: "invalid_branch_payload" }, 400, origin);
+        }
+        const { data, error } = await supabase.from("branches").update({ name }).eq("id", body.branchId).select().single();
+        if (error) throw error;
+        return response({ branch: { id: data.id, name: data.name } }, 200, origin);
+      }
+
+      const { data, error } = await supabase.from("branches").insert({ name }).select().single();
+      if (error) throw error;
+      return response({ branch: { id: data.id, name: data.name } }, 200, origin);
+    }
+
+    if (body?.action === "branch_delete") {
+      const current = await findSession(body.token);
+      if (!current) return response({ error: "invalid_session" }, 401, origin);
+      if (!branchManagementRoles.has(String(current.user.role ?? ""))) {
+        return response({ error: "forbidden" }, 403, origin);
+      }
+      if (typeof body.branchId !== "string" || body.branchId.length === 0) {
+        return response({ error: "invalid_branch_payload" }, 400, origin);
+      }
+
+      const { error } = await supabase.from("branches").delete().eq("id", body.branchId);
+      if (error) {
+        // 23503 = ยังมีคิว/ห้องผูกอยู่ (FK RESTRICT จาก 20260912150000) ไม่ใช่ระบบพัง
+        // ต้องส่งรหัสที่หน้าจออ่านออก ไม่งั้นจะขึ้นเป็น "ลองอีกครั้ง" แล้วผู้ใช้กดวนไม่จบ
+        if (String((error as { code?: string }).code ?? "") === "23503") {
+          return response({ error: "branch_in_use" }, 409, origin);
+        }
+        throw error;
+      }
       return response({ ok: true }, 200, origin);
     }
 

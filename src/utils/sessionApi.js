@@ -32,6 +32,17 @@ export function createSessionApi(invoke) {
     async deleteStaffServer(token, staffId) {
       await callSessionFunction({ action: "staff_delete", token, staffId });
     },
+    async createBranchServer(token, branch) {
+      const data = await callSessionFunction({ action: "branch_create", token, branch });
+      return data.branch;
+    },
+    async updateBranchServer(token, branchId, branch) {
+      const data = await callSessionFunction({ action: "branch_update", token, branchId, branch });
+      return data.branch;
+    },
+    async deleteBranchServer(token, branchId) {
+      await callSessionFunction({ action: "branch_delete", token, branchId });
+    },
     flushClientDiagnostics(token, events) {
       return callSessionFunction({ action: "client_diagnostics", token, events });
     },
