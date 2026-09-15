@@ -86,6 +86,9 @@ export function getEmptyBookingForm() {
     date: getTodayStr(),
     timeBlock: null,
     durationBlocks: null,
+    // ข้อความสรุปบริเวณที่เลือก (ดู src/utils/procedureAreas.js) — เก็บเป็น snapshot
+    // ข้อความไว้แปะต่อท้ายชื่อหัตถการตอนแสดงผล ไม่ใช่ตัวตัดสินเวลา (durationBlocks ทำหน้าที่นั้น)
+    areaNames: "",
     roomId: "",
     status: "pending",
     statusNote: "",

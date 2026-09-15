@@ -125,7 +125,9 @@ function QueueDataTable({
                   )}
                 </td>
                 <td>
-                  <div>{proc?.name || "—"}</div>
+                  {/* บริเวณที่เลือก (ดู src/utils/procedureAreas.js) ต่อท้ายชื่อหัตถการ —
+                      คิวเก่าก่อนฟีเจอร์นี้ไม่มี areaNames เลยไม่มีอะไรโผล่ ของเดิมเป๊ะ */}
+                  <div>{proc?.name || "—"}{q.areaNames ? ` (${q.areaNames})` : ""}</div>
                   {promo && <div style={{ fontSize: 11, color: "var(--text3)" }}>{promo.name}</div>}
                 </td>
                 <td style={{ fontFamily: "var(--mono)", fontWeight: 600, color: "var(--accent)" }}>

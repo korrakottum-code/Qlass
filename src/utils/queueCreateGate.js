@@ -47,6 +47,9 @@ export function buildServerQueuePayload(form) {
     date: form.date || null,
     time_block: form.timeBlock ?? null,
     duration_blocks: form.durationBlocks ?? null,
+    // บริเวณที่เลือก (ดู src/utils/procedureAreas.js) — ข้อความไว้แสดงผลเท่านั้น
+    // ไม่มีผลต่อการคำนวณเวลา (duration_blocks ทำหน้าที่นั้นอยู่แล้ว)
+    area_names: form.areaNames || "",
   };
 }
 
