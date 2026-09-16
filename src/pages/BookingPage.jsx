@@ -75,9 +75,12 @@ export default function BookingPage({
   const roomIsConfigured = !!selectedRoom && isRoomConfigured(roomProcedureIndex, selectedRoom.id);
 
   // Filtered promos by selected procedure
+  // รวมโปรที่ผูกกับหัตถการนี้ + โปรที่ใช้ได้ทุกหัตถการ (procedureId ว่าง) — ตอนนี้ยัง
+  // ไม่มีโปรแบบหลังในระบบเลยสักตัว (ธุรกิจนี้ทุกโปรผูกหัตถการเฉพาะ) แต่ Timeline
+  // (availablePromos) กรองแบบนี้อยู่แล้วตั้งแต่แรก แก้ให้ตรงกันเผื่ออนาคตมีโปรแบบนี้
   const filteredPromos = useMemo(() => {
     if (!form.procedureId) return promos.filter((p) => p.active);
-    return promos.filter((p) => p.procedureId === form.procedureId && p.active);
+    return promos.filter((p) => p.active && (p.procedureId === form.procedureId || !p.procedureId));
   }, [form.procedureId, promos]);
 
   // Auto-fill price when promo changes
@@ -540,7 +543,14 @@ export default function BookingPage({
             </div>
             <div className="form-group">
               <label className="form-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                โปร/แพ็กเกจที่เลือก
+                <span>
+                  โปร/แพ็กเกจที่เลือก
+                  {/* บังคับเลือกเฉพาะคิวใหม่ที่เลือกหัตถการแล้วและไม่ใช่คิวรอ — ให้ตรงกับ
+                      เงื่อนไขจริงใน App.jsx handleBookingSubmit เป๊ะ ๆ ไม่งั้นดาวโชว์ผิดจังหวะ */}
+                  {!editingQueueId && !isWaitingQueueMode && form.procedureId && (
+                    <span style={{ color: "var(--red)" }}> *</span>
+                  )}
+                </span>
                 {["superadmin", "head_admin"].includes(currentUser?.role) && (
                   <button
                     type="button"
