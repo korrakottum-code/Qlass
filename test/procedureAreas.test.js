@@ -80,3 +80,28 @@ test("เปลี่ยนหัตถการแล้วบริเวณ�
   assert.deepEqual(keepValidAreaIds(index, BOTOX, ["a-pit", "a-leg"]), []);
   assert.deepEqual(keepValidAreaIds(index, DIODE, ["a-pit", "ไม่มีจริง"]), ["a-pit"]);
 });
+
+// ═══ areaNamesText — ข้อความไว้แปะต่อท้ายชื่อหัตถการตอนแสดงผล ═══
+import { areaNamesText } from "../src/utils/procedureAreas.js";
+
+test("ไม่เลือกบริเวณเลย → ข้อความว่าง ไม่ใช่ null", () => {
+  const index = buildProcedureAreaIndex(AREAS);
+  assert.equal(areaNamesText(index, DIODE, []), "");
+  assert.equal(areaNamesText(index, DIODE, undefined), "");
+});
+
+test("เรียงตาม sortOrder ของบริเวณเสมอ ไม่ใช่ลำดับที่กด", () => {
+  const index = buildProcedureAreaIndex(AREAS);
+  // กดขาก่อน แล้วค่อยกดรักแร้ — แต่ผลลัพธ์ต้องเรียงตาม sortOrder (รักแร้ sortOrder 1 มาก่อนขา sortOrder 2)
+  assert.equal(areaNamesText(index, DIODE, ["a-leg", "a-pit"]), "รักแร้, ขา");
+});
+
+test("id ที่ไม่รู้จักถูกข้าม ไม่ทำให้พัง", () => {
+  const index = buildProcedureAreaIndex(AREAS);
+  assert.equal(areaNamesText(index, DIODE, ["a-pit", "not-a-real-id"]), "รักแร้");
+});
+
+test("หัตถการที่ไม่มีบริเวณ → ข้อความว่างเสมอ", () => {
+  const index = buildProcedureAreaIndex(AREAS);
+  assert.equal(areaNamesText(index, BOTOX, ["a-pit"]), "");
+});

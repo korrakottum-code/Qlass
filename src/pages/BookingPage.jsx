@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { CUSTOMER_TYPES, ROOM_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
 import { WORK_BLOCKS, blockToTime, formatRecorderLabel, formatThaiDate, getEmptyBookingForm, getTodayStr, isActiveQueueStatus, requiresRecorderNote } from "../utils/helpers";
 import { proceduresForRoom, isRoomConfigured, roomLockLabel } from "../utils/roomProcedures";
-import { areasForProcedure, durationFromAreas, keepValidAreaIds } from "../utils/procedureAreas";
+import { areasForProcedure, durationFromAreas, keepValidAreaIds, areaNamesText } from "../utils/procedureAreas";
 import SmartParseBox from "../components/SmartParseBox";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
@@ -139,6 +139,8 @@ export default function BookingPage({
 
   // กดบริเวณ = เขียนเวลารวมลง durationBlocks ช่องเดิม (ช่องเดียวกับที่ปุ่ม +/- ใช้)
   // ไม่เลือกบริเวณเลย → null → ตกไปใช้ค่าปกติของหัตถการเหมือนเดิม
+  // areaNames เป็นแค่ข้อความไว้แสดงผลว่าคิวนี้เลือกบริเวณไหนไปบ้าง ไม่มีผลต่อการคำนวณเวลา
+  // (durationBlocks ทำหน้าที่นั้นอยู่แล้ว) — เก็บคู่กันเพื่อให้แก้ไขคิวทีหลังยังเห็นว่าเลือกอะไรไว้
   function toggleArea(areaId) {
     setForm((f) => {
       const current = keepValidAreaIds(procedureAreaIndex, f.procedureId, f.areaIds);
@@ -149,6 +151,7 @@ export default function BookingPage({
         ...f,
         areaIds: next,
         durationBlocks: durationFromAreas(procedureAreaIndex, f.procedureId, next),
+        areaNames: areaNamesText(procedureAreaIndex, f.procedureId, next),
       };
     });
   }
@@ -520,7 +523,7 @@ export default function BookingPage({
               <label className="form-label">หัตถการหลักที่สนใจ</label>
               <select
                 value={form.procedureId}
-                onChange={(e) => setForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "", durationBlocks: null, areaIds: [], timeBlock: null }))}
+                onChange={(e) => setForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "", durationBlocks: null, areaIds: [], areaNames: "", timeBlock: null }))}
               >
                 <option value="">-- เลือกหัตถการ --</option>
                 {filteredProcedures.map((p) => (
