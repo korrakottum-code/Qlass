@@ -819,6 +819,18 @@ export default function App() {
     return job;
   }, [mergeFetchedQueues, currentUser]);
 
+  // บันทึกไว้ว่าใครลบอะไรไปเมื่อไหร่ — ของเดิมมีแค่ตอนลบคิว (createActivityLog เรียกตรง
+  // จาก deleteQueue) ใช้งานได้จริงมาตั้งแต่เม.ย. 2569 (3,062 รายการ) ส่วนโปร/ห้องไม่เคย
+  // ถูกบันทึกเลย ทำให้ตรวจย้อนหลังไม่ได้ว่าทำไม "ไม่ระบุโปร"/"ไม่ระบุห้อง" ในหน้าสรุป
+  // ถึงเพิ่มขึ้น — ยกออกมาเป็นฟังก์ชันกลาง ใช้รูปแบบเดียวกับที่ deleteQueue ใช้อยู่แล้ว
+  // best-effort เสมอ — บันทึกไม่สำเร็จต้องไม่บล็อกการลบจริง (ผู้ใช้กดลบไปแล้วรอผลอยู่)
+  const logDeletion = useCallback(async (activityAction, targetType, targetId, detail) => {
+    await createActivityLog({
+      action: activityAction, targetType, targetId, detail: JSON.stringify(detail),
+      performedBy: currentUser?.id || null, performedByName: currentUser?.nickname || currentUser?.name || null,
+    });
+  }, [currentUser]);
+
   const deleteQueue = useCallback(async (id, queueSnapshot) => {
     // บันทึกก่อนยิงลบ (กัน Phase 2b จบระหว่างรอ) แต่ถ้าลบล้ม ต้องถอนออก — แถวยังอยู่ใน DB จริง
     // ไม่งั้น merge จะข้ามแถวนี้จาก snapshot แล้วมันหายจากหน้าจอทั้งที่ยังมีอยู่
@@ -833,24 +845,17 @@ export default function App() {
       throw error;
     }
     if (queueSnapshot) {
-      await createActivityLog({
-        action: "delete_queue",
-        targetType: "queue",
-        targetId: id,
-        detail: JSON.stringify({
-          name: queueSnapshot.name,
-          phone: queueSnapshot.phone,
-          date: queueSnapshot.date,
-          timeBlock: queueSnapshot.timeBlock,
-          roomId: queueSnapshot.roomId,
-          procedureId: queueSnapshot.procedureId,
-        }),
-        performedBy: currentUser?.id || null,
-        performedByName: currentUser?.nickname || currentUser?.name || null,
+      await logDeletion("delete_queue", "queue", id, {
+        name: queueSnapshot.name,
+        phone: queueSnapshot.phone,
+        date: queueSnapshot.date,
+        timeBlock: queueSnapshot.timeBlock,
+        roomId: queueSnapshot.roomId,
+        procedureId: queueSnapshot.procedureId,
       });
     }
     showToast("success", "ลบคิวแล้ว");
-  }, [showToast, currentUser]);
+  }, [showToast, logDeletion]);
 
   const updateQueueStatus = useCallback(async (id, payload) => {
     recordClientDiagnostic("write_outcome", { outcome: "started" });
@@ -1227,16 +1232,20 @@ export default function App() {
   }, [showToast]);
 
   const deletePromo = useCallback(async (id) => {
+    const promo = promos.find((p) => p.id === id);
     await deletePromoDB(id);
     setPromos(prev => prev.filter(p => p.id !== id));
+    if (promo) logDeletion("delete_promo", "promo", id, { name: promo.name, price: promo.price, procedureId: promo.procedureId });
     showToast("success", "ลบโปรแล้ว");
-  }, [showToast]);
+  }, [showToast, promos, logDeletion]);
 
   const deleteRoom = useCallback(async (id) => {
+    const room = rooms.find((r) => r.id === id);
     await deleteRoomDB(id);
     setRooms(prev => prev.filter(r => r.id !== id));
+    if (room) logDeletion("delete_room", "room", id, { name: room.name, type: room.type, branchId: room.branchId });
     showToast("success", "ลบห้องแล้ว");
-  }, [showToast]);
+  }, [showToast, rooms, logDeletion]);
 
   // ─── ปุ่มปิด/เปิดเตียงรายวัน (หัวคอลัมน์ Timeline) ───
   // สิทธิ์เช็คซ้ำที่นี่แม้ UI จะซ่อนปุ่มให้แคชเชียร์แล้ว — defence in depth
