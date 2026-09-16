@@ -771,6 +771,11 @@ export function mapQueueRow(q) {
     // บริเวณที่เลือก (ดู src/utils/procedureAreas.js) — snapshot ข้อความ ไม่ใช่ id
     // เก็บเป็นข้อความเพราะรอดจากการที่บริเวณถูกเปลี่ยนชื่อ/ปิดใช้ทีหลัง
     areaNames: q.area_names || "",
+    // ชื่อโปร/ห้อง ณ ตอนเลือก — trigger ฝั่งฐานข้อมูลเป็นคนเขียนให้เสมอ (ดู migration
+    // 20260916120000) ไม่ล้างแม้ promo_id/room_id ถูกลบทีหลัง ใช้เป็น fallback แสดงผล
+    // เมื่อหาโปร/ห้องจริงไม่เจอแล้ว
+    promoNameSnapshot: q.promo_name_snapshot || "",
+    roomLabelSnapshot: q.room_label_snapshot || "",
     roomId: q.room_id,
     status: q.status,
     statusNote: q.status_note || "",
@@ -902,6 +907,8 @@ export async function createQueue(queue) {
     timeBlock: data.time_block,
     durationBlocks: data.duration_blocks ?? null,
     areaNames: data.area_names || "",
+    promoNameSnapshot: data.promo_name_snapshot || "",
+    roomLabelSnapshot: data.room_label_snapshot || "",
     roomId: data.room_id,
     status: data.status,
     statusNote: data.status_note || "",
@@ -955,6 +962,8 @@ export async function updateQueue(id, queue) {
     timeBlock: data.time_block,
     durationBlocks: data.duration_blocks ?? null,
     areaNames: data.area_names || "",
+    promoNameSnapshot: data.promo_name_snapshot || "",
+    roomLabelSnapshot: data.room_label_snapshot || "",
     roomId: data.room_id,
     status: data.status,
     statusNote: data.status_note || "",
