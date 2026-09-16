@@ -278,6 +278,7 @@ DB.quizResults = [
 export async function fetchQuizSettings() { await delay(); return { ...DB.quizSettings }; }
 export async function updateQuizSettings(s) { DB.quizSettings = { ...DB.quizSettings, ...s, updatedAt: new Date().toISOString() }; return { ...DB.quizSettings }; }
 export async function fetchQuizResults({ staffId = null } = {}) { await delay(); return clone(DB.quizResults.filter((r) => !staffId || r.staffId === staffId)); }
+export async function deleteQuizResults({ staffId = null, round = null } = {}) { DB.quizResults = DB.quizResults.filter((r) => (staffId && r.staffId !== staffId) || (round && r.round !== round)); }
 export async function upsertQuizResult(r) {
   const cur = DB.quizResults.find((x) => x.staffId === r.staffId && x.round === r.round);
   const row = { ...(cur || { id: uid("qr") }), ...r, attempts: (cur?.attempts || 0) + 1, submittedAt: new Date().toISOString() };
