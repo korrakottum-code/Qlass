@@ -785,7 +785,10 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
 
                 {availablePromos.length > 0 && (
                   <div>
-                    <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>โปร/แพ็กเกจ</label>
+                    <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>
+                      โปร/แพ็กเกจ
+                      {bookingForm.procedureId && <span style={{ color: "var(--red)" }}> *</span>}
+                    </label>
                     <select style={{ width: "100%", fontSize: 13 }} value={bookingForm.promoId}
                       onChange={(e) => {
                         const promo = promos.find((p) => p.id === e.target.value);
@@ -826,7 +829,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                 <button
                   className="btn btn-primary"
                   disabled={saving || !bookingForm.name.trim() || !bookingForm.phone.trim()
-                    || (requiresRecorderNote(currentUser, null) && !bookingForm.recordedNote?.trim())}
+                    || (requiresRecorderNote(currentUser, null) && !bookingForm.recordedNote?.trim())
+                    || (!!bookingForm.procedureId && !bookingForm.promoId)}
                   onClick={async () => {
                     if (!onSubmitBooking) return;
                     const submission = await runBookingSubmit(() => onSubmitBooking(bookingForm));
