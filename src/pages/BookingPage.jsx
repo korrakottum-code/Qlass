@@ -75,9 +75,9 @@ export default function BookingPage({
   const roomIsConfigured = !!selectedRoom && isRoomConfigured(roomProcedureIndex, selectedRoom.id);
 
   // Filtered promos by selected procedure
-  // รวมโปรที่ผูกกับหัตถการนี้ + โปรที่ใช้ได้ทุกหัตถการ (procedureId ว่าง เช่น "ไม่มีส่วนลด")
-  // เดิมกรองเฉพาะโปรที่ผูกหัตถการนี้เป๊ะ ๆ ทำให้หัตถการที่ไม่มีโปรเลยไม่มีตัวเลือกให้กด
-  // เมื่อโปรเริ่มบังคับเลือก (ดู App.jsx handleBookingSubmit) ทุกหัตถการต้องมีทางออกเสมอ
+  // รวมโปรที่ผูกกับหัตถการนี้ + โปรที่ใช้ได้ทุกหัตถการ (procedureId ว่าง) — ตอนนี้ยัง
+  // ไม่มีโปรแบบหลังในระบบเลยสักตัว (ธุรกิจนี้ทุกโปรผูกหัตถการเฉพาะ) แต่ Timeline
+  // (availablePromos) กรองแบบนี้อยู่แล้วตั้งแต่แรก แก้ให้ตรงกันเผื่ออนาคตมีโปรแบบนี้
   const filteredPromos = useMemo(() => {
     if (!form.procedureId) return promos.filter((p) => p.active);
     return promos.filter((p) => p.active && (p.procedureId === form.procedureId || !p.procedureId));
