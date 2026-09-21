@@ -428,9 +428,12 @@ const round1 = (v) => Math.round(v * 10) / 10;
  *   avgSlots  = ช่อง 20 นาทีว่างเฉลี่ยต่อวันธรรมดา (4 สัปดาห์ล่าสุด)
  *   nowPct    = % ว่างจริงของวันนี้–มะรืน (คิวที่จองแล้ว)
  *   verdict / verdictNow
+ *   weekSlots = ช่อง 20 นาทีที่คาดว่าจะว่างเฉลี่ยต่อวัน จ–ศ ของสัปดาห์นี้ (ใช้คิดโควตา — ไม่ใช่ avgSlots
+ *               เพราะเตียงที่ปิดสัปดาห์นี้ เช่น "พนักงานหยุด" ต้องถูกหักออกก่อน กรณีจริง: ยูเนี่ยนมอลล์ปิด 1 ใน 2 เตียง)
  *   forecast  = [{ date, dow, weekend, pct, slots, source }] วันนี้ถึง +6
- *       source "actual"   = วันนี้–มะรืน ใช้ค่าที่ต่ำกว่าระหว่างคิวจริงกับค่าเฉลี่ยวันเดียวกัน (คิวมีแต่จะเพิ่ม)
- *       source "forecast" = วันที่ 3–6 ใช้ค่าเฉลี่ยวันเดียวกัน 4 สัปดาห์ก่อน
+ *       ทุกวันใช้ค่าที่ต่ำกว่าระหว่าง "ค่าเฉลี่ยวันเดียวกัน 4 สัปดาห์ก่อน" กับ "ตารางจริงของวันนั้น"
+ *       (ตารางจริง = เตียงที่เปิดจริงหักคิวที่จองแล้ว — คิวมีแต่จะเพิ่ม เตียงที่ปิดไว้ก็ไม่กลับมาเอง)
+ *       source "actual" = วันนี้–มะรืน (คิวจริงเชื่อถือได้) / "forecast" = วันถัดไป (คิวยังไม่เข้า ตารางจริงเป็นแค่เพดาน)
  *       เสาร์–อาทิตย์ weekend=true และ pct/slots = null (ไม่แนะนำให้เปิดอยู่แล้ว)
  */
 export function computeFreeProgramReadiness({
@@ -530,25 +533,27 @@ export function computeFreeProgramReadiness({
       const basePct = base && base.days.size > 0 ? pctOf(base.free, base.cap) : null;
       const baseSlots = base && base.days.size > 0 ? round1(base.slots / base.days.size) : null;
       const actual = a.ahead[date];
-      const actualPct = actual ? pctOf(actual.free, actual.cap) : null;
-      const actualSlots = actual ? actual.slots : null;
-      if (i < aheadDays) {
-        // คิวจริงมีแต่จะเพิ่ม → ค่าที่เกิดจริงไม่มีทางว่างกว่าคิวตอนนี้ และมักไม่ว่างกว่าค่าเฉลี่ยวันเดียวกัน
-        const pctNow = [basePct, actualPct].filter((v) => v !== null);
-        const slotsNow = [baseSlots, actualSlots].filter((v) => v !== null);
-        return {
-          date, dow, weekend,
-          pct: pctNow.length ? Math.min(...pctNow) : null,
-          slots: slotsNow.length ? Math.min(...slotsNow) : null,
-          source: actual ? "actual" : "forecast",
-        };
-      }
-      return { date, dow, weekend, pct: basePct, slots: baseSlots, source: "forecast" };
+      // ไม่มีเตียงเปิดเลยในวันนั้น (ปิดทั้งสาขา/ทุกเตียงหยุด) → ว่าง 0 ไม่ใช่ "ไม่มีข้อมูล"
+      const actualPct = actual ? pctOf(actual.free, actual.cap) : 0;
+      const actualSlots = actual ? actual.slots : 0;
+      // ตารางจริงของวันนั้นเป็นเพดานเสมอ: เตียงที่ปิดไว้ไม่กลับมาเอง คิวที่จองแล้วไม่หายไปเอง
+      const pctCap = [basePct, actualPct].filter((v) => v !== null);
+      const slotsCap = [baseSlots, actualSlots].filter((v) => v !== null);
+      return {
+        date, dow, weekend,
+        pct: pctCap.length ? Math.min(...pctCap) : null,
+        slots: slotsCap.length ? Math.min(...slotsCap) : null,
+        source: i < aheadDays ? "actual" : "forecast",
+      };
     });
+    const weekdayForecast = forecast.filter((f) => !f.weekend && f.slots !== null);
+    const weekSlots = weekdayForecast.length
+      ? round1(weekdayForecast.reduce((sum, f) => sum + f.slots, 0) / weekdayForecast.length)
+      : null;
 
     const verdict = freeProgramVerdict({ pct, last4, prev4 });
     const verdictNow = freeProgramVerdictNow({ verdict, nowPct });
-    return { branchId, beds: a.beds.size, pct, last4, prev4, avgSlots, nowPct, verdict, verdictNow, forecast };
+    return { branchId, beds: a.beds.size, pct, last4, prev4, avgSlots, weekSlots, nowPct, verdict, verdictNow, forecast };
   });
   return { from: recentStart, to: end, forecastDates, rows };
 }

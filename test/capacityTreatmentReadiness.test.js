@@ -147,6 +147,30 @@ test("ด่านสองใช้คิวของวันนี้–ม�
   assert.equal(r.rows[0].verdictNow, "pause");
 });
 
+test("โควตาคิดจากสัปดาห์นี้จริง: เตียง 1 ใน 2 ปิด 'พนักงานหยุด' ทั้งสัปดาห์ → weekSlots เหลือ 12 ไม่ใช่ค่าเฉลี่ย 4 สัปดาห์ (กรณียูเนี่ยนมอลล์)", () => {
+  const rooms = [bed("r1", "b1"), bed("r2", "b1")];
+  // r2 ปิดทั้งวันตั้งแต่ 14 ก.ย. ถึง 25 ก.ย. (ครอบ 1 สัปดาห์ในฐาน + สัปดาห์นี้ทั้งสัปดาห์)
+  const roomSchedules = [];
+  for (let d = 14; d <= 25; d++) roomSchedules.push({ roomId: "r2", date: `2026-09-${String(d).padStart(2, "0")}`, available: false, startBlock: null, endBlock: null, noteOnly: false, note: "ปิดเตียง (พนักงานหยุด)" });
+  const r = computeFreeProgramReadiness({ rooms, roomSchedules, queues: [], procedures, today });
+  const row = r.rows[0];
+  // ฐาน 4 สัปดาห์: 3 สัปดาห์ × 24 + 1 สัปดาห์ × 12 = เฉลี่ย 21 — ถ้าใช้ตัวนี้คิดโควตาจะได้ 10 ทั้งที่สัปดาห์นี้มีเตียงเดียว
+  assert.equal(row.avgSlots, 21);
+  assert.equal(row.pct, 100); // ว่าง 100% ของเตียงที่เปิด — เตียงปิดไม่นับเป็นความจุ
+  // สัปดาห์นี้ทุกวัน จ–ศ มีเตียงเดียว = 12 รอบ (ทั้งวัน "จริง" และวัน "คาด" ต้องโดนเพดานตารางจริงเหมือนกัน)
+  assert.deepEqual(row.forecast.filter((f) => !f.weekend).map((f) => f.slots), [12, 12, 12, 12, 12]);
+  assert.equal(row.weekSlots, 12);
+});
+
+test("วันที่ทั้งสาขาปิด (ทุกเตียงหยุด) คาดว่าว่าง 0 ไม่ใช่ไม่มีข้อมูล", () => {
+  const roomSchedules = [{ roomId: "r1", date: "2026-09-24", available: false, startBlock: null, endBlock: null, noteOnly: false }];
+  const r = computeFreeProgramReadiness({ rooms: [bed("r1", "b1")], roomSchedules, queues: [], procedures, today });
+  const thu = r.rows[0].forecast[3];
+  assert.equal(thu.date, "2026-09-24");
+  assert.equal(thu.slots, 0);
+  assert.equal(thu.pct, 0);
+});
+
 test("เตียงปิดทั้งวัน (room_schedules) ไม่นับเป็นความจุ", () => {
   const roomSchedules = [{ roomId: "r1", date: "", available: false, startBlock: null, endBlock: null, noteOnly: false }];
   const r = computeFreeProgramReadiness({ rooms: [bed("r1", "b1")], roomSchedules, queues: [], procedures, today });
@@ -160,6 +184,7 @@ test("แยกรายสาขา และรวมทุกเตียง�
   const b1 = r.rows.find((x) => x.branchId === "b1");
   assert.equal(b1.beds, 2);
   assert.equal(b1.avgSlots, 24);
+  assert.equal(b1.weekSlots, 24);
   assert.equal(b1.forecast[0].slots, 24);
   assert.equal(r.rows.find((x) => x.branchId === "b2").beds, 1);
 });
@@ -191,7 +216,6 @@ test("การ์ดแบ่ง 4 กลุ่ม, stop กับ no-data ร�
   assert.match(page, /ห้ามเสาร์–อาทิตย์ และหลัง 17:00/);
 });
 
-test("โควตา: เปิดได้ = ครึ่งของช่องว่าง, เปิดจำกัด = ไม่เกิน 5, อื่น ๆ ไม่เปิด", () => {
-  assert.match(page, /if \(verdictNow === "open"\) return half;/);
-  assert.match(page, /if \(verdictNow === "limited"\) return Math\.min\(5, half\);/);
+test("การ์ดไม่โชว์จำนวนคน (เจ้าของขอ) — เหลือแค่ชื่อสาขา", () => {
+  assert.ok(!/quotaFor|คน`/.test(page), "ห้ามกลับมาโชว์โควตาจำนวนคนบนการ์ด");
 });

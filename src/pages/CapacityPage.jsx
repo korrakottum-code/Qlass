@@ -142,16 +142,6 @@ const THAI_MONTH_SHORT = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", 
 // "Class ยูเนี่ยนมอลล์ลาดพร้าว" → "ยูเนี่ยนมอลล์ลาดพร้าว" — ทุกสาขาขึ้นต้นเหมือนกัน ใส่ไปก็เปลืองที่บนจอมือถือ
 const shortBranchName = (name) => String(name || "").replace(/^Class\s+/i, "");
 
-// โควตาฟรีต่อวันจากช่องว่างที่คาดไว้: เปิดได้ = ครึ่งหนึ่ง (เหลือที่ให้ลูกค้าจ่ายเงินที่จองกระชั้นชิด),
-// เปิดจำกัด = ไม่เกิน 5 และไม่เกินครึ่งหนึ่ง, อย่างอื่น = ไม่เปิด
-function quotaFor(verdictNow, slots) {
-  if (slots === null || slots === undefined) return null;
-  const half = Math.floor(slots / 2);
-  if (verdictNow === "open") return half;
-  if (verdictNow === "limited") return Math.min(5, half);
-  return null;
-}
-
 function FreeProgramWeekCard({ readiness, branches, treatmentName }) {
   const rows = useMemo(() => {
     const nameOf = (id) => branches.find((b) => b.id === id)?.name || "-";
@@ -170,22 +160,20 @@ function FreeProgramWeekCard({ readiness, branches, treatmentName }) {
   return (
     <div className="card" style={{ padding: "14px 16px", marginBottom: 14 }}>
       <div style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.25 }}>🎁 รอบฟรี {treatmentName} สัปดาห์นี้</div>
-      <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 2 }}>จ–ศ {rangeLabel} · เฉพาะ 13:00–17:00 · โควตาต่อวัน</div>
+      <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 2 }}>จ–ศ {rangeLabel} · เฉพาะ 13:00–17:00</div>
       {groups.filter((g) => g.rows.length).map((g) => (
         <div key={g.key} style={{ marginTop: 10 }}>
           <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text2)", marginBottom: 4 }}>{g.title} ({g.rows.length})</div>
+          {/* เจ้าของขอไม่ใส่จำนวนคน (21 ก.ย. 2569) — เหลือแค่ชื่อสาขา สองคอลัมน์สำหรับกลุ่มที่เปิด, บรรทัดเดียวสำหรับกลุ่มที่ไม่เปิด
+              ชี้ชื่อสาขาจะเห็น % ที่คาดว่าว่าง กับรอบที่คาดว่าจะเหลือต่อวัน (หักเตียงที่ปิดสัปดาห์นี้แล้ว) เผื่ออยากรู้ที่มา */}
           {g.key === "open" || g.key === "limited" ? (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "3px 10px" }}>
-              {g.rows.map((r) => {
-                const q = quotaFor(r.verdictNow, r.avgSlots);
-                return (
-                  <div key={r.branchId} title={`คาดว่าว่าง ${r.pct ?? "—"}% · ช่องว่างเฉลี่ย ${r.avgSlots ?? "—"} ช่อง/วัน`}
-                    style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: 13, lineHeight: 1.35, borderBottom: "1px dashed var(--border)" }}>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortBranchName(r.name)}</span>
-                    <b style={{ whiteSpace: "nowrap" }}>{q === null ? "—" : `${q} คน`}</b>
-                  </div>
-                );
-              })}
+              {g.rows.map((r) => (
+                <div key={r.branchId} title={`คาดว่าว่าง ${r.pct ?? "—"}% · สัปดาห์นี้คาดว่าเหลือ ${r.weekSlots ?? "—"} รอบ (20 นาที)/วัน จาก ${r.beds} เตียง`}
+                  style={{ fontSize: 13, lineHeight: 1.35, borderBottom: "1px dashed var(--border)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {shortBranchName(r.name)}
+                </div>
+              ))}
             </div>
           ) : (
             <div style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.5 }}>{g.rows.map((r) => shortBranchName(r.name)).join(" · ")}</div>
@@ -193,7 +181,7 @@ function FreeProgramWeekCard({ readiness, branches, treatmentName }) {
         </div>
       ))}
       <div style={{ marginTop: 10, fontSize: 10, color: "var(--text3)", lineHeight: 1.4 }}>
-        ห้ามเสาร์–อาทิตย์ และหลัง 17:00 · โควตา = ครึ่งหนึ่งของช่องว่างที่คาด (เปิดจำกัดไม่เกิน 5) · ช่วงที่เปิดฟรีถ้าว่างตกต่ำกว่า 60% ให้ลดโควตาลงครึ่งหนึ่ง
+        ห้ามเสาร์–อาทิตย์ และหลัง 17:00 · เปิดจำกัด = รับน้อย ๆ ก่อน · ช่วงที่เปิดฟรีถ้าคิวเริ่มแน่น ให้ลดจำนวนลงก่อน
         {" "}· นับเฉพาะเตียงที่รับ{treatmentName}ได้ เทียบวันเดียวกันของ 4 สัปดาห์ก่อน + คิวจริงวันนี้–มะรืน
       </div>
     </div>
