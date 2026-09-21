@@ -349,3 +349,160 @@ export function computeWeeklyPace({ queues, branches, today }) {
     return { date, dow, leadDays, bookedSoFar, activeBranches, bookedPerBranch, baselinePerBranch, pace, kind };
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// "โปรแกรมฟรีทรีตเมนต์" — ความพร้อมรายสาขา (วิเคราะห์จากข้อมูลจริง ก.ค.–ก.ย. 2569)
+//
+// ทรีตเมนต์ลงได้เฉพาะเตียงที่ล็อกให้รับ Treatment (เตียงกลุ่ม Diode/สิว) ไม่ใช่ทุกเตียงในห้องเครื่อง
+// และเตียงกลุ่มนั้นคือเตียงที่แน่นที่สุดของเครือ ตัวเลข "ว่างห้องเครื่อง (T)" รวมจึงมองโลกดีเกินไป
+// หน้าคิวว่างต้องกรองเหลือเฉพาะเตียงที่รับทรีตเมนต์ได้ก่อน แล้วค่อยตัดสินว่าสาขาไหนเปิดโปรฟรีได้
+//
+// กติกาตัดสินใจ (เจ้าของยืนยัน 21 ก.ย. 2569): วัดค่าเดียวคือ % ว่างของเตียงทรีตเมนต์
+// วันจันทร์–ศุกร์ ช่วง 13:00–17:00 ย้อนหลัง 8 สัปดาห์ที่ "จบแล้ว" (ไม่รวมวันนี้ เพราะยังจองไม่จบ)
+//   - ว่าง ≥ 85%            → เปิดได้ โควตาต่อวันไม่เกินครึ่งของช่องว่างเฉลี่ย
+//   - ว่าง 70–84%           → เปิดแบบจำกัด วันธรรมดา 3–5 คน/วัน ทบทวนทุก 2 สัปดาห์
+//   - ว่าง < 70% หรือ 4 สัปดาห์ล่าสุดร่วงเกิน 10 จุดเทียบ 4 สัปดาห์ก่อนหน้า → หยุด
+// ด่านที่สอง "วันนี้–มะรืน" (0–2 วันข้างหน้า): ลูกค้าจองล่วงหน้าแค่ 0–2 วัน ช่วงนี้จึงเป็นช่วงเดียว
+// ในอนาคตที่เชื่อถือได้ ถ้าเตียงทรีตเมนต์ 13:00–17:00 ของ 3 วันนี้ว่างต่ำกว่า 70% แล้ว ให้ "พักก่อน"
+// แม้ประวัติจะผ่านเกณฑ์ (ไกลกว่านั้นดูไม่ได้ เพราะยังไม่ถึงจังหวะที่คนจอง จะว่างเกือบหมดเสมอ)
+
+export const FREE_PROGRAM_LOOKBACK_WEEKS = 8;
+export const FREE_PROGRAM_WINDOW = { fromBlock: 156, toBlock: 204 }; // 13:00–17:00
+export const FREE_PROGRAM_SLOT_BLOCKS = 4; // ทรีตเมนต์ 20 นาที = 4 block
+export const FREE_PROGRAM_THRESHOLDS = { open: 85, limited: 70, dropPoints: 10 };
+export const FREE_PROGRAM_AHEAD_DAYS = 3; // วันนี้ + 2 วัน
+
+// หา "หัตถการทรีตเมนต์" จากรายการหัตถการ — จับด้วยชื่อ (ระบบจริงชื่อ "Treatment") ไม่ผูก id
+// เพราะแต่ละสภาพแวดล้อม (จริง/เดโม) id ไม่เหมือนกัน คืน null ถ้าไม่มี = ซ่อนตัวกรองไปเลย
+export function findTreatmentProcedure(procedures) {
+  const list = (procedures || []).filter((p) => (p.roomType || "T") !== "M");
+  const exact = list.find((p) => String(p.name || "").trim().toLowerCase() === "treatment");
+  if (exact) return exact;
+  return list.find((p) => String(p.name || "").toLowerCase().includes("treatment")) || null;
+}
+
+// คำตัดสินจากประวัติ: open / limited / stop / no-data
+export function freeProgramVerdict({ pct, last4, prev4 }) {
+  if (pct === null || pct === undefined) return "no-data";
+  const dropped = last4 !== null && prev4 !== null && prev4 - last4 > FREE_PROGRAM_THRESHOLDS.dropPoints;
+  if (pct < FREE_PROGRAM_THRESHOLDS.limited || dropped) return "stop";
+  if (pct < FREE_PROGRAM_THRESHOLDS.open) return "limited";
+  return "open";
+}
+
+// คำตัดสิน "วันนี้" = ประวัติ + เบรกจาก 0–2 วันข้างหน้า: สาขาที่ประวัติผ่าน แต่ 3 วันนี้แน่นแล้ว → pause
+export function freeProgramVerdictNow({ verdict, nowPct }) {
+  if (verdict !== "open" && verdict !== "limited") return verdict;
+  if (nowPct !== null && nowPct !== undefined && nowPct < FREE_PROGRAM_THRESHOLDS.limited) return "pause";
+  return verdict;
+}
+
+// นับ "ช่อง 20 นาที" ที่ว่างต่อเนื่องในช่วงหน้าต่างของเตียงเดียวในวันเดียว
+// (ว่างกระจัดกระจาย 5 นาทีตรงนั้นตรงนี้ ไม่นับเป็นช่องที่ลงทรีตเมนต์ได้จริง)
+function countFreeSlots(openBlocks, bookedSet, { fromBlock, toBlock }, slotBlocks) {
+  let slots = 0;
+  let run = 0;
+  for (let b = fromBlock; b < toBlock; b++) {
+    const free = openBlocks.has(b) && !bookedSet.has(b);
+    if (free) { run += 1; continue; }
+    slots += Math.floor(run / slotBlocks);
+    run = 0;
+  }
+  return slots + Math.floor(run / slotBlocks);
+}
+
+/**
+ * ความพร้อมเปิดโปรแกรมฟรีทรีตเมนต์ รายสาขา
+ * rooms: ต้องเป็นเตียงที่รับทรีตเมนต์ได้แล้ว (ผู้เรียกกรองด้วย roomsForProcedure)
+ * คืน { from, to, aheadTo, rows: [{ branchId, beds, pct, last4, prev4, avgSlots, nowPct, verdict, verdictNow }] }
+ *   pct/last4/prev4 = % ว่างช่วง 13:00–17:00 วันจันทร์–ศุกร์ ในประวัติ (null ถ้าไม่มีวันเปิดเลย)
+ *   avgSlots = ช่อง 20 นาทีว่างเฉลี่ยต่อวันธรรมดา (รวมทุกเตียงของสาขา)
+ *   nowPct = % ว่างช่วงเดียวกัน ของวันนี้–มะรืน (ทุกวัน ไม่ตัดเสาร์–อาทิตย์ เพราะเป็นภาพจริงที่จะเจอ)
+ */
+export function computeFreeProgramReadiness({
+  rooms, roomSchedules, queues, procedures, today,
+  lookbackWeeks = FREE_PROGRAM_LOOKBACK_WEEKS, window = FREE_PROGRAM_WINDOW, aheadDays = FREE_PROGRAM_AHEAD_DAYS,
+}) {
+  const days = lookbackWeeks * 7;
+  const from = listDates(today, 1)[0]; // normalise
+  const start = shiftDate(from, -days);
+  const end = shiftDate(from, -1); // เมื่อวาน — วันสุดท้ายที่จบแล้ว
+  const dates = listDates(start, days).filter((d) => d <= end);
+  const midpoint = shiftDate(from, -Math.floor(days / 2)); // ครึ่งหลัง = "ล่าสุด"
+  const aheadDates = listDates(from, aheadDays);
+  const aheadTo = aheadDates[aheadDates.length - 1];
+
+  const scheduleIndex = buildScheduleIndex(roomSchedules);
+  const procById = {};
+  (procedures || []).forEach((p) => { procById[p.id] = p; });
+  const queuesByRoomDay = {};
+  (queues || []).forEach((q) => {
+    if (!q.roomId || q.timeBlock === null || q.timeBlock === undefined) return;
+    if (INACTIVE_STATUSES.includes(q.status || "pending")) return;
+    if (!q.date || q.date < start || q.date > aheadTo) return;
+    const key = `${q.roomId}|${q.date}`;
+    (queuesByRoomDay[key] ||= []).push(q);
+  });
+
+  // ความจุ/ว่างในหน้าต่าง 13:00–17:00 ของเตียงเดียวในวันเดียว (null = เตียงปิดหรือไม่เปิดในช่วงนั้น)
+  const windowCell = (room, date) => {
+    const open = openBlocksForRoomDay(room, schedulesForRoomDay(scheduleIndex, room.id, date));
+    if (open.length === 0) return null;
+    const openSet = new Set(open);
+    const bookedSet = new Set();
+    (queuesByRoomDay[`${room.id}|${date}`] || []).forEach((q) => {
+      const dur = q.durationBlocks ?? procById[q.procedureId]?.blocks ?? 1;
+      for (let i = 0; i < dur; i++) if (openSet.has(q.timeBlock + i)) bookedSet.add(q.timeBlock + i);
+    });
+    let cap = 0; let free = 0;
+    for (let b = window.fromBlock; b < window.toBlock; b++) {
+      if (!openSet.has(b)) continue;
+      cap += 1;
+      if (!bookedSet.has(b)) free += 1;
+    }
+    if (cap === 0) return null;
+    return { cap, free, slots: countFreeSlots(openSet, bookedSet, window, FREE_PROGRAM_SLOT_BLOCKS) };
+  };
+
+  const acc = {}; // branchId → { beds:Set, cap, free, capLast, freeLast, capPrev, freePrev, slots, weekdays:Set, capNow, freeNow }
+  for (const room of rooms || []) {
+    const branchId = room.branchId || "__none__";
+    const a = (acc[branchId] ||= { beds: new Set(), cap: 0, free: 0, capLast: 0, freeLast: 0, capPrev: 0, freePrev: 0, slots: 0, weekdays: new Set(), capNow: 0, freeNow: 0 });
+    a.beds.add(room.id);
+    for (const date of dates) {
+      const dow = dowOfDateStr(date);
+      if (dow === 0 || dow === 6) continue; // ประวัติดูเฉพาะจันทร์–ศุกร์ (วันที่แนะนำให้เปิดโปร)
+      const cell = windowCell(room, date);
+      if (!cell) continue;
+      a.weekdays.add(date);
+      a.cap += cell.cap; a.free += cell.free;
+      if (date >= midpoint) { a.capLast += cell.cap; a.freeLast += cell.free; } else { a.capPrev += cell.cap; a.freePrev += cell.free; }
+      a.slots += cell.slots;
+    }
+    for (const date of aheadDates) {
+      const cell = windowCell(room, date);
+      if (!cell) continue;
+      a.capNow += cell.cap; a.freeNow += cell.free;
+    }
+  }
+
+  const pctOf = (free, cap) => (cap > 0 ? Math.round((free / cap) * 100) : null);
+  const rows = Object.entries(acc).map(([branchId, a]) => {
+    const pct = pctOf(a.free, a.cap);
+    const last4 = pctOf(a.freeLast, a.capLast);
+    const prev4 = pctOf(a.freePrev, a.capPrev);
+    const dayCount = a.weekdays.size;
+    const avgSlots = dayCount > 0 ? Math.round((a.slots / dayCount) * 10) / 10 : null;
+    const nowPct = pctOf(a.freeNow, a.capNow);
+    const verdict = freeProgramVerdict({ pct, last4, prev4 });
+    const verdictNow = freeProgramVerdictNow({ verdict, nowPct });
+    return { branchId, beds: a.beds.size, pct, last4, prev4, avgSlots, nowPct, verdict, verdictNow };
+  });
+  return { from: start, to: end, aheadTo, rows };
+}
+
+function shiftDate(dateStr, deltaDays) {
+  const [y, m, d] = String(dateStr).split("-").map(Number);
+  const cur = new Date(y, m - 1, d + deltaDays);
+  return `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`;
+}

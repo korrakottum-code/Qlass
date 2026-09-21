@@ -4,7 +4,9 @@ import { getTodayStr, formatThaiDate } from "../utils/helpers";
 import {
   computeCapacitySummary, listDates, daysUntilEndOfMonth,
   blocksToHours, freePercent, averageFreePercentByBranch, computeWeeklyPace, PACE_LOOKBACK_WEEKS,
+  findTreatmentProcedure, computeFreeProgramReadiness, FREE_PROGRAM_LOOKBACK_WEEKS, FREE_PROGRAM_THRESHOLDS,
 } from "../utils/capacity";
+import { roomsForProcedure } from "../utils/roomProcedures";
 
 // สีของ heatmap ตาม % ว่าง — ไล่เฉดต่อเนื่อง (แดง→ส้ม→เหลือง→เขียวอ่อน→เขียวเข้ม)
 // แทนที่จะแบ่ง 5 บั้นหยาบๆ เพราะข้อมูลจริงกระจุกช่วง 60-100% ทำให้บั้นแบบเดิม
@@ -131,12 +133,108 @@ function PaceStrip({ weeklyPace }) {
   );
 }
 
-export default function CapacityPage({ rooms, roomSchedules, queues, branches, procedures, onRangeNeeded }) {
+// "โปรแกรมฟรีทรีตเมนต์" — ความพร้อมรายสาขา กติกาอยู่ที่ computeFreeProgramReadiness (capacity.js)
+// เจตนา: ให้เจ้าของงานเปิดหน้านี้เดือนละครั้งแล้วตัดสินได้เลยว่าสาขาไหนเปิดโปรฟรีได้ ไม่ต้องดึงข้อมูลดิบ
+const READINESS_STYLE = {
+  open: { emoji: "🟢", label: "เปิดได้", bg: "#dcfce7", fg: "#166534" },
+  limited: { emoji: "🟡", label: "เปิดจำกัด 3–5 คน/วัน", bg: "#fef9c3", fg: "#854d0e" },
+  pause: { emoji: "⏸️", label: "พักก่อน 3 วันนี้แน่น", bg: "#ffedd5", fg: "#9a3412" },
+  stop: { emoji: "🔴", label: "ไม่ควรทำ", bg: "#fecaca", fg: "#991b1b" },
+  "no-data": { emoji: "🆕", label: "ไม่มีข้อมูล", bg: "var(--surface3)", fg: "var(--text3)" },
+};
+const READINESS_ORDER = { open: 0, limited: 1, pause: 2, stop: 3, "no-data": 4 };
+
+function pctText(v) { return v === null || v === undefined ? "—" : `${v}%`; }
+
+function FreeProgramReadiness({ readiness, branches, treatmentName }) {
+  const rows = useMemo(() => {
+    const nameOf = (id) => branches.find((b) => b.id === id)?.name || "-";
+    return [...readiness.rows]
+      .map((r) => ({ ...r, name: nameOf(r.branchId) }))
+      .sort((a, b) => (READINESS_ORDER[a.verdictNow] - READINESS_ORDER[b.verdictNow]) || ((b.pct ?? -1) - (a.pct ?? -1)));
+  }, [readiness, branches]);
+  const [, fm, fd] = readiness.from.split("-");
+  const [, tm, td] = readiness.to.split("-");
+  const th = { padding: "6px 8px", fontSize: 11, color: "var(--text3)", textAlign: "left", borderBottom: "2px solid var(--border2)", background: "var(--surface2)", whiteSpace: "nowrap" };
+  const td_ = { padding: "6px 8px", fontSize: 12, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" };
+  const counts = rows.reduce((acc, r) => { acc[r.verdictNow] = (acc[r.verdictNow] || 0) + 1; return acc; }, {});
+
+  return (
+    <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 14 }}>
+      <div className="card-header" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <h3 style={{ margin: 0 }}>🎁 โปรแกรมฟรี {treatmentName} — สาขาไหนเปิดได้</h3>
+        <div style={{ fontSize: 11, color: "var(--text3)", lineHeight: 1.5 }}>
+          วัดจากเตียงที่รับ{treatmentName}ได้ วันจันทร์–ศุกร์ ช่วง 13:00–17:00 ย้อนหลัง {FREE_PROGRAM_LOOKBACK_WEEKS} สัปดาห์ที่จบแล้ว ({fd}/{fm}–{td}/{tm})
+          {" "}· ว่าง ≥{FREE_PROGRAM_THRESHOLDS.open}% เปิดได้ · {FREE_PROGRAM_THRESHOLDS.limited}–{FREE_PROGRAM_THRESHOLDS.open - 1}% เปิดจำกัด
+          {" "}· ต่ำกว่า {FREE_PROGRAM_THRESHOLDS.limited}% หรือ 4 สัปดาห์ล่าสุดร่วงเกิน {FREE_PROGRAM_THRESHOLDS.dropPoints} จุด ไม่ควรทำ
+          {" "}· ด่านสอง: วันนี้–มะรืน (0–2 วัน คือช่วงเดียวข้างหน้าที่เชื่อถือได้) ถ้าว่างต่ำกว่า {FREE_PROGRAM_THRESHOLDS.limited}% ให้พักก่อน
+          {" "}· ห้ามเสาร์–อาทิตย์ และหลัง 17:00 ทุกสาขา
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
+          {Object.entries(READINESS_STYLE).filter(([k]) => counts[k]).map(([k, st]) => (
+            <span key={k} style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: st.bg, color: st.fg }}>
+              {st.emoji} {st.label}: {counts[k]}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+          <thead>
+            <tr>
+              <th style={{ ...th, position: "sticky", left: 0, zIndex: 2 }}>สาขา</th>
+              <th style={th}>คำแนะนำวันนี้</th>
+              <th style={{ ...th, textAlign: "right" }}>เตียง</th>
+              <th style={{ ...th, textAlign: "right" }} title="% ว่างเฉลี่ยทั้ง 8 สัปดาห์ — ตัวตัดสินหลัก">ว่าง 8 สัปดาห์</th>
+              <th style={{ ...th, textAlign: "right" }} title="4 สัปดาห์ก่อนหน้า → 4 สัปดาห์ล่าสุด — ร่วงเกิน 10 จุด = ไม่ควรทำ">แนวโน้ม</th>
+              <th style={{ ...th, textAlign: "right" }} title="% ว่างช่วง 13:00–17:00 ของวันนี้ถึงมะรืน">วันนี้–มะรืน</th>
+              <th style={{ ...th, textAlign: "right" }} title="ช่อง 20 นาทีที่ว่างต่อเนื่องในช่วง 13:00–17:00 เฉลี่ยต่อวันธรรมดา รวมทุกเตียง">ช่องว่าง/วัน</th>
+              <th style={{ ...th, textAlign: "right" }} title="เปิดได้: ครึ่งหนึ่งของช่องว่าง (เหลือที่ให้ลูกค้าจ่ายเงินที่จองกระชั้นชิด) · เปิดจำกัด: 3–5 คน">โควตาฟรีแนะนำ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const st = READINESS_STYLE[r.verdictNow];
+              const trend = r.prev4 !== null && r.last4 !== null ? r.last4 - r.prev4 : null;
+              const quota = r.verdictNow === "open" && r.avgSlots !== null ? `${Math.max(1, Math.floor(r.avgSlots / 2))} คน`
+                : r.verdictNow === "limited" ? "3–5 คน"
+                : "—";
+              return (
+                <tr key={r.branchId}>
+                  <td style={{ ...td_, position: "sticky", left: 0, zIndex: 1, background: "var(--surface)", fontWeight: 700, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</td>
+                  <td style={td_}>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: st.bg, color: st.fg }}>{st.emoji} {st.label}</span>
+                  </td>
+                  <td style={{ ...td_, textAlign: "right" }}>{r.beds}</td>
+                  <td style={{ ...td_, textAlign: "right", fontWeight: 800, color: "#1f2937", background: freeColor(r.pct) }}>{pctText(r.pct)}</td>
+                  <td style={{ ...td_, textAlign: "right", color: trend !== null && trend < -FREE_PROGRAM_THRESHOLDS.dropPoints ? "var(--red, #b91c1c)" : "var(--text2)" }}>
+                    {pctText(r.prev4)} → {pctText(r.last4)}{trend !== null && trend < -FREE_PROGRAM_THRESHOLDS.dropPoints ? " ⚠️" : ""}
+                  </td>
+                  <td style={{ ...td_, textAlign: "right", fontWeight: 700, color: "#1f2937", background: freeColor(r.nowPct) }}>{pctText(r.nowPct)}</td>
+                  <td style={{ ...td_, textAlign: "right" }}>{r.avgSlots === null ? "—" : r.avgSlots}</td>
+                  <td style={{ ...td_, textAlign: "right", fontWeight: 700 }}>{quota}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ padding: "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", fontSize: 11, color: "var(--text2)" }}>
+        ระบบนับเฉพาะคิวที่ลงในตารางห้อง ถ้าหน้าร้านรับลูกค้าเดินเข้าโดยไม่ลงคิว ความว่างจริงจะน้อยกว่านี้ — สาขา "เปิดจำกัด" ควรเริ่มโควตาน้อยแล้วค่อยขยาย
+        {" "}· สัญญาณว่าโปรฟรีเริ่มกินลูกค้าจ่ายเงิน: ว่างช่วงที่เปิดฟรีตกต่ำกว่า 60% ให้ลดโควตาลงครึ่งหนึ่งก่อน
+      </div>
+    </div>
+  );
+}
+
+export default function CapacityPage({ rooms, roomSchedules, queues, branches, procedures, roomProcedureIndex, onRangeNeeded }) {
   const [range, setRange] = useState("7d"); // 7d | eom
   const [filterBranch, setFilterBranch] = useState("all");
   const [splitByType, setSplitByType] = useState(false);
   // "ทั้งหมด" = รวมสองประเภทเข้าด้วยกันเหมือนเดิม, "M"/"T" = ดูประเภทเดียวทั้งหน้า
   // (ตัวเลขบนการ์ด ตารางด้านล่าง และคำแนะนำ เปลี่ยนตามทั้งหมด ไม่ใช่แค่ตาราง)
+  // "treatment" = เฉพาะเตียงในห้องเครื่องที่ล็อกให้รับทรีตเมนต์ (เตียง Hifu/Pico ทำทรีตเมนต์ไม่ได้
+  // ตัวเลข T รวมจึงว่างเกินจริงสำหรับคำถาม "เปิดโปรฟรีทรีตเมนต์ได้ไหม")
   const [typeFilter, setTypeFilter] = useState("all");
   const [selected, setSelected] = useState(null); // { branchId, date }
 
@@ -147,12 +245,30 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
     range === "7d" ? listDates(today, 7) : listDates(today, daysUntilEndOfMonth(today))
   ), [range, today]);
 
+  // เตียงที่รับทรีตเมนต์ได้ — ผ่านกติกาล็อกเตียงตัวเดียวกับหน้าลงคิว (เตียงที่ยังไม่ตั้งค่า = ทุกเตียง T)
+  const treatmentProcedure = useMemo(() => findTreatmentProcedure(procedures), [procedures]);
+  const treatmentRoomIds = useMemo(() => new Set(
+    treatmentProcedure ? roomsForProcedure(roomProcedureIndex, rooms, treatmentProcedure).map((r) => r.id) : []
+  ), [roomProcedureIndex, rooms, treatmentProcedure]);
+  // ไม่มีหัตถการทรีตเมนต์ในระบบ (เช่นสภาพแวดล้อมเดโม) → ไม่โชว์ปุ่ม และถ้าค้างสถานะไว้ให้ถอยไป "ทั้งหมด"
+  const treatmentAvailable = !!treatmentProcedure;
+  const effectiveTypeFilter = typeFilter === "treatment" && !treatmentAvailable ? "all" : typeFilter;
+
   const visibleRooms = useMemo(() => rooms.filter((r) => (
     (filterBranch === "all" || r.branchId === filterBranch)
     // ห้องที่ไม่ได้ตั้งประเภทไว้ ถูกนับเป็น T ที่ computeCapacitySummary — ต้องใช้กติกาเดียวกันตรงนี้
     // ไม่งั้นตัวหารบนการ์ดกับตัวเลขในตารางจะคนละชุด
-    && (typeFilter === "all" || (r.type === "M" ? "M" : "T") === typeFilter)
-  )), [rooms, filterBranch, typeFilter]);
+    && (effectiveTypeFilter === "treatment"
+      ? treatmentRoomIds.has(r.id)
+      : (effectiveTypeFilter === "all" || (r.type === "M" ? "M" : "T") === effectiveTypeFilter))
+  )), [rooms, filterBranch, effectiveTypeFilter, treatmentRoomIds]);
+
+  // ความพร้อมโปรฟรี — คำนวณเฉพาะตอนเลือกดูเตียงทรีตเมนต์ (ต้องไล่ 8 สัปดาห์ × ทุกเตียง ไม่ทำเปล่า ๆ)
+  const readiness = useMemo(() => (
+    effectiveTypeFilter === "treatment"
+      ? computeFreeProgramReadiness({ rooms: visibleRooms, roomSchedules, queues, procedures, today })
+      : null
+  ), [effectiveTypeFilter, visibleRooms, roomSchedules, queues, procedures, today]);
 
   const summary = useMemo(() => computeCapacitySummary({
     rooms: visibleRooms, roomSchedules, queues, procedures, dates,
@@ -178,9 +294,9 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
   }, [branches, filterBranch, summary, branchAverages, sortDir]);
 
   // เลือกดูประเภทเดียวอยู่แล้ว การแยกสองแถวไม่มีความหมาย — ปิดไว้เงียบ ๆ ไม่ต้องล้างสถานะปุ่ม
-  const splitRows = splitByType && typeFilter === "all";
+  const splitRows = splitByType && effectiveTypeFilter === "all";
   // บนจอมือถือการ์ดแคบมาก ป้ายยาวจะถูกตัดท้าย — ใช้คำสั้นที่ยังบอกได้ว่ากำลังดูห้องประเภทไหนอยู่
-  const typeShortLabel = typeFilter === "M" ? "ห้องฉีด" : typeFilter === "T" ? "ห้องเครื่อง" : "ห้อง";
+  const typeShortLabel = effectiveTypeFilter === "M" ? "ห้องฉีด" : effectiveTypeFilter === "T" ? "ห้องเครื่อง" : effectiveTypeFilter === "treatment" ? "เตียงทรีตเมนต์" : "ห้อง";
   const totalPct = freePercent(summary.totals);
   // เทียบเป็น % ว่าง ไม่ใช่ชั่วโมงดิบ — ห้องเครื่องมีความจุมากกว่าห้องฉีดเกือบสองเท่า ถ้าเทียบชั่วโมง
   // ฝั่งที่ใหญ่กว่าจะชนะเกือบทุกครั้งทั้งที่อาจแน่นกว่าจริง คำแนะนำโปรจะชี้ผิดฝั่ง
@@ -222,17 +338,19 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label className="form-label">ประเภทห้อง</label>
           <div style={{ display: "flex", gap: 6 }}>
-            {[["all", "ทั้งหมด"], ["M", "ห้องฉีด (M)"], ["T", "ห้องเครื่อง (T)"]].map(([v, l]) => (
-              <button key={v} onClick={() => { setTypeFilter(v); setSelected(null); }} style={{
+            {[["all", "ทั้งหมด"], ["M", "ห้องฉีด (M)"], ["T", "ห้องเครื่อง (T)"], ...(treatmentAvailable ? [["treatment", "🎁 เตียงทรีตเมนต์"]] : [])].map(([v, l]) => (
+              <button key={v} onClick={() => { setTypeFilter(v); setSelected(null); }}
+                title={v === "treatment" ? "เฉพาะเตียงที่ล็อกให้รับทรีตเมนต์ (ไม่รวมเตียง Hifu/Pico) — ใช้ตัดสินว่าสาขาไหนเปิดโปรฟรีทรีตเมนต์ได้" : undefined}
+                style={{
                 padding: "7px 14px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700,
-                border: typeFilter === v ? "1.5px solid var(--accent)" : "1.5px solid var(--border)",
-                background: typeFilter === v ? "var(--accent-soft, rgba(0,0,0,0.05))" : "var(--surface2)",
-                color: typeFilter === v ? "var(--accent)" : "var(--text2)",
+                border: effectiveTypeFilter === v ? "1.5px solid var(--accent)" : "1.5px solid var(--border)",
+                background: effectiveTypeFilter === v ? "var(--accent-soft, rgba(0,0,0,0.05))" : "var(--surface2)",
+                color: effectiveTypeFilter === v ? "var(--accent)" : "var(--text2)",
               }}>{l}</button>
             ))}
           </div>
         </div>
-        {typeFilter === "all" && (
+        {effectiveTypeFilter === "all" && (
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">ตารางด้านล่าง</label>
             <button
@@ -263,6 +381,10 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
 
       <PaceStrip weeklyPace={weeklyPace} />
 
+      {readiness && (
+        <FreeProgramReadiness readiness={readiness} branches={branches} treatmentName={treatmentProcedure?.name || "ทรีตเมนต์"} />
+      )}
+
       {/* Stat cards — บังคับ 3 การ์ดแรกอยู่แถวเดียวกันเสมอด้วย grid (เดิม flex-wrap ทำให้การ์ดที่ 3
           ตกไปอยู่คนละบรรทัดบนจอแคบ) ส่วนการ์ด M/T แยกเป็นแถวของตัวเองด้านล่าง */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
@@ -274,7 +396,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
           <StatCard label="ยังว่าง (รับเพิ่มได้)" value={totalPct === null ? "—" : `${totalPct}%`} sub={`${blocksToHours(summary.totals.free).toLocaleString()} ชม.`} color="var(--green)" />
         </div>
         {/* เลือกดูประเภทเดียวอยู่ การ์ดคู่จะซ้ำกับการ์ด "ยังว่าง" ด้านบนเป๊ะ ๆ (อีกฝั่งเป็น 0 เสมอ) */}
-        {typeFilter === "all" && (
+        {effectiveTypeFilter === "all" && (
           <TypeSplitCard mCell={summary.totals.byType.M} tCell={summary.totals.byType.T} />
         )}
       </div>
@@ -282,7 +404,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
       {/* คำแนะนำฝั่งการตลาด — บอกแค่ว่าห้องประเภทไหนว่างกว่า ไม่แจงชื่อโปร (เดิมสุ่มเอา 6 โปรแรก
           ที่ตรงประเภทห้องมาโชว์ ไม่มีเกณฑ์คัดจริง ทำให้ดูเหมือนระบบเลือกเอง — เอาออกดีกว่าใส่
           ข้อมูลที่อธิบายไม่ได้ว่าทำไมถูกเลือก) */}
-      {summary.totals.capacity > 0 && typeFilter === "all" && (
+      {summary.totals.capacity > 0 && effectiveTypeFilter === "all" && (
         <div style={{
           marginBottom: 14, padding: "10px 14px", borderRadius: 10, fontSize: 13,
           background: "var(--surface2)", border: "1px solid var(--border)",
@@ -428,7 +550,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
             background: `linear-gradient(to right, ${FREE_COLOR_STOPS.map((s) => `hsl(${s.h},${s.s}%,${s.l}%) ${s.pct}%`).join(", ")})`,
           }} />
           <span>ว่างมาก</span>
-          <span style={{ marginLeft: "auto" }}>กดช่องเพื่อดูรายละเอียดวัน/สาขานั้น · เลือก "ประเภทห้อง" ด้านบนเพื่อดูเฉพาะห้องฉีด (M) หรือห้องเครื่อง (T)</span>
+          <span style={{ marginLeft: "auto" }}>กดช่องเพื่อดูรายละเอียดวัน/สาขานั้น · เลือก "ประเภทห้อง" ด้านบนเพื่อดูเฉพาะห้องฉีด (M) ห้องเครื่อง (T) หรือเตียงทรีตเมนต์</span>
         </div>
       </div>
 
@@ -457,7 +579,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
                 <div>ว่าง <b style={{ color: "var(--green)" }}>{freePercent(selectedCell)}%</b> ({blocksToHours(selectedCell.free)} จาก {blocksToHours(selectedCell.capacity)} ชม.)</div>
                 {/* เดิมบรรทัดนี้เป็นชั่วโมงล้วน เทียบสองฝั่งไม่ได้เพราะความจุไม่เท่ากัน — ใช้ % ว่างให้ตรงกับการ์ดด้านบน
                     และถ้ากำลังเลือกดูประเภทเดียวอยู่ ไม่ต้องโชว์ เพราะอีกฝั่งถูกกรองออกไปแล้วจะขึ้นเป็น "—%" ชวนงง */}
-                {typeFilter === "all" && (
+                {effectiveTypeFilter === "all" && (
                   <div style={{ marginTop: 4 }}>
                     ห้องฉีด (M): ว่าง {freePercent(selectedCell.byType.M) ?? "—"}% · ห้องเครื่อง (T): ว่าง {freePercent(selectedCell.byType.T) ?? "—"}%
                   </div>
