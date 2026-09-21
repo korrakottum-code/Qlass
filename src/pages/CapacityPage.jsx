@@ -195,8 +195,7 @@ function FreeProgramReadiness({ readiness, branches, treatmentName }) {
         <table style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>
             <tr>
-              <th style={{ ...th, position: "sticky", left: 0, zIndex: 2 }}>สาขา</th>
-              <th style={th}>คำแนะนำ</th>
+              <th style={{ ...th, position: "sticky", left: 0, zIndex: 2 }}>สาขา / คำแนะนำ</th>
               <th style={{ ...th, textAlign: "right" }}>เตียง</th>
               <th style={{ ...th, textAlign: "right" }} title="% ว่างเฉลี่ย จ–ศ 13:00–17:00 ของ 4 สัปดาห์ล่าสุด — ตัวตัดสินหลัก">คาดว่าว่าง</th>
               <th style={{ ...th, textAlign: "right" }} title="4 สัปดาห์ก่อนหน้า → 4 สัปดาห์ล่าสุด — ร่วงเกิน 10 จุด = ไม่ควรทำ">แนวโน้ม</th>
@@ -221,9 +220,10 @@ function FreeProgramReadiness({ readiness, branches, treatmentName }) {
               const quota = quotaFor(r.verdictNow, r.avgSlots);
               return (
                 <tr key={r.branchId}>
-                  <td style={{ ...td_, position: "sticky", left: 0, zIndex: 1, background: "var(--surface)", fontWeight: 700, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</td>
-                  <td style={td_}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: st.bg, color: st.fg }}>{st.emoji} {st.label}</span>
+                  {/* ชื่อ + ป้ายคำแนะนำอยู่ในคอลัมน์ที่ตรึงไว้ด้วยกัน — เลื่อนตารางไปดูรายวันแล้วยังเห็นคำตอบเสมอ */}
+                  <td style={{ ...td_, position: "sticky", left: 0, zIndex: 1, background: "var(--surface)", borderRight: "2px solid var(--border2)", maxWidth: 190 }}>
+                    <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</div>
+                    <span style={{ display: "inline-block", marginTop: 2, fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 999, background: st.bg, color: st.fg }}>{st.emoji} {st.label}</span>
                   </td>
                   <td style={{ ...td_, textAlign: "right" }}>{r.beds}</td>
                   <td style={{ ...td_, textAlign: "right", fontWeight: 800, color: "#1f2937", background: freeColor(r.pct) }}>{pctText(r.pct)}</td>
