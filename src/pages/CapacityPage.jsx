@@ -4,7 +4,7 @@ import { getTodayStr, formatThaiDate } from "../utils/helpers";
 import {
   computeCapacitySummary, listDates, daysUntilEndOfMonth,
   blocksToHours, freePercent, averageFreePercentByBranch, computeWeeklyPace, PACE_LOOKBACK_WEEKS,
-  findTreatmentProcedure, computeFreeProgramReadiness, FREE_PROGRAM_LOOKBACK_WEEKS, FREE_PROGRAM_THRESHOLDS,
+  findTreatmentProcedure, computeFreeProgramReadiness, FREE_PROGRAM_LOOKBACK_WEEKS, FREE_PROGRAM_THRESHOLDS, FREE_PROGRAM_AHEAD_DAYS,
 } from "../utils/capacity";
 import { roomsForProcedure } from "../utils/roomProcedures";
 
@@ -133,8 +133,8 @@ function PaceStrip({ weeklyPace }) {
   );
 }
 
-// "โปรแกรมฟรีทรีตเมนต์" — ความพร้อมรายสาขา กติกาอยู่ที่ computeFreeProgramReadiness (capacity.js)
-// เจตนา: ให้เจ้าของงานเปิดหน้านี้เดือนละครั้งแล้วตัดสินได้เลยว่าสาขาไหนเปิดโปรฟรีได้ ไม่ต้องดึงข้อมูลดิบ
+// "โปรแกรมฟรีทรีตเมนต์" — คาดว่าสัปดาห์หน้าเตียงทรีตเมนต์จะว่างเท่าไหร่ กติกาอยู่ที่ computeFreeProgramReadiness (capacity.js)
+// เจตนา: เจ้าของงานเปิดหน้านี้ทุกสัปดาห์แล้วตัดสินได้เลยว่าสาขาไหนเปิดโปรฟรีได้ วันไหน กี่คน ไม่ต้องดึงข้อมูลดิบ
 const READINESS_STYLE = {
   open: { emoji: "🟢", label: "เปิดได้", bg: "#dcfce7", fg: "#166534" },
   limited: { emoji: "🟡", label: "เปิดจำกัด 3–5 คน/วัน", bg: "#fef9c3", fg: "#854d0e" },
@@ -145,6 +145,16 @@ const READINESS_STYLE = {
 const READINESS_ORDER = { open: 0, limited: 1, pause: 2, stop: 3, "no-data": 4 };
 
 function pctText(v) { return v === null || v === undefined ? "—" : `${v}%`; }
+
+// โควตาฟรีต่อวันจากช่องว่างที่คาดไว้: เปิดได้ = ครึ่งหนึ่ง (เหลือที่ให้ลูกค้าจ่ายเงินที่จองกระชั้นชิด),
+// เปิดจำกัด = ไม่เกิน 5 และไม่เกินครึ่งหนึ่ง, อย่างอื่น = ไม่เปิด
+function quotaFor(verdictNow, slots) {
+  if (slots === null || slots === undefined) return null;
+  const half = Math.floor(slots / 2);
+  if (verdictNow === "open") return half;
+  if (verdictNow === "limited") return Math.min(5, half);
+  return null;
+}
 
 function FreeProgramReadiness({ readiness, branches, treatmentName }) {
   const rows = useMemo(() => {
@@ -158,17 +168,20 @@ function FreeProgramReadiness({ readiness, branches, treatmentName }) {
   const th = { padding: "6px 8px", fontSize: 11, color: "var(--text3)", textAlign: "left", borderBottom: "2px solid var(--border2)", background: "var(--surface2)", whiteSpace: "nowrap" };
   const td_ = { padding: "6px 8px", fontSize: 12, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" };
   const counts = rows.reduce((acc, r) => { acc[r.verdictNow] = (acc[r.verdictNow] || 0) + 1; return acc; }, {});
+  // คอลัมน์รายวัน: วันนี้ถึง +6 เฉพาะจันทร์–ศุกร์ (เสาร์–อาทิตย์ไม่แนะนำให้เปิดอยู่แล้ว ไม่ต้องเปลืองที่)
+  const dayCols = readiness.forecastDates
+    .map((date, i) => ({ date, i, dow: new Date(...date.split("-").map(Number).map((v, k) => (k === 1 ? v - 1 : v))).getDay() }))
+    .filter((c) => c.dow !== 0 && c.dow !== 6);
 
   return (
     <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 14 }}>
       <div className="card-header" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <h3 style={{ margin: 0 }}>🎁 โปรแกรมฟรี {treatmentName} — สาขาไหนเปิดได้</h3>
+        <h3 style={{ margin: 0 }}>🎁 โปรแกรมฟรี {treatmentName} — คาดว่าสัปดาห์นี้จะเหลือช่องว่างเท่าไหร่</h3>
         <div style={{ fontSize: 11, color: "var(--text3)", lineHeight: 1.5 }}>
-          วัดจากเตียงที่รับ{treatmentName}ได้ วันจันทร์–ศุกร์ ช่วง 13:00–17:00 ย้อนหลัง {FREE_PROGRAM_LOOKBACK_WEEKS} สัปดาห์ที่จบแล้ว ({fd}/{fm}–{td}/{tm})
-          {" "}· ว่าง ≥{FREE_PROGRAM_THRESHOLDS.open}% เปิดได้ · {FREE_PROGRAM_THRESHOLDS.limited}–{FREE_PROGRAM_THRESHOLDS.open - 1}% เปิดจำกัด
-          {" "}· ต่ำกว่า {FREE_PROGRAM_THRESHOLDS.limited}% หรือ 4 สัปดาห์ล่าสุดร่วงเกิน {FREE_PROGRAM_THRESHOLDS.dropPoints} จุด ไม่ควรทำ
-          {" "}· ด่านสอง: วันนี้–มะรืน (0–2 วัน คือช่วงเดียวข้างหน้าที่เชื่อถือได้) ถ้าว่างต่ำกว่า {FREE_PROGRAM_THRESHOLDS.limited}% ให้พักก่อน
-          {" "}· ห้ามเสาร์–อาทิตย์ และหลัง 17:00 ทุกสาขา
+          ตัวเลขรายวัน = จำนวนช่อง 20 นาทีที่คาดว่าจะว่างบนเตียงที่รับ{treatmentName}ได้ ช่วง 13:00–17:00 (รวมทุกเตียงของสาขา)
+          {" "}· วันนี้–มะรืน ใช้คิวที่จองแล้วจริง ("จริง") · วันถัดไปประมาณจากวันเดียวกันของ {FREE_PROGRAM_LOOKBACK_WEEKS} สัปดาห์ก่อน ({fd}/{fm}–{td}/{tm}) เพราะลูกค้าจองล่วงหน้าแค่ 0–2 วัน ตารางข้างหน้าจึงยังว่างหลอกอยู่
+          {" "}· คำแนะนำ: คาดว่าว่าง ≥{FREE_PROGRAM_THRESHOLDS.open}% เปิดได้ (โควตาครึ่งหนึ่งของช่องว่าง) · {FREE_PROGRAM_THRESHOLDS.limited}–{FREE_PROGRAM_THRESHOLDS.open - 1}% เปิดจำกัด
+          {" "}· ต่ำกว่า {FREE_PROGRAM_THRESHOLDS.limited}% หรือร่วงเกิน {FREE_PROGRAM_THRESHOLDS.dropPoints} จุดจาก 4 สัปดาห์ก่อนหน้า ไม่ควรทำ · 3 วันนี้คิวจริงแน่น พักก่อน · ห้ามเสาร์–อาทิตย์ และหลัง 17:00 ทุกสาขา
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
           {Object.entries(READINESS_STYLE).filter(([k]) => counts[k]).map(([k, st]) => (
@@ -183,22 +196,29 @@ function FreeProgramReadiness({ readiness, branches, treatmentName }) {
           <thead>
             <tr>
               <th style={{ ...th, position: "sticky", left: 0, zIndex: 2 }}>สาขา</th>
-              <th style={th}>คำแนะนำวันนี้</th>
+              <th style={th}>คำแนะนำ</th>
               <th style={{ ...th, textAlign: "right" }}>เตียง</th>
-              <th style={{ ...th, textAlign: "right" }} title="% ว่างเฉลี่ยทั้ง 8 สัปดาห์ — ตัวตัดสินหลัก">ว่าง 8 สัปดาห์</th>
+              <th style={{ ...th, textAlign: "right" }} title="% ว่างเฉลี่ย จ–ศ 13:00–17:00 ของ 4 สัปดาห์ล่าสุด — ตัวตัดสินหลัก">คาดว่าว่าง</th>
               <th style={{ ...th, textAlign: "right" }} title="4 สัปดาห์ก่อนหน้า → 4 สัปดาห์ล่าสุด — ร่วงเกิน 10 จุด = ไม่ควรทำ">แนวโน้ม</th>
-              <th style={{ ...th, textAlign: "right" }} title="% ว่างช่วง 13:00–17:00 ของวันนี้ถึงมะรืน">วันนี้–มะรืน</th>
-              <th style={{ ...th, textAlign: "right" }} title="ช่อง 20 นาทีที่ว่างต่อเนื่องในช่วง 13:00–17:00 เฉลี่ยต่อวันธรรมดา รวมทุกเตียง">ช่องว่าง/วัน</th>
-              <th style={{ ...th, textAlign: "right" }} title="เปิดได้: ครึ่งหนึ่งของช่องว่าง (เหลือที่ให้ลูกค้าจ่ายเงินที่จองกระชั้นชิด) · เปิดจำกัด: 3–5 คน">โควตาฟรีแนะนำ</th>
+              <th style={{ ...th, textAlign: "right" }} title="โควตาฟรีต่อวันโดยเฉลี่ย: เปิดได้ = ครึ่งหนึ่งของช่องว่าง · เปิดจำกัด = ไม่เกิน 5">โควตาฟรี/วัน</th>
+              {dayCols.map((c) => {
+                const [, m, d] = c.date.split("-");
+                return (
+                  <th key={c.date} style={{ ...th, textAlign: "center", background: c.i === 0 ? "var(--surface3)" : th.background }}
+                    title={c.i < FREE_PROGRAM_AHEAD_DAYS ? "ใช้คิวที่จองแล้วจริง" : "ประมาณจากวันเดียวกัน 4 สัปดาห์ก่อน"}>
+                    {THAI_DOW[c.dow]} {d}/{m}<br />
+                    <span style={{ fontWeight: 400 }}>{c.i < FREE_PROGRAM_AHEAD_DAYS ? "จริง" : "คาด"}</span>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => {
               const st = READINESS_STYLE[r.verdictNow];
               const trend = r.prev4 !== null && r.last4 !== null ? r.last4 - r.prev4 : null;
-              const quota = r.verdictNow === "open" && r.avgSlots !== null ? `${Math.max(1, Math.floor(r.avgSlots / 2))} คน`
-                : r.verdictNow === "limited" ? "3–5 คน"
-                : "—";
+              const dropped = trend !== null && trend < -FREE_PROGRAM_THRESHOLDS.dropPoints;
+              const quota = quotaFor(r.verdictNow, r.avgSlots);
               return (
                 <tr key={r.branchId}>
                   <td style={{ ...td_, position: "sticky", left: 0, zIndex: 1, background: "var(--surface)", fontWeight: 700, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</td>
@@ -207,12 +227,21 @@ function FreeProgramReadiness({ readiness, branches, treatmentName }) {
                   </td>
                   <td style={{ ...td_, textAlign: "right" }}>{r.beds}</td>
                   <td style={{ ...td_, textAlign: "right", fontWeight: 800, color: "#1f2937", background: freeColor(r.pct) }}>{pctText(r.pct)}</td>
-                  <td style={{ ...td_, textAlign: "right", color: trend !== null && trend < -FREE_PROGRAM_THRESHOLDS.dropPoints ? "var(--red, #b91c1c)" : "var(--text2)" }}>
-                    {pctText(r.prev4)} → {pctText(r.last4)}{trend !== null && trend < -FREE_PROGRAM_THRESHOLDS.dropPoints ? " ⚠️" : ""}
+                  <td style={{ ...td_, textAlign: "right", color: dropped ? "var(--red, #b91c1c)" : "var(--text2)" }}>
+                    {pctText(r.prev4)} → {pctText(r.last4)}{dropped ? " ⚠️" : ""}
                   </td>
-                  <td style={{ ...td_, textAlign: "right", fontWeight: 700, color: "#1f2937", background: freeColor(r.nowPct) }}>{pctText(r.nowPct)}</td>
-                  <td style={{ ...td_, textAlign: "right" }}>{r.avgSlots === null ? "—" : r.avgSlots}</td>
-                  <td style={{ ...td_, textAlign: "right", fontWeight: 700 }}>{quota}</td>
+                  <td style={{ ...td_, textAlign: "right", fontWeight: 700 }}>{quota === null ? "—" : `${quota} คน`}</td>
+                  {dayCols.map((c) => {
+                    const f = r.forecast[c.i];
+                    const dayQuota = quotaFor(r.verdictNow, f.slots);
+                    const title = f.pct === null ? "ไม่มีเตียงเปิด/ไม่มีข้อมูล"
+                      : `${f.source === "actual" ? "คิวจริง" : "คาด"}: ว่าง ${f.pct}% · ${f.slots} ช่อง 20 นาที${dayQuota !== null ? ` · เปิดฟรีได้ ~${dayQuota} คน` : ""}`;
+                    return (
+                      <td key={c.date} title={title} style={{ ...td_, textAlign: "center", fontWeight: 700, color: "#1f2937", background: freeColor(f.pct) }}>
+                        {f.slots === null ? "—" : f.slots}
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}
@@ -220,7 +249,7 @@ function FreeProgramReadiness({ readiness, branches, treatmentName }) {
         </table>
       </div>
       <div style={{ padding: "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", fontSize: 11, color: "var(--text2)" }}>
-        ระบบนับเฉพาะคิวที่ลงในตารางห้อง ถ้าหน้าร้านรับลูกค้าเดินเข้าโดยไม่ลงคิว ความว่างจริงจะน้อยกว่านี้ — สาขา "เปิดจำกัด" ควรเริ่มโควตาน้อยแล้วค่อยขยาย
+        สีในช่องรายวัน = % ที่คาดว่าจะว่าง (แดง แน่น → เขียว ว่าง) ตัวเลข = ช่อง 20 นาที · ระบบนับเฉพาะคิวที่ลงในตารางห้อง ถ้าหน้าร้านรับลูกค้าเดินเข้าโดยไม่ลงคิว ความว่างจริงจะน้อยกว่านี้
         {" "}· สัญญาณว่าโปรฟรีเริ่มกินลูกค้าจ่ายเงิน: ว่างช่วงที่เปิดฟรีตกต่ำกว่า 60% ให้ลดโควตาลงครึ่งหนึ่งก่อน
       </div>
     </div>

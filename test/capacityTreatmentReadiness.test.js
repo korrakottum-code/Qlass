@@ -19,7 +19,7 @@ import {
 const T = { id: "p-treat", name: "Treatment", blocks: 4, roomType: "T" };
 const DIODE = { id: "p-diode", name: "Diode", blocks: 3, roomType: "T" };
 const procedures = [T, DIODE];
-// จันทร์ 21 ก.ย. 2569 — ประวัติ 8 สัปดาห์ = 27 ก.ค.–20 ก.ย., ด่านสอง = 21–23 ก.ย.
+// จันทร์ 21 ก.ย. 2569 — ฐาน 4 สัปดาห์ = 24 ส.ค.–20 ก.ย. (แนวโน้มเทียบกับ 27 ก.ค.–23 ส.ค.), คิวจริง = 21–23 ก.ย.
 const today = "2026-09-21";
 const bed = (id, branchId) => ({ id, branchId, type: "T", openBlock: 132, closeBlock: 240 });
 
@@ -43,10 +43,10 @@ test("เกณฑ์คำตัดสิน: 85 เปิดได้ / 70 เ
   assert.equal(freeProgramVerdict({ pct: null, last4: null, prev4: null }), "no-data");
 });
 
-test("ร่วงเกิน 10 จุดใน 4 สัปดาห์ล่าสุด = ไม่ควรทำ แม้ค่าเฉลี่ยยังผ่าน (กรณีชัยภูมิ 72→43)", () => {
-  assert.equal(freeProgramVerdict({ pct: 88, last4: 76, prev4: 95 }), "stop");
+test("ร่วงเกิน 10 จุดใน 4 สัปดาห์ล่าสุด = ไม่ควรทำ แม้ตัวเลขเองยังผ่าน (กรณีชัยภูมิ 72→43)", () => {
+  assert.equal(freeProgramVerdict({ pct: 76, last4: 76, prev4: 95 }), "stop");
   // ร่วงพอดี 10 จุด ยังไม่ถือว่าร่วง
-  assert.equal(freeProgramVerdict({ pct: 88, last4: 85, prev4: 95 }), "open");
+  assert.equal(freeProgramVerdict({ pct: 85, last4: 85, prev4: 95 }), "open");
 });
 
 test("ด่านสอง 0–2 วัน: ประวัติผ่านแต่ 3 วันนี้แน่น → พักก่อน, ประวัติไม่ผ่านไม่ต้องดูด่านสอง", () => {
@@ -57,11 +57,11 @@ test("ด่านสอง 0–2 วัน: ประวัติผ่าน�
   assert.equal(freeProgramVerdictNow({ verdict: "stop", nowPct: 100 }), "stop");
 });
 
-test("ช่วงประวัติ = 8 สัปดาห์ที่จบแล้ว (ไม่รวมวันนี้) และด่านสอง = วันนี้ถึงมะรืน", () => {
+test("ฐานพยากรณ์ = 4 สัปดาห์ที่จบแล้ว (ไม่รวมวันนี้), พยากรณ์ 7 วัน วันนี้ถึง +6", () => {
   const r = computeFreeProgramReadiness({ rooms: [bed("r1", "b1")], roomSchedules: [], queues: [], procedures, today });
-  assert.equal(r.from, "2026-07-27");
+  assert.equal(r.from, "2026-08-24");
   assert.equal(r.to, "2026-09-20");
-  assert.equal(r.aheadTo, "2026-09-23");
+  assert.deepEqual(r.forecastDates, ["2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27"]);
   const row = r.rows[0];
   assert.equal(row.beds, 1);
   assert.equal(row.pct, 100);
@@ -70,9 +70,38 @@ test("ช่วงประวัติ = 8 สัปดาห์ที่จบ
   assert.equal(row.verdictNow, "open");
   // ช่วง 13:00–17:00 = 48 block = 12 ช่อง 20 นาที ต่อเตียงต่อวัน
   assert.equal(row.avgSlots, 12);
+  // รายวัน: จ–ศ คาด 12 ช่อง, เสาร์–อาทิตย์ไม่แนะนำ = null
+  assert.deepEqual(row.forecast.map((f) => f.slots), [12, 12, 12, 12, 12, null, null]);
+  assert.deepEqual(row.forecast.map((f) => f.source), ["actual", "actual", "actual", "forecast", "forecast", "weekend", "weekend"]);
 });
 
-test("ประวัติดูเฉพาะจันทร์–ศุกร์: จองเต็มเสาร์–อาทิตย์ทุกสัปดาห์ต้องไม่กระทบ %", () => {
+test("พยากรณ์รายวันใช้ 'วันเดียวกันของสัปดาห์' — วันพฤหัสแน่นทุกสัปดาห์ต้องเห็นเฉพาะช่องพฤหัส", () => {
+  // จองเต็มทุกวันพฤหัสของ 4 สัปดาห์ฐาน (27 ส.ค., 3, 10, 17 ก.ย.) และ 4 สัปดาห์ก่อนหน้าด้วย
+  // (ไม่งั้นแนวโน้มจะ "ร่วง" จาก 100 → 80 แล้วกลายเป็นไม่ควรทำ ซึ่งเป็นกติกาที่ถูกต้อง แต่ไม่ใช่สิ่งที่เทสต์นี้วัด)
+  const queues = ["2026-07-30", "2026-08-06", "2026-08-13", "2026-08-20", "2026-08-27", "2026-09-03", "2026-09-10", "2026-09-17"].map((d) => fullBooking("r1", d));
+  const r = computeFreeProgramReadiness({ rooms: [bed("r1", "b1")], roomSchedules: [], queues, procedures, today });
+  const f = r.rows[0].forecast;
+  assert.equal(f[3].date, "2026-09-24"); // พฤหัส
+  assert.equal(f[3].pct, 0);
+  assert.equal(f[3].slots, 0);
+  assert.equal(f[4].pct, 100); // ศุกร์ไม่กระทบ
+  // ฐานรวม จ–ศ = 4 วันเต็มจาก 20 วัน → ว่าง 80% = เปิดจำกัด (แนวโน้ม 80 → 80 ไม่ร่วง)
+  assert.equal(r.rows[0].pct, 80);
+  assert.equal(r.rows[0].prev4, 80);
+  assert.equal(r.rows[0].verdict, "limited");
+});
+
+test("วันนี้–มะรืน: คิวจริงเข้ามาแล้วครึ่งหนึ่ง → ใช้ค่าที่ต่ำกว่าระหว่างคิวจริงกับค่าเฉลี่ยวันเดียวกัน", () => {
+  // จอง 13:00–15:00 ของพรุ่งนี้ (อังคาร) เหลือ 6 ช่อง แม้ค่าเฉลี่ยวันอังคารจะว่าง 12
+  const queues = [{ roomId: "r1", date: "2026-09-22", timeBlock: 156, durationBlocks: 24, procedureId: DIODE.id, status: "pending" }];
+  const r = computeFreeProgramReadiness({ rooms: [bed("r1", "b1")], roomSchedules: [], queues, procedures, today });
+  const f = r.rows[0].forecast[1];
+  assert.equal(f.source, "actual");
+  assert.equal(f.pct, 50);
+  assert.equal(f.slots, 6);
+});
+
+test("ฐานดูเฉพาะจันทร์–ศุกร์: จองเต็มเสาร์–อาทิตย์ทุกสัปดาห์ต้องไม่กระทบ %", () => {
   const queues = [];
   for (let d = 0; d < 56; d++) {
     const date = new Date(2026, 6, 27 + d);
@@ -131,6 +160,7 @@ test("แยกรายสาขา และรวมทุกเตียง�
   const b1 = r.rows.find((x) => x.branchId === "b1");
   assert.equal(b1.beds, 2);
   assert.equal(b1.avgSlots, 24);
+  assert.equal(b1.forecast[0].slots, 24);
   assert.equal(r.rows.find((x) => x.branchId === "b2").beds, 1);
 });
 
@@ -152,6 +182,11 @@ test("ไม่มีหัตถการทรีตเมนต์ในร�
 test("ตารางความพร้อมโชว์เฉพาะตอนเลือกเตียงทรีตเมนต์ และคำนวณเฉพาะตอนนั้น", () => {
   assert.match(page, /effectiveTypeFilter === "treatment"\s*\? computeFreeProgramReadiness\(/);
   assert.match(page, /\{readiness && \(\s*<FreeProgramReadiness/);
+});
+
+test("ตารางโชว์คอลัมน์รายวันเฉพาะจันทร์–ศุกร์ และแยกป้าย 'จริง' (0–2 วัน) กับ 'คาด'", () => {
+  assert.match(page, /\.filter\(\(c\) => c\.dow !== 0 && c\.dow !== 6\)/);
+  assert.match(page, /c\.i < FREE_PROGRAM_AHEAD_DAYS \? "จริง" : "คาด"/);
 });
 
 test("ป้ายคำตัดสินครบ 5 แบบ และมีคำเตือนห้ามเสาร์–อาทิตย์/หลัง 17:00", () => {
