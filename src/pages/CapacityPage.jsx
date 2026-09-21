@@ -156,7 +156,63 @@ function quotaFor(verdictNow, slots) {
   return null;
 }
 
+const THAI_MONTH_SHORT = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+// "Class ยูเนี่ยนมอลล์ลาดพร้าว" → "ยูเนี่ยนมอลล์ลาดพร้าว" — ทุกสาขาขึ้นต้นเหมือนกัน ใส่ไปก็เปลืองที่บนจอมือถือ
+const shortBranchName = (name) => String(name || "").replace(/^Class\s+/i, "");
+
+// หน้าเต็มจอแบบกระชับสำหรับแคปส่งทีม — เจ้าของขอ (21 ก.ย. 2569): "ดูในมือถือหน้าจอเดียว แคปบอกทีมว่า
+// วีคนี้รอบฟรีแค่สาขาตามนี้นะ" จึงตัดทุกอย่างที่ไม่ใช่คำตอบออก: เหลือชื่อสาขา + โควตา/วัน แบ่งกลุ่ม
+// ไม่มี % ไม่มีแนวโน้ม ไม่มีรายวัน (ของพวกนั้นอยู่ในตารางละเอียดด้านหลัง)
+function FreeProgramShareCard({ rows, readiness, treatmentName, onClose }) {
+  const weekdays = readiness.forecastDates.filter((d) => { const dow = new Date(...d.split("-").map((v, k) => (k === 1 ? Number(v) - 1 : Number(v)))).getDay(); return dow !== 0 && dow !== 6; });
+  const fmt = (d) => { const [, m, day] = d.split("-").map(Number); return `${day} ${THAI_MONTH_SHORT[m - 1]}`; };
+  const rangeLabel = weekdays.length ? `${fmt(weekdays[0])} – ${fmt(weekdays[weekdays.length - 1])}` : "";
+  const groups = [
+    { key: "open", title: "🟢 เปิดรอบฟรีได้", rows: rows.filter((r) => r.verdictNow === "open") },
+    { key: "limited", title: "🟡 เปิดจำกัด", rows: rows.filter((r) => r.verdictNow === "limited") },
+    { key: "pause", title: "⏸️ พักรอบนี้ (3 วันนี้คิวแน่น)", rows: rows.filter((r) => r.verdictNow === "pause") },
+    { key: "stop", title: "🔴 งดรอบฟรี", rows: rows.filter((r) => r.verdictNow === "stop" || r.verdictNow === "no-data") },
+  ];
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 12, overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: "#fff", color: "#111827", borderRadius: 14, padding: "14px 16px", boxShadow: "0 8px 40px rgba(0,0,0,0.3)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.25 }}>🎁 รอบฟรี {treatmentName} สัปดาห์นี้</div>
+            <div style={{ fontSize: 12, color: "#4b5563", marginTop: 2 }}>จ–ศ {rangeLabel} · เฉพาะ 13:00–17:00 · โควตาต่อวัน</div>
+          </div>
+          <button onClick={onClose} title="ปิด" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "#6b7280", lineHeight: 1, padding: 2 }}>✕</button>
+        </div>
+        {groups.filter((g) => g.rows.length).map((g) => (
+          <div key={g.key} style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "#374151", marginBottom: 4 }}>{g.title} ({g.rows.length})</div>
+            {g.key === "open" || g.key === "limited" ? (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "3px 10px" }}>
+                {g.rows.map((r) => {
+                  const q = quotaFor(r.verdictNow, r.avgSlots);
+                  return (
+                    <div key={r.branchId} style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: 13, lineHeight: 1.35, borderBottom: "1px dashed #e5e7eb" }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortBranchName(r.name)}</span>
+                      <b style={{ whiteSpace: "nowrap" }}>{q === null ? "—" : `${q} คน`}</b>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: "#4b5563", lineHeight: 1.5 }}>{g.rows.map((r) => shortBranchName(r.name)).join(" · ")}</div>
+            )}
+          </div>
+        ))}
+        <div style={{ marginTop: 10, fontSize: 10, color: "#6b7280", lineHeight: 1.4 }}>
+          ห้ามเสาร์–อาทิตย์ และหลัง 17:00 · โควตา = ครึ่งหนึ่งของช่องว่างที่คาด (เปิดจำกัดไม่เกิน 5) · ช่วงที่เปิดฟรีถ้าว่างตกต่ำกว่า 60% ให้ลดโควตาลงครึ่งหนึ่ง
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FreeProgramReadiness({ readiness, branches, treatmentName }) {
+  const [shareOpen, setShareOpen] = useState(false);
   const rows = useMemo(() => {
     const nameOf = (id) => branches.find((b) => b.id === id)?.name || "-";
     return [...readiness.rows]
@@ -175,8 +231,15 @@ function FreeProgramReadiness({ readiness, branches, treatmentName }) {
 
   return (
     <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 14 }}>
+      {shareOpen && <FreeProgramShareCard rows={rows} readiness={readiness} treatmentName={treatmentName} onClose={() => setShareOpen(false)} />}
       <div className="card-header" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <h3 style={{ margin: 0 }}>🎁 โปรแกรมฟรี {treatmentName} — คาดว่าสัปดาห์นี้จะเหลือช่องว่างเท่าไหร่</h3>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <h3 style={{ margin: 0 }}>🎁 โปรแกรมฟรี {treatmentName} — คาดว่าสัปดาห์นี้จะเหลือช่องว่างเท่าไหร่</h3>
+          <button onClick={() => setShareOpen(true)} title="เปิดสรุปสั้น ๆ เต็มจอ สำหรับแคปหน้าจอส่งทีม" style={{
+            padding: "6px 12px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700,
+            border: "1.5px solid var(--accent)", background: "var(--accent-soft, rgba(0,0,0,0.05))", color: "var(--accent)",
+          }}>📱 แคปส่งทีม</button>
+        </div>
         <div style={{ fontSize: 11, color: "var(--text3)", lineHeight: 1.5 }}>
           ตัวเลขรายวัน = จำนวนช่อง 20 นาทีที่คาดว่าจะว่างบนเตียงที่รับ{treatmentName}ได้ ช่วง 13:00–17:00 (รวมทุกเตียงของสาขา)
           {" "}· วันนี้–มะรืน ใช้คิวที่จองแล้วจริง ("จริง") · วันถัดไปประมาณจากวันเดียวกันของ {FREE_PROGRAM_LOOKBACK_WEEKS} สัปดาห์ก่อน ({fd}/{fm}–{td}/{tm}) เพราะลูกค้าจองล่วงหน้าแค่ 0–2 วัน ตารางข้างหน้าจึงยังว่างหลอกอยู่

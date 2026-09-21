@@ -189,6 +189,15 @@ test("ตารางโชว์คอลัมน์รายวันเฉ�
   assert.match(page, /c\.i < FREE_PROGRAM_AHEAD_DAYS \? "จริง" : "คาด"/);
 });
 
+test("มีปุ่ม 'แคปส่งทีม' เปิดสรุปเต็มจอที่เหลือแค่ชื่อสาขา + โควตา แบ่งกลุ่ม (เจ้าของขอให้จบในจอมือถือจอเดียว)", () => {
+  assert.match(page, /📱 แคปส่งทีม/);
+  assert.match(page, /function FreeProgramShareCard\(/);
+  // กลุ่ม stop กับ no-data รวมเป็น "งดรอบฟรี" — ทีมไม่ต้องรู้ว่าเพราะข้อมูลไม่พอหรือเพราะแน่น แค่รู้ว่าไม่เปิด
+  assert.match(page, /r\.verdictNow === "stop" \|\| r\.verdictNow === "no-data"/);
+  // ตัดคำว่า Class นำหน้าออก ประหยัดที่บนจอมือถือ
+  assert.match(page, /replace\(\/\^Class\\s\+\/i, ""\)/);
+});
+
 test("ป้ายคำตัดสินครบ 5 แบบ และมีคำเตือนห้ามเสาร์–อาทิตย์/หลัง 17:00", () => {
   for (const k of ["open:", "limited:", "pause:", "stop:", '"no-data":']) assert.ok(page.includes(k), `missing ${k}`);
   assert.match(page, /ห้ามเสาร์–อาทิตย์ และหลัง 17:00 ทุกสาขา/);
