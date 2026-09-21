@@ -10,14 +10,14 @@ import { readFileSync } from "node:fs";
 
 const page = readFileSync(new URL("../src/pages/CapacityPage.jsx", import.meta.url), "utf8");
 
-test("มีปุ่มเลือกประเภทห้อง ครบ ทั้งหมด/ห้องฉีด/ห้องเครื่อง (+เตียงทรีตเมนต์เมื่อมีหัตถการนี้)", () => {
-  assert.match(page, /\[\["all", "ทั้งหมด"\], \["M", "ห้องฉีด \(M\)"\], \["T", "ห้องเครื่อง \(T\)"\], \.\.\.\(treatmentAvailable \? \[\["treatment", "🎁 เตียงทรีตเมนต์"\]\] : \[\]\)\]/);
+test("มีปุ่มเลือกประเภทห้อง ครบ ทั้งหมด/ห้องฉีด/ห้องเครื่อง", () => {
+  assert.match(page, /\[\["all", "ทั้งหมด"\], \["M", "ห้องฉีด \(M\)"\], \["T", "ห้องเครื่อง \(T\)"\]\]/);
 });
 
 test("การเลือกประเภทต้องกรองที่ตัวห้อง ไม่ใช่แค่ซ่อนแถวในตาราง", () => {
   // ถ้ากรองแค่ตอนวาดตาราง ตัวเลขบนการ์ดด้านบนจะยังเป็นของสองประเภทรวมกัน อ่านขัดกันเอง
-  assert.match(page, /effectiveTypeFilter === "all" \|\| \(r\.type === "M" \? "M" : "T"\) === effectiveTypeFilter/);
-  assert.match(page, /\)\), \[rooms, filterBranch, effectiveTypeFilter, treatmentRoomIds\]\);/);
+  assert.match(page, /typeFilter === "all" \|\| \(r\.type === "M" \? "M" : "T"\) === typeFilter/);
+  assert.match(page, /\)\), \[rooms, filterBranch, typeFilter\]\);/);
 });
 
 test("ห้องที่ไม่ได้ตั้งประเภทต้องถูกนับเป็น T เหมือนฝั่งคำนวณ", () => {
@@ -40,10 +40,10 @@ test("คำแนะนำว่าฝั่งไหนว่างกว่�
 });
 
 test("เลือกประเภทเดียวอยู่ ต้องไม่โชว์การ์ดคู่และคำแนะนำที่เทียบสองฝั่ง", () => {
-  assert.match(page, /\{effectiveTypeFilter === "all" && \(\s*<TypeSplitCard/);
-  assert.match(page, /\{summary\.totals\.capacity > 0 && effectiveTypeFilter === "all" && \(/);
+  assert.match(page, /\{typeFilter === "all" && \(\s*<TypeSplitCard/);
+  assert.match(page, /\{summary\.totals\.capacity > 0 && typeFilter === "all" && \(/);
   // ปุ่มแยกสองแถวใช้ไม่ได้ถ้ากรองเหลือประเภทเดียว — ต้องปิดผลของมัน ไม่ใช่ปล่อยให้ตารางว่างครึ่งหนึ่ง
-  assert.match(page, /const splitRows = splitByType && effectiveTypeFilter === "all";/);
+  assert.match(page, /const splitRows = splitByType && typeFilter === "all";/);
 });
 
 test("ยังต้องมีโหมดแยกสองแถวของเดิมอยู่", () => {

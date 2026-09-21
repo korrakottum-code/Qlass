@@ -4,7 +4,7 @@ import { getTodayStr, formatThaiDate } from "../utils/helpers";
 import {
   computeCapacitySummary, listDates, daysUntilEndOfMonth,
   blocksToHours, freePercent, averageFreePercentByBranch, computeWeeklyPace, PACE_LOOKBACK_WEEKS,
-  findTreatmentProcedure, computeFreeProgramReadiness, FREE_PROGRAM_LOOKBACK_WEEKS, FREE_PROGRAM_THRESHOLDS, FREE_PROGRAM_AHEAD_DAYS,
+  findTreatmentProcedure, computeFreeProgramReadiness,
 } from "../utils/capacity";
 import { roomsForProcedure } from "../utils/roomProcedures";
 
@@ -133,18 +133,14 @@ function PaceStrip({ weeklyPace }) {
   );
 }
 
-// "โปรแกรมฟรีทรีตเมนต์" — คาดว่าสัปดาห์หน้าเตียงทรีตเมนต์จะว่างเท่าไหร่ กติกาอยู่ที่ computeFreeProgramReadiness (capacity.js)
-// เจตนา: เจ้าของงานเปิดหน้านี้ทุกสัปดาห์แล้วตัดสินได้เลยว่าสาขาไหนเปิดโปรฟรีได้ วันไหน กี่คน ไม่ต้องดึงข้อมูลดิบ
-const READINESS_STYLE = {
-  open: { emoji: "🟢", label: "เปิดได้", bg: "#dcfce7", fg: "#166534" },
-  limited: { emoji: "🟡", label: "เปิดจำกัด 3–5 คน/วัน", bg: "#fef9c3", fg: "#854d0e" },
-  pause: { emoji: "⏸️", label: "พักก่อน 3 วันนี้แน่น", bg: "#ffedd5", fg: "#9a3412" },
-  stop: { emoji: "🔴", label: "ไม่ควรทำ", bg: "#fecaca", fg: "#991b1b" },
-  "no-data": { emoji: "🆕", label: "ไม่มีข้อมูล", bg: "var(--surface3)", fg: "var(--text3)" },
-};
-const READINESS_ORDER = { open: 0, limited: 1, pause: 2, stop: 3, "no-data": 4 };
-
-function pctText(v) { return v === null || v === undefined ? "—" : `${v}%`; }
+// 🎁 รอบฟรีทรีตเมนต์สัปดาห์นี้ — การ์ดเดียว กระชับ แคปจากมือถือส่งทีมได้ในจอเดียว
+// เจ้าของยืนยัน (21 ก.ย. 2569) ว่าต้องการ "แค่ภาพนี้": ชื่อสาขา + โควตา/วัน แบ่งกลุ่ม ไม่เอาตัวกรอง/ตารางละเอียดเพิ่ม
+// กติกาและการคำนวณอยู่ที่ computeFreeProgramReadiness (capacity.js) — ทรีตเมนต์ลงได้เฉพาะเตียงที่ล็อกให้รับ
+// Treatment, ฐาน = วันเดียวกันของ 4 สัปดาห์ก่อน (ตารางข้างหน้าว่างหลอกเพราะลูกค้าจอง 0–2 วันล่วงหน้า),
+// วันนี้–มะรืนใช้คิวจริงเป็นตัวเบรก ห้ามเสาร์–อาทิตย์และหลัง 17:00
+const THAI_MONTH_SHORT = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+// "Class ยูเนี่ยนมอลล์ลาดพร้าว" → "ยูเนี่ยนมอลล์ลาดพร้าว" — ทุกสาขาขึ้นต้นเหมือนกัน ใส่ไปก็เปลืองที่บนจอมือถือ
+const shortBranchName = (name) => String(name || "").replace(/^Class\s+/i, "");
 
 // โควตาฟรีต่อวันจากช่องว่างที่คาดไว้: เปิดได้ = ครึ่งหนึ่ง (เหลือที่ให้ลูกค้าจ่ายเงินที่จองกระชั้นชิด),
 // เปิดจำกัด = ไม่เกิน 5 และไม่เกินครึ่งหนึ่ง, อย่างอื่น = ไม่เปิด
@@ -156,14 +152,11 @@ function quotaFor(verdictNow, slots) {
   return null;
 }
 
-const THAI_MONTH_SHORT = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-// "Class ยูเนี่ยนมอลล์ลาดพร้าว" → "ยูเนี่ยนมอลล์ลาดพร้าว" — ทุกสาขาขึ้นต้นเหมือนกัน ใส่ไปก็เปลืองที่บนจอมือถือ
-const shortBranchName = (name) => String(name || "").replace(/^Class\s+/i, "");
-
-// หน้าเต็มจอแบบกระชับสำหรับแคปส่งทีม — เจ้าของขอ (21 ก.ย. 2569): "ดูในมือถือหน้าจอเดียว แคปบอกทีมว่า
-// วีคนี้รอบฟรีแค่สาขาตามนี้นะ" จึงตัดทุกอย่างที่ไม่ใช่คำตอบออก: เหลือชื่อสาขา + โควตา/วัน แบ่งกลุ่ม
-// ไม่มี % ไม่มีแนวโน้ม ไม่มีรายวัน (ของพวกนั้นอยู่ในตารางละเอียดด้านหลัง)
-function FreeProgramShareCard({ rows, readiness, treatmentName, onClose }) {
+function FreeProgramWeekCard({ readiness, branches, treatmentName }) {
+  const rows = useMemo(() => {
+    const nameOf = (id) => branches.find((b) => b.id === id)?.name || "-";
+    return readiness.rows.map((r) => ({ ...r, name: nameOf(r.branchId) })).sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1));
+  }, [readiness, branches]);
   const weekdays = readiness.forecastDates.filter((d) => { const dow = new Date(...d.split("-").map((v, k) => (k === 1 ? Number(v) - 1 : Number(v)))).getDay(); return dow !== 0 && dow !== 6; });
   const fmt = (d) => { const [, m, day] = d.split("-").map(Number); return `${day} ${THAI_MONTH_SHORT[m - 1]}`; };
   const rangeLabel = weekdays.length ? `${fmt(weekdays[0])} – ${fmt(weekdays[weekdays.length - 1])}` : "";
@@ -171,149 +164,37 @@ function FreeProgramShareCard({ rows, readiness, treatmentName, onClose }) {
     { key: "open", title: "🟢 เปิดรอบฟรีได้", rows: rows.filter((r) => r.verdictNow === "open") },
     { key: "limited", title: "🟡 เปิดจำกัด", rows: rows.filter((r) => r.verdictNow === "limited") },
     { key: "pause", title: "⏸️ พักรอบนี้ (3 วันนี้คิวแน่น)", rows: rows.filter((r) => r.verdictNow === "pause") },
+    // stop กับ no-data รวมเป็น "งดรอบฟรี" — ทีมไม่ต้องรู้ว่าเพราะข้อมูลไม่พอหรือเพราะแน่น แค่รู้ว่าไม่เปิด
     { key: "stop", title: "🔴 งดรอบฟรี", rows: rows.filter((r) => r.verdictNow === "stop" || r.verdictNow === "no-data") },
   ];
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 12, overflowY: "auto" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: "#fff", color: "#111827", borderRadius: 14, padding: "14px 16px", boxShadow: "0 8px 40px rgba(0,0,0,0.3)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-          <div>
-            <div style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.25 }}>🎁 รอบฟรี {treatmentName} สัปดาห์นี้</div>
-            <div style={{ fontSize: 12, color: "#4b5563", marginTop: 2 }}>จ–ศ {rangeLabel} · เฉพาะ 13:00–17:00 · โควตาต่อวัน</div>
-          </div>
-          <button onClick={onClose} title="ปิด" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "#6b7280", lineHeight: 1, padding: 2 }}>✕</button>
-        </div>
-        {groups.filter((g) => g.rows.length).map((g) => (
-          <div key={g.key} style={{ marginTop: 10 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: "#374151", marginBottom: 4 }}>{g.title} ({g.rows.length})</div>
-            {g.key === "open" || g.key === "limited" ? (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "3px 10px" }}>
-                {g.rows.map((r) => {
-                  const q = quotaFor(r.verdictNow, r.avgSlots);
-                  return (
-                    <div key={r.branchId} style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: 13, lineHeight: 1.35, borderBottom: "1px dashed #e5e7eb" }}>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortBranchName(r.name)}</span>
-                      <b style={{ whiteSpace: "nowrap" }}>{q === null ? "—" : `${q} คน`}</b>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div style={{ fontSize: 12, color: "#4b5563", lineHeight: 1.5 }}>{g.rows.map((r) => shortBranchName(r.name)).join(" · ")}</div>
-            )}
-          </div>
-        ))}
-        <div style={{ marginTop: 10, fontSize: 10, color: "#6b7280", lineHeight: 1.4 }}>
-          ห้ามเสาร์–อาทิตย์ และหลัง 17:00 · โควตา = ครึ่งหนึ่งของช่องว่างที่คาด (เปิดจำกัดไม่เกิน 5) · ช่วงที่เปิดฟรีถ้าว่างตกต่ำกว่า 60% ให้ลดโควตาลงครึ่งหนึ่ง
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function FreeProgramReadiness({ readiness, branches, treatmentName }) {
-  const [shareOpen, setShareOpen] = useState(false);
-  const rows = useMemo(() => {
-    const nameOf = (id) => branches.find((b) => b.id === id)?.name || "-";
-    return [...readiness.rows]
-      .map((r) => ({ ...r, name: nameOf(r.branchId) }))
-      .sort((a, b) => (READINESS_ORDER[a.verdictNow] - READINESS_ORDER[b.verdictNow]) || ((b.pct ?? -1) - (a.pct ?? -1)));
-  }, [readiness, branches]);
-  const [, fm, fd] = readiness.from.split("-");
-  const [, tm, td] = readiness.to.split("-");
-  const th = { padding: "6px 8px", fontSize: 11, color: "var(--text3)", textAlign: "left", borderBottom: "2px solid var(--border2)", background: "var(--surface2)", whiteSpace: "nowrap" };
-  const td_ = { padding: "6px 8px", fontSize: 12, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" };
-  const counts = rows.reduce((acc, r) => { acc[r.verdictNow] = (acc[r.verdictNow] || 0) + 1; return acc; }, {});
-  // คอลัมน์รายวัน: วันนี้ถึง +6 เฉพาะจันทร์–ศุกร์ (เสาร์–อาทิตย์ไม่แนะนำให้เปิดอยู่แล้ว ไม่ต้องเปลืองที่)
-  const dayCols = readiness.forecastDates
-    .map((date, i) => ({ date, i, dow: new Date(...date.split("-").map(Number).map((v, k) => (k === 1 ? v - 1 : v))).getDay() }))
-    .filter((c) => c.dow !== 0 && c.dow !== 6);
-
-  return (
-    <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 14 }}>
-      {shareOpen && <FreeProgramShareCard rows={rows} readiness={readiness} treatmentName={treatmentName} onClose={() => setShareOpen(false)} />}
-      <div className="card-header" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <h3 style={{ margin: 0 }}>🎁 โปรแกรมฟรี {treatmentName} — คาดว่าสัปดาห์นี้จะเหลือช่องว่างเท่าไหร่</h3>
-          <button onClick={() => setShareOpen(true)} title="เปิดสรุปสั้น ๆ เต็มจอ สำหรับแคปหน้าจอส่งทีม" style={{
-            padding: "6px 12px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700,
-            border: "1.5px solid var(--accent)", background: "var(--accent-soft, rgba(0,0,0,0.05))", color: "var(--accent)",
-          }}>📱 แคปส่งทีม</button>
-        </div>
-        <div style={{ fontSize: 11, color: "var(--text3)", lineHeight: 1.5 }}>
-          ตัวเลขรายวัน = จำนวนช่อง 20 นาทีที่คาดว่าจะว่างบนเตียงที่รับ{treatmentName}ได้ ช่วง 13:00–17:00 (รวมทุกเตียงของสาขา)
-          {" "}· วันนี้–มะรืน ใช้คิวที่จองแล้วจริง ("จริง") · วันถัดไปประมาณจากวันเดียวกันของ {FREE_PROGRAM_LOOKBACK_WEEKS} สัปดาห์ก่อน ({fd}/{fm}–{td}/{tm}) เพราะลูกค้าจองล่วงหน้าแค่ 0–2 วัน ตารางข้างหน้าจึงยังว่างหลอกอยู่
-          {" "}· คำแนะนำ: คาดว่าว่าง ≥{FREE_PROGRAM_THRESHOLDS.open}% เปิดได้ (โควตาครึ่งหนึ่งของช่องว่าง) · {FREE_PROGRAM_THRESHOLDS.limited}–{FREE_PROGRAM_THRESHOLDS.open - 1}% เปิดจำกัด
-          {" "}· ต่ำกว่า {FREE_PROGRAM_THRESHOLDS.limited}% หรือร่วงเกิน {FREE_PROGRAM_THRESHOLDS.dropPoints} จุดจาก 4 สัปดาห์ก่อนหน้า ไม่ควรทำ · 3 วันนี้คิวจริงแน่น พักก่อน · ห้ามเสาร์–อาทิตย์ และหลัง 17:00 ทุกสาขา
-        </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
-          {Object.entries(READINESS_STYLE).filter(([k]) => counts[k]).map(([k, st]) => (
-            <span key={k} style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: st.bg, color: st.fg }}>
-              {st.emoji} {st.label}: {counts[k]}
-            </span>
-          ))}
-        </div>
-      </div>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
-          <thead>
-            <tr>
-              <th style={{ ...th, position: "sticky", left: 0, zIndex: 2 }}>สาขา / คำแนะนำ</th>
-              <th style={{ ...th, textAlign: "right" }}>เตียง</th>
-              <th style={{ ...th, textAlign: "right" }} title="% ว่างเฉลี่ย จ–ศ 13:00–17:00 ของ 4 สัปดาห์ล่าสุด — ตัวตัดสินหลัก">คาดว่าว่าง</th>
-              <th style={{ ...th, textAlign: "right" }} title="4 สัปดาห์ก่อนหน้า → 4 สัปดาห์ล่าสุด — ร่วงเกิน 10 จุด = ไม่ควรทำ">แนวโน้ม</th>
-              <th style={{ ...th, textAlign: "right" }} title="โควตาฟรีต่อวันโดยเฉลี่ย: เปิดได้ = ครึ่งหนึ่งของช่องว่าง · เปิดจำกัด = ไม่เกิน 5">โควตาฟรี/วัน</th>
-              {dayCols.map((c) => {
-                const [, m, d] = c.date.split("-");
+    <div className="card" style={{ padding: "14px 16px", marginBottom: 14 }}>
+      <div style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.25 }}>🎁 รอบฟรี {treatmentName} สัปดาห์นี้</div>
+      <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 2 }}>จ–ศ {rangeLabel} · เฉพาะ 13:00–17:00 · โควตาต่อวัน</div>
+      {groups.filter((g) => g.rows.length).map((g) => (
+        <div key={g.key} style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text2)", marginBottom: 4 }}>{g.title} ({g.rows.length})</div>
+          {g.key === "open" || g.key === "limited" ? (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "3px 10px" }}>
+              {g.rows.map((r) => {
+                const q = quotaFor(r.verdictNow, r.avgSlots);
                 return (
-                  <th key={c.date} style={{ ...th, textAlign: "center", background: c.i === 0 ? "var(--surface3)" : th.background }}
-                    title={c.i < FREE_PROGRAM_AHEAD_DAYS ? "ใช้คิวที่จองแล้วจริง" : "ประมาณจากวันเดียวกัน 4 สัปดาห์ก่อน"}>
-                    {THAI_DOW[c.dow]} {d}/{m}<br />
-                    <span style={{ fontWeight: 400 }}>{c.i < FREE_PROGRAM_AHEAD_DAYS ? "จริง" : "คาด"}</span>
-                  </th>
+                  <div key={r.branchId} title={`คาดว่าว่าง ${r.pct ?? "—"}% · ช่องว่างเฉลี่ย ${r.avgSlots ?? "—"} ช่อง/วัน`}
+                    style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: 13, lineHeight: 1.35, borderBottom: "1px dashed var(--border)" }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortBranchName(r.name)}</span>
+                    <b style={{ whiteSpace: "nowrap" }}>{q === null ? "—" : `${q} คน`}</b>
+                  </div>
                 );
               })}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const st = READINESS_STYLE[r.verdictNow];
-              const trend = r.prev4 !== null && r.last4 !== null ? r.last4 - r.prev4 : null;
-              const dropped = trend !== null && trend < -FREE_PROGRAM_THRESHOLDS.dropPoints;
-              const quota = quotaFor(r.verdictNow, r.avgSlots);
-              return (
-                <tr key={r.branchId}>
-                  {/* ชื่อ + ป้ายคำแนะนำอยู่ในคอลัมน์ที่ตรึงไว้ด้วยกัน — เลื่อนตารางไปดูรายวันแล้วยังเห็นคำตอบเสมอ */}
-                  <td style={{ ...td_, position: "sticky", left: 0, zIndex: 1, background: "var(--surface)", borderRight: "2px solid var(--border2)", maxWidth: 190 }}>
-                    <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</div>
-                    <span style={{ display: "inline-block", marginTop: 2, fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 999, background: st.bg, color: st.fg }}>{st.emoji} {st.label}</span>
-                  </td>
-                  <td style={{ ...td_, textAlign: "right" }}>{r.beds}</td>
-                  <td style={{ ...td_, textAlign: "right", fontWeight: 800, color: "#1f2937", background: freeColor(r.pct) }}>{pctText(r.pct)}</td>
-                  <td style={{ ...td_, textAlign: "right", color: dropped ? "var(--red, #b91c1c)" : "var(--text2)" }}>
-                    {pctText(r.prev4)} → {pctText(r.last4)}{dropped ? " ⚠️" : ""}
-                  </td>
-                  <td style={{ ...td_, textAlign: "right", fontWeight: 700 }}>{quota === null ? "—" : `${quota} คน`}</td>
-                  {dayCols.map((c) => {
-                    const f = r.forecast[c.i];
-                    const dayQuota = quotaFor(r.verdictNow, f.slots);
-                    const title = f.pct === null ? "ไม่มีเตียงเปิด/ไม่มีข้อมูล"
-                      : `${f.source === "actual" ? "คิวจริง" : "คาด"}: ว่าง ${f.pct}% · ${f.slots} ช่อง 20 นาที${dayQuota !== null ? ` · เปิดฟรีได้ ~${dayQuota} คน` : ""}`;
-                    return (
-                      <td key={c.date} title={title} style={{ ...td_, textAlign: "center", fontWeight: 700, color: "#1f2937", background: freeColor(f.pct) }}>
-                        {f.slots === null ? "—" : f.slots}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      <div style={{ padding: "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", fontSize: 11, color: "var(--text2)" }}>
-        สีในช่องรายวัน = % ที่คาดว่าจะว่าง (แดง แน่น → เขียว ว่าง) ตัวเลข = ช่อง 20 นาที · ระบบนับเฉพาะคิวที่ลงในตารางห้อง ถ้าหน้าร้านรับลูกค้าเดินเข้าโดยไม่ลงคิว ความว่างจริงจะน้อยกว่านี้
-        {" "}· สัญญาณว่าโปรฟรีเริ่มกินลูกค้าจ่ายเงิน: ว่างช่วงที่เปิดฟรีตกต่ำกว่า 60% ให้ลดโควตาลงครึ่งหนึ่งก่อน
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.5 }}>{g.rows.map((r) => shortBranchName(r.name)).join(" · ")}</div>
+          )}
+        </div>
+      ))}
+      <div style={{ marginTop: 10, fontSize: 10, color: "var(--text3)", lineHeight: 1.4 }}>
+        ห้ามเสาร์–อาทิตย์ และหลัง 17:00 · โควตา = ครึ่งหนึ่งของช่องว่างที่คาด (เปิดจำกัดไม่เกิน 5) · ช่วงที่เปิดฟรีถ้าว่างตกต่ำกว่า 60% ให้ลดโควตาลงครึ่งหนึ่ง
+        {" "}· นับเฉพาะเตียงที่รับ{treatmentName}ได้ เทียบวันเดียวกันของ 4 สัปดาห์ก่อน + คิวจริงวันนี้–มะรืน
       </div>
     </div>
   );
@@ -325,8 +206,6 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
   const [splitByType, setSplitByType] = useState(false);
   // "ทั้งหมด" = รวมสองประเภทเข้าด้วยกันเหมือนเดิม, "M"/"T" = ดูประเภทเดียวทั้งหน้า
   // (ตัวเลขบนการ์ด ตารางด้านล่าง และคำแนะนำ เปลี่ยนตามทั้งหมด ไม่ใช่แค่ตาราง)
-  // "treatment" = เฉพาะเตียงในห้องเครื่องที่ล็อกให้รับทรีตเมนต์ (เตียง Hifu/Pico ทำทรีตเมนต์ไม่ได้
-  // ตัวเลข T รวมจึงว่างเกินจริงสำหรับคำถาม "เปิดโปรฟรีทรีตเมนต์ได้ไหม")
   const [typeFilter, setTypeFilter] = useState("all");
   const [selected, setSelected] = useState(null); // { branchId, date }
 
@@ -337,30 +216,22 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
     range === "7d" ? listDates(today, 7) : listDates(today, daysUntilEndOfMonth(today))
   ), [range, today]);
 
-  // เตียงที่รับทรีตเมนต์ได้ — ผ่านกติกาล็อกเตียงตัวเดียวกับหน้าลงคิว (เตียงที่ยังไม่ตั้งค่า = ทุกเตียง T)
-  const treatmentProcedure = useMemo(() => findTreatmentProcedure(procedures), [procedures]);
-  const treatmentRoomIds = useMemo(() => new Set(
-    treatmentProcedure ? roomsForProcedure(roomProcedureIndex, rooms, treatmentProcedure).map((r) => r.id) : []
-  ), [roomProcedureIndex, rooms, treatmentProcedure]);
-  // ไม่มีหัตถการทรีตเมนต์ในระบบ (เช่นสภาพแวดล้อมเดโม) → ไม่โชว์ปุ่ม และถ้าค้างสถานะไว้ให้ถอยไป "ทั้งหมด"
-  const treatmentAvailable = !!treatmentProcedure;
-  const effectiveTypeFilter = typeFilter === "treatment" && !treatmentAvailable ? "all" : typeFilter;
-
   const visibleRooms = useMemo(() => rooms.filter((r) => (
     (filterBranch === "all" || r.branchId === filterBranch)
     // ห้องที่ไม่ได้ตั้งประเภทไว้ ถูกนับเป็น T ที่ computeCapacitySummary — ต้องใช้กติกาเดียวกันตรงนี้
     // ไม่งั้นตัวหารบนการ์ดกับตัวเลขในตารางจะคนละชุด
-    && (effectiveTypeFilter === "treatment"
-      ? treatmentRoomIds.has(r.id)
-      : (effectiveTypeFilter === "all" || (r.type === "M" ? "M" : "T") === effectiveTypeFilter))
-  )), [rooms, filterBranch, effectiveTypeFilter, treatmentRoomIds]);
+    && (typeFilter === "all" || (r.type === "M" ? "M" : "T") === typeFilter)
+  )), [rooms, filterBranch, typeFilter]);
 
-  // ความพร้อมโปรฟรี — คำนวณเฉพาะตอนเลือกดูเตียงทรีตเมนต์ (ต้องไล่ 8 สัปดาห์ × ทุกเตียง ไม่ทำเปล่า ๆ)
-  const readiness = useMemo(() => (
-    effectiveTypeFilter === "treatment"
-      ? computeFreeProgramReadiness({ rooms: visibleRooms, roomSchedules, queues, procedures, today })
-      : null
-  ), [effectiveTypeFilter, visibleRooms, roomSchedules, queues, procedures, today]);
+  // รอบฟรีทรีตเมนต์สัปดาห์นี้ — ภาพรวมทุกสาขาที่ผู้ใช้เห็นเสมอ ไม่ผูกกับตัวกรองด้านล่าง (เหมือนแถบ "เทียบกับปกติ")
+  // เตียงที่รับทรีตเมนต์ได้หาผ่านกติกาล็อกเตียงตัวเดียวกับหน้าลงคิว (เตียงที่ยังไม่ตั้งค่า = ทุกเตียง T)
+  // ไม่มีหัตถการทรีตเมนต์ในระบบ (เช่นสภาพแวดล้อมเดโม) → ไม่โชว์การ์ด
+  const treatmentProcedure = useMemo(() => findTreatmentProcedure(procedures), [procedures]);
+  const readiness = useMemo(() => {
+    if (!treatmentProcedure) return null;
+    const beds = roomsForProcedure(roomProcedureIndex, rooms, treatmentProcedure);
+    return computeFreeProgramReadiness({ rooms: beds, roomSchedules, queues, procedures, today });
+  }, [treatmentProcedure, roomProcedureIndex, rooms, roomSchedules, queues, procedures, today]);
 
   const summary = useMemo(() => computeCapacitySummary({
     rooms: visibleRooms, roomSchedules, queues, procedures, dates,
@@ -386,9 +257,9 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
   }, [branches, filterBranch, summary, branchAverages, sortDir]);
 
   // เลือกดูประเภทเดียวอยู่แล้ว การแยกสองแถวไม่มีความหมาย — ปิดไว้เงียบ ๆ ไม่ต้องล้างสถานะปุ่ม
-  const splitRows = splitByType && effectiveTypeFilter === "all";
+  const splitRows = splitByType && typeFilter === "all";
   // บนจอมือถือการ์ดแคบมาก ป้ายยาวจะถูกตัดท้าย — ใช้คำสั้นที่ยังบอกได้ว่ากำลังดูห้องประเภทไหนอยู่
-  const typeShortLabel = effectiveTypeFilter === "M" ? "ห้องฉีด" : effectiveTypeFilter === "T" ? "ห้องเครื่อง" : effectiveTypeFilter === "treatment" ? "เตียงทรีตเมนต์" : "ห้อง";
+  const typeShortLabel = typeFilter === "M" ? "ห้องฉีด" : typeFilter === "T" ? "ห้องเครื่อง" : "ห้อง";
   const totalPct = freePercent(summary.totals);
   // เทียบเป็น % ว่าง ไม่ใช่ชั่วโมงดิบ — ห้องเครื่องมีความจุมากกว่าห้องฉีดเกือบสองเท่า ถ้าเทียบชั่วโมง
   // ฝั่งที่ใหญ่กว่าจะชนะเกือบทุกครั้งทั้งที่อาจแน่นกว่าจริง คำแนะนำโปรจะชี้ผิดฝั่ง
@@ -403,6 +274,10 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
 
   return (
     <>
+      {readiness && (
+        <FreeProgramWeekCard readiness={readiness} branches={branches} treatmentName={treatmentProcedure.name} />
+      )}
+
       {/* Controls */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 14 }}>
         <div className="form-group" style={{ marginBottom: 0 }}>
@@ -430,19 +305,17 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label className="form-label">ประเภทห้อง</label>
           <div style={{ display: "flex", gap: 6 }}>
-            {[["all", "ทั้งหมด"], ["M", "ห้องฉีด (M)"], ["T", "ห้องเครื่อง (T)"], ...(treatmentAvailable ? [["treatment", "🎁 เตียงทรีตเมนต์"]] : [])].map(([v, l]) => (
-              <button key={v} onClick={() => { setTypeFilter(v); setSelected(null); }}
-                title={v === "treatment" ? "เฉพาะเตียงที่ล็อกให้รับทรีตเมนต์ (ไม่รวมเตียง Hifu/Pico) — ใช้ตัดสินว่าสาขาไหนเปิดโปรฟรีทรีตเมนต์ได้" : undefined}
-                style={{
+            {[["all", "ทั้งหมด"], ["M", "ห้องฉีด (M)"], ["T", "ห้องเครื่อง (T)"]].map(([v, l]) => (
+              <button key={v} onClick={() => { setTypeFilter(v); setSelected(null); }} style={{
                 padding: "7px 14px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700,
-                border: effectiveTypeFilter === v ? "1.5px solid var(--accent)" : "1.5px solid var(--border)",
-                background: effectiveTypeFilter === v ? "var(--accent-soft, rgba(0,0,0,0.05))" : "var(--surface2)",
-                color: effectiveTypeFilter === v ? "var(--accent)" : "var(--text2)",
+                border: typeFilter === v ? "1.5px solid var(--accent)" : "1.5px solid var(--border)",
+                background: typeFilter === v ? "var(--accent-soft, rgba(0,0,0,0.05))" : "var(--surface2)",
+                color: typeFilter === v ? "var(--accent)" : "var(--text2)",
               }}>{l}</button>
             ))}
           </div>
         </div>
-        {effectiveTypeFilter === "all" && (
+        {typeFilter === "all" && (
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">ตารางด้านล่าง</label>
             <button
@@ -473,10 +346,6 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
 
       <PaceStrip weeklyPace={weeklyPace} />
 
-      {readiness && (
-        <FreeProgramReadiness readiness={readiness} branches={branches} treatmentName={treatmentProcedure?.name || "ทรีตเมนต์"} />
-      )}
-
       {/* Stat cards — บังคับ 3 การ์ดแรกอยู่แถวเดียวกันเสมอด้วย grid (เดิม flex-wrap ทำให้การ์ดที่ 3
           ตกไปอยู่คนละบรรทัดบนจอแคบ) ส่วนการ์ด M/T แยกเป็นแถวของตัวเองด้านล่าง */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
@@ -488,7 +357,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
           <StatCard label="ยังว่าง (รับเพิ่มได้)" value={totalPct === null ? "—" : `${totalPct}%`} sub={`${blocksToHours(summary.totals.free).toLocaleString()} ชม.`} color="var(--green)" />
         </div>
         {/* เลือกดูประเภทเดียวอยู่ การ์ดคู่จะซ้ำกับการ์ด "ยังว่าง" ด้านบนเป๊ะ ๆ (อีกฝั่งเป็น 0 เสมอ) */}
-        {effectiveTypeFilter === "all" && (
+        {typeFilter === "all" && (
           <TypeSplitCard mCell={summary.totals.byType.M} tCell={summary.totals.byType.T} />
         )}
       </div>
@@ -496,7 +365,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
       {/* คำแนะนำฝั่งการตลาด — บอกแค่ว่าห้องประเภทไหนว่างกว่า ไม่แจงชื่อโปร (เดิมสุ่มเอา 6 โปรแรก
           ที่ตรงประเภทห้องมาโชว์ ไม่มีเกณฑ์คัดจริง ทำให้ดูเหมือนระบบเลือกเอง — เอาออกดีกว่าใส่
           ข้อมูลที่อธิบายไม่ได้ว่าทำไมถูกเลือก) */}
-      {summary.totals.capacity > 0 && effectiveTypeFilter === "all" && (
+      {summary.totals.capacity > 0 && typeFilter === "all" && (
         <div style={{
           marginBottom: 14, padding: "10px 14px", borderRadius: 10, fontSize: 13,
           background: "var(--surface2)", border: "1px solid var(--border)",
@@ -642,7 +511,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
             background: `linear-gradient(to right, ${FREE_COLOR_STOPS.map((s) => `hsl(${s.h},${s.s}%,${s.l}%) ${s.pct}%`).join(", ")})`,
           }} />
           <span>ว่างมาก</span>
-          <span style={{ marginLeft: "auto" }}>กดช่องเพื่อดูรายละเอียดวัน/สาขานั้น · เลือก "ประเภทห้อง" ด้านบนเพื่อดูเฉพาะห้องฉีด (M) ห้องเครื่อง (T) หรือเตียงทรีตเมนต์</span>
+          <span style={{ marginLeft: "auto" }}>กดช่องเพื่อดูรายละเอียดวัน/สาขานั้น · เลือก "ประเภทห้อง" ด้านบนเพื่อดูเฉพาะห้องฉีด (M) หรือห้องเครื่อง (T)</span>
         </div>
       </div>
 
@@ -671,7 +540,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
                 <div>ว่าง <b style={{ color: "var(--green)" }}>{freePercent(selectedCell)}%</b> ({blocksToHours(selectedCell.free)} จาก {blocksToHours(selectedCell.capacity)} ชม.)</div>
                 {/* เดิมบรรทัดนี้เป็นชั่วโมงล้วน เทียบสองฝั่งไม่ได้เพราะความจุไม่เท่ากัน — ใช้ % ว่างให้ตรงกับการ์ดด้านบน
                     และถ้ากำลังเลือกดูประเภทเดียวอยู่ ไม่ต้องโชว์ เพราะอีกฝั่งถูกกรองออกไปแล้วจะขึ้นเป็น "—%" ชวนงง */}
-                {effectiveTypeFilter === "all" && (
+                {typeFilter === "all" && (
                   <div style={{ marginTop: 4 }}>
                     ห้องฉีด (M): ว่าง {freePercent(selectedCell.byType.M) ?? "—"}% · ห้องเครื่อง (T): ว่าง {freePercent(selectedCell.byType.T) ?? "—"}%
                   </div>

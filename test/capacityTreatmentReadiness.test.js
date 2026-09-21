@@ -168,37 +168,28 @@ test("แยกรายสาขา และรวมทุกเตียง�
 const page = readFileSync(new URL("../src/pages/CapacityPage.jsx", import.meta.url), "utf8");
 const app = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 
-test("หน้าคิวว่างกรองเตียงทรีตเมนต์ผ่านกติกาล็อกเตียงตัวเดียวกับหน้าลงคิว (roomsForProcedure)", () => {
+test("การ์ดรอบฟรีอยู่บนสุดของหน้าคิวว่าง เป็นการ์ดเดียว ไม่มีตัวกรอง/ตารางละเอียดเพิ่ม (เจ้าของขอ 'แค่ภาพนี้')", () => {
+  assert.match(page, /return \(\s*<>\s*\{readiness && \(\s*<FreeProgramWeekCard/);
+  assert.ok(!page.includes('"treatment"'), "ห้ามกลับมามีตัวกรองประเภทห้อง 'treatment' อีก");
+  assert.ok(!/function FreeProgramReadiness|<FreeProgramReadiness|แคปส่งทีม/.test(page), "ห้ามกลับมามีตารางละเอียด/ปุ่มเปิดเต็มจออีก");
+});
+
+test("เตียงทรีตเมนต์หาผ่านกติกาล็อกเตียงตัวเดียวกับหน้าลงคิว (roomsForProcedure) จากทุกห้องที่ผู้ใช้เห็น", () => {
   assert.match(page, /import \{ roomsForProcedure \} from "\.\.\/utils\/roomProcedures";/);
   assert.match(page, /roomsForProcedure\(roomProcedureIndex, rooms, treatmentProcedure\)/);
   assert.match(app, /<CapacityPage[\s\S]*?roomProcedureIndex=\{roomProcedureIndex\}[\s\S]*?\/>/);
+  // ไม่มีหัตถการทรีตเมนต์ในระบบ → ไม่มีการ์ด
+  assert.match(page, /if \(!treatmentProcedure\) return null;/);
 });
 
-test("ไม่มีหัตถการทรีตเมนต์ในระบบ → ซ่อนปุ่ม และไม่ค้างตัวกรองไว้ที่ค่าที่ใช้ไม่ได้", () => {
-  assert.match(page, /const treatmentAvailable = !!treatmentProcedure;/);
-  assert.match(page, /const effectiveTypeFilter = typeFilter === "treatment" && !treatmentAvailable \? "all" : typeFilter;/);
-});
-
-test("ตารางความพร้อมโชว์เฉพาะตอนเลือกเตียงทรีตเมนต์ และคำนวณเฉพาะตอนนั้น", () => {
-  assert.match(page, /effectiveTypeFilter === "treatment"\s*\? computeFreeProgramReadiness\(/);
-  assert.match(page, /\{readiness && \(\s*<FreeProgramReadiness/);
-});
-
-test("ตารางโชว์คอลัมน์รายวันเฉพาะจันทร์–ศุกร์ และแยกป้าย 'จริง' (0–2 วัน) กับ 'คาด'", () => {
-  assert.match(page, /\.filter\(\(c\) => c\.dow !== 0 && c\.dow !== 6\)/);
-  assert.match(page, /c\.i < FREE_PROGRAM_AHEAD_DAYS \? "จริง" : "คาด"/);
-});
-
-test("มีปุ่ม 'แคปส่งทีม' เปิดสรุปเต็มจอที่เหลือแค่ชื่อสาขา + โควตา แบ่งกลุ่ม (เจ้าของขอให้จบในจอมือถือจอเดียว)", () => {
-  assert.match(page, /📱 แคปส่งทีม/);
-  assert.match(page, /function FreeProgramShareCard\(/);
-  // กลุ่ม stop กับ no-data รวมเป็น "งดรอบฟรี" — ทีมไม่ต้องรู้ว่าเพราะข้อมูลไม่พอหรือเพราะแน่น แค่รู้ว่าไม่เปิด
+test("การ์ดแบ่ง 4 กลุ่ม, stop กับ no-data รวมเป็น 'งดรอบฟรี', ตัดคำว่า Class นำหน้าชื่อ, มีคำเตือนห้ามเสาร์–อาทิตย์/หลัง 17:00", () => {
+  for (const t of ["🟢 เปิดรอบฟรีได้", "🟡 เปิดจำกัด", "⏸️ พักรอบนี้", "🔴 งดรอบฟรี"]) assert.ok(page.includes(t), `missing ${t}`);
   assert.match(page, /r\.verdictNow === "stop" \|\| r\.verdictNow === "no-data"/);
-  // ตัดคำว่า Class นำหน้าออก ประหยัดที่บนจอมือถือ
   assert.match(page, /replace\(\/\^Class\\s\+\/i, ""\)/);
+  assert.match(page, /ห้ามเสาร์–อาทิตย์ และหลัง 17:00/);
 });
 
-test("ป้ายคำตัดสินครบ 5 แบบ และมีคำเตือนห้ามเสาร์–อาทิตย์/หลัง 17:00", () => {
-  for (const k of ["open:", "limited:", "pause:", "stop:", '"no-data":']) assert.ok(page.includes(k), `missing ${k}`);
-  assert.match(page, /ห้ามเสาร์–อาทิตย์ และหลัง 17:00 ทุกสาขา/);
+test("โควตา: เปิดได้ = ครึ่งของช่องว่าง, เปิดจำกัด = ไม่เกิน 5, อื่น ๆ ไม่เปิด", () => {
+  assert.match(page, /if \(verdictNow === "open"\) return half;/);
+  assert.match(page, /if \(verdictNow === "limited"\) return Math\.min\(5, half\);/);
 });
