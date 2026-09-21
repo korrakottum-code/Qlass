@@ -4,7 +4,9 @@ import { getTodayStr, formatThaiDate } from "../utils/helpers";
 import {
   computeCapacitySummary, listDates, daysUntilEndOfMonth,
   blocksToHours, freePercent, averageFreePercentByBranch, computeWeeklyPace, PACE_LOOKBACK_WEEKS,
+  findTreatmentProcedure, computeFreeProgramReadiness,
 } from "../utils/capacity";
+import { roomsForProcedure } from "../utils/roomProcedures";
 
 // สีของ heatmap ตาม % ว่าง — ไล่เฉดต่อเนื่อง (แดง→ส้ม→เหลือง→เขียวอ่อน→เขียวเข้ม)
 // แทนที่จะแบ่ง 5 บั้นหยาบๆ เพราะข้อมูลจริงกระจุกช่วง 60-100% ทำให้บั้นแบบเดิม
@@ -131,7 +133,62 @@ function PaceStrip({ weeklyPace }) {
   );
 }
 
-export default function CapacityPage({ rooms, roomSchedules, queues, branches, procedures, onRangeNeeded }) {
+// 🎁 รอบฟรีทรีตเมนต์สัปดาห์นี้ — การ์ดเดียว กระชับ แคปจากมือถือส่งทีมได้ในจอเดียว
+// เจ้าของยืนยัน (21 ก.ย. 2569) ว่าต้องการ "แค่ภาพนี้": ชื่อสาขา + โควตา/วัน แบ่งกลุ่ม ไม่เอาตัวกรอง/ตารางละเอียดเพิ่ม
+// กติกาและการคำนวณอยู่ที่ computeFreeProgramReadiness (capacity.js) — ทรีตเมนต์ลงได้เฉพาะเตียงที่ล็อกให้รับ
+// Treatment, ฐาน = วันเดียวกันของ 4 สัปดาห์ก่อน (ตารางข้างหน้าว่างหลอกเพราะลูกค้าจอง 0–2 วันล่วงหน้า),
+// วันนี้–มะรืนใช้คิวจริงเป็นตัวเบรก ห้ามเสาร์–อาทิตย์และหลัง 17:00
+const THAI_MONTH_SHORT = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+// "Class ยูเนี่ยนมอลล์ลาดพร้าว" → "ยูเนี่ยนมอลล์ลาดพร้าว" — ทุกสาขาขึ้นต้นเหมือนกัน ใส่ไปก็เปลืองที่บนจอมือถือ
+const shortBranchName = (name) => String(name || "").replace(/^Class\s+/i, "");
+
+function FreeProgramWeekCard({ readiness, branches, treatmentName }) {
+  const rows = useMemo(() => {
+    const nameOf = (id) => branches.find((b) => b.id === id)?.name || "-";
+    return readiness.rows.map((r) => ({ ...r, name: nameOf(r.branchId) })).sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1));
+  }, [readiness, branches]);
+  const weekdays = readiness.forecastDates.filter((d) => { const dow = new Date(...d.split("-").map((v, k) => (k === 1 ? Number(v) - 1 : Number(v)))).getDay(); return dow !== 0 && dow !== 6; });
+  const fmt = (d) => { const [, m, day] = d.split("-").map(Number); return `${day} ${THAI_MONTH_SHORT[m - 1]}`; };
+  const rangeLabel = weekdays.length ? `${fmt(weekdays[0])} – ${fmt(weekdays[weekdays.length - 1])}` : "";
+  const groups = [
+    { key: "open", title: "🟢 เปิดรอบฟรีได้", rows: rows.filter((r) => r.verdictNow === "open") },
+    { key: "limited", title: "🟡 เปิดจำกัด", rows: rows.filter((r) => r.verdictNow === "limited") },
+    { key: "pause", title: "⏸️ พักรอบนี้ (3 วันนี้คิวแน่น)", rows: rows.filter((r) => r.verdictNow === "pause") },
+    // stop กับ no-data รวมเป็น "งดรอบฟรี" — ทีมไม่ต้องรู้ว่าเพราะข้อมูลไม่พอหรือเพราะแน่น แค่รู้ว่าไม่เปิด
+    { key: "stop", title: "🔴 งดรอบฟรี", rows: rows.filter((r) => r.verdictNow === "stop" || r.verdictNow === "no-data") },
+  ];
+  return (
+    <div className="card" style={{ padding: "14px 16px", marginBottom: 14 }}>
+      <div style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.25 }}>🎁 รอบฟรี {treatmentName} สัปดาห์นี้</div>
+      <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 2 }}>จ–ศ {rangeLabel} · เฉพาะ 13:00–17:00</div>
+      {groups.filter((g) => g.rows.length).map((g) => (
+        <div key={g.key} style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text2)", marginBottom: 4 }}>{g.title} ({g.rows.length})</div>
+          {/* เจ้าของขอไม่ใส่จำนวนคน (21 ก.ย. 2569) — เหลือแค่ชื่อสาขา สองคอลัมน์สำหรับกลุ่มที่เปิด, บรรทัดเดียวสำหรับกลุ่มที่ไม่เปิด
+              ชี้ชื่อสาขาจะเห็น % ที่คาดว่าว่าง กับรอบที่คาดว่าจะเหลือต่อวัน (หักเตียงที่ปิดสัปดาห์นี้แล้ว) เผื่ออยากรู้ที่มา */}
+          {g.key === "open" || g.key === "limited" ? (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "3px 10px" }}>
+              {g.rows.map((r) => (
+                <div key={r.branchId} title={`คาดว่าว่าง ${r.pct ?? "—"}% · สัปดาห์นี้คาดว่าเหลือ ${r.weekSlots ?? "—"} รอบ (20 นาที)/วัน จาก ${r.beds} เตียง`}
+                  style={{ fontSize: 13, lineHeight: 1.35, borderBottom: "1px dashed var(--border)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {shortBranchName(r.name)}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.5 }}>{g.rows.map((r) => shortBranchName(r.name)).join(" · ")}</div>
+          )}
+        </div>
+      ))}
+      <div style={{ marginTop: 10, fontSize: 10, color: "var(--text3)", lineHeight: 1.4 }}>
+        ห้ามเสาร์–อาทิตย์ และหลัง 17:00 · เปิดจำกัด = รับน้อย ๆ ก่อน · ช่วงที่เปิดฟรีถ้าคิวเริ่มแน่น ให้ลดจำนวนลงก่อน
+        {" "}· นับเฉพาะเตียงที่รับ{treatmentName}ได้ เทียบวันเดียวกันของ 4 สัปดาห์ก่อน + คิวจริงวันนี้–มะรืน
+      </div>
+    </div>
+  );
+}
+
+export default function CapacityPage({ rooms, roomSchedules, queues, branches, procedures, roomProcedureIndex, onRangeNeeded }) {
   const [range, setRange] = useState("7d"); // 7d | eom
   const [filterBranch, setFilterBranch] = useState("all");
   const [splitByType, setSplitByType] = useState(false);
@@ -153,6 +210,16 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
     // ไม่งั้นตัวหารบนการ์ดกับตัวเลขในตารางจะคนละชุด
     && (typeFilter === "all" || (r.type === "M" ? "M" : "T") === typeFilter)
   )), [rooms, filterBranch, typeFilter]);
+
+  // รอบฟรีทรีตเมนต์สัปดาห์นี้ — ภาพรวมทุกสาขาที่ผู้ใช้เห็นเสมอ ไม่ผูกกับตัวกรองด้านล่าง (เหมือนแถบ "เทียบกับปกติ")
+  // เตียงที่รับทรีตเมนต์ได้หาผ่านกติกาล็อกเตียงตัวเดียวกับหน้าลงคิว (เตียงที่ยังไม่ตั้งค่า = ทุกเตียง T)
+  // ไม่มีหัตถการทรีตเมนต์ในระบบ (เช่นสภาพแวดล้อมเดโม) → ไม่โชว์การ์ด
+  const treatmentProcedure = useMemo(() => findTreatmentProcedure(procedures), [procedures]);
+  const readiness = useMemo(() => {
+    if (!treatmentProcedure) return null;
+    const beds = roomsForProcedure(roomProcedureIndex, rooms, treatmentProcedure);
+    return computeFreeProgramReadiness({ rooms: beds, roomSchedules, queues, procedures, today });
+  }, [treatmentProcedure, roomProcedureIndex, rooms, roomSchedules, queues, procedures, today]);
 
   const summary = useMemo(() => computeCapacitySummary({
     rooms: visibleRooms, roomSchedules, queues, procedures, dates,
@@ -431,6 +498,11 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
           <span style={{ marginLeft: "auto" }}>กดช่องเพื่อดูรายละเอียดวัน/สาขานั้น · เลือก "ประเภทห้อง" ด้านบนเพื่อดูเฉพาะห้องฉีด (M) หรือห้องเครื่อง (T)</span>
         </div>
       </div>
+
+      {/* รอบฟรีทรีตเมนต์สัปดาห์นี้ — เจ้าของให้วางไว้ล่างสุด ใต้ Heatmap (21 ก.ย. 2569) */}
+      {readiness && (
+        <FreeProgramWeekCard readiness={readiness} branches={branches} treatmentName={treatmentProcedure.name} />
+      )}
 
       {/* Drill-down รายวัน — popup ลอย กดปิดแล้วดูสาขา/วันอื่นต่อได้เลย ไม่ต้องเลื่อนไปมาหาการ์ด */}
       {selected && selectedCell && (

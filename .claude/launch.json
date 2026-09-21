@@ -4,19 +4,29 @@
     {
       "name": "Vite Dev Server",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 5173
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 5173,
+      "autoPort": false
     },
     {
       "name": "Vite Preview (Production Build)",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "preview"],
+      "runtimeArgs": [
+        "run",
+        "preview"
+      ],
       "port": 4173
     },
     {
       "name": "Vite Demo (Mock Data)",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "manual:demo"],
+      "runtimeArgs": [
+        "run",
+        "manual:demo"
+      ],
       "port": 5199
     }
   ]

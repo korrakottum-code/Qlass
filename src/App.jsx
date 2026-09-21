@@ -1785,6 +1785,7 @@ export default function App() {
                 roomSchedules={filteredRoomSchedules}
                 procedures={procedures}
                 promos={promos}
+                roomProcedureIndex={roomProcedureIndex}
                 onRangeNeeded={ensureQueueRange}
               />
             )}

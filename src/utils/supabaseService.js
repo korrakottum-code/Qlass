@@ -251,6 +251,16 @@ export async function fetchQuizResults({ staffId = null } = {}) {
   return (data || []).map(mapQuizResultRow);
 }
 
+// ล้างผลของคนหนึ่ง (ทั้งสองรอบ หรือระบุรอบ) หรือของทุกคน (staffId = null) — ผู้ดูแลระบบใช้ก่อนเริ่มเทรนรอบใหม่
+export async function deleteQuizResults({ staffId = null, round = null } = {}) {
+  let query = supabase.from("quiz_results").delete();
+  if (staffId) query = query.eq("staff_id", staffId);
+  else query = query.neq("round", ""); // ต้องมีเงื่อนไข ไม่งั้น PostgREST ปฏิเสธการลบทั้งตาราง
+  if (round) query = query.eq("round", round);
+  const { error } = await query;
+  if (error) throw error;
+}
+
 // ทำใหม่ = ทับแถวเดิมของ (คน, รอบ) และนับ attempts เพิ่ม
 export async function upsertQuizResult(result) {
   const { data: existing } = await supabase
