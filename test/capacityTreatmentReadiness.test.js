@@ -168,8 +168,10 @@ test("แยกรายสาขา และรวมทุกเตียง�
 const page = readFileSync(new URL("../src/pages/CapacityPage.jsx", import.meta.url), "utf8");
 const app = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 
-test("การ์ดรอบฟรีอยู่บนสุดของหน้าคิวว่าง เป็นการ์ดเดียว ไม่มีตัวกรอง/ตารางละเอียดเพิ่ม (เจ้าของขอ 'แค่ภาพนี้')", () => {
-  assert.match(page, /return \(\s*<>\s*\{readiness && \(\s*<FreeProgramWeekCard/);
+test("การ์ดรอบฟรีอยู่ล่างสุดของหน้าคิวว่าง ใต้ Heatmap เป็นการ์ดเดียว ไม่มีตัวกรอง/ตารางละเอียดเพิ่ม (เจ้าของขอ 'แค่ภาพนี้' และให้วางไว้ล่าง)", () => {
+  const heatmapEnd = page.indexOf("กดช่องเพื่อดูรายละเอียดวัน/สาขานั้น");
+  const cardAt = page.indexOf("<FreeProgramWeekCard");
+  assert.ok(heatmapEnd > 0 && cardAt > heatmapEnd, "การ์ดต้องอยู่หลังตาราง Heatmap");
   assert.ok(!page.includes('"treatment"'), "ห้ามกลับมามีตัวกรองประเภทห้อง 'treatment' อีก");
   assert.ok(!/function FreeProgramReadiness|<FreeProgramReadiness|แคปส่งทีม/.test(page), "ห้ามกลับมามีตารางละเอียด/ปุ่มเปิดเต็มจออีก");
 });

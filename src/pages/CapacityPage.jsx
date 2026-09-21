@@ -274,10 +274,6 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
 
   return (
     <>
-      {readiness && (
-        <FreeProgramWeekCard readiness={readiness} branches={branches} treatmentName={treatmentProcedure.name} />
-      )}
-
       {/* Controls */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 14 }}>
         <div className="form-group" style={{ marginBottom: 0 }}>
@@ -514,6 +510,11 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
           <span style={{ marginLeft: "auto" }}>กดช่องเพื่อดูรายละเอียดวัน/สาขานั้น · เลือก "ประเภทห้อง" ด้านบนเพื่อดูเฉพาะห้องฉีด (M) หรือห้องเครื่อง (T)</span>
         </div>
       </div>
+
+      {/* รอบฟรีทรีตเมนต์สัปดาห์นี้ — เจ้าของให้วางไว้ล่างสุด ใต้ Heatmap (21 ก.ย. 2569) */}
+      {readiness && (
+        <FreeProgramWeekCard readiness={readiness} branches={branches} treatmentName={treatmentProcedure.name} />
+      )}
 
       {/* Drill-down รายวัน — popup ลอย กดปิดแล้วดูสาขา/วันอื่นต่อได้เลย ไม่ต้องเลื่อนไปมาหาการ์ด */}
       {selected && selectedCell && (
