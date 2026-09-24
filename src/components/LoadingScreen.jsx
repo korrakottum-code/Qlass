@@ -1,5 +1,4 @@
 import React from "react";
-import qlassLogo from "../assets/qlass-logo.svg";
 
 export default function LoadingScreen() {
   return (

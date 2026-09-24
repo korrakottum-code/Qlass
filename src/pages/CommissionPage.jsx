@@ -23,7 +23,7 @@ function RoleBadge({ role }) {
   );
 }
 
-export default function CommissionPage({ queues, staff, branches, procedures, promos, onRangeNeeded }) {
+export default function CommissionPage({ queues, staff, branches, procedures, onRangeNeeded }) {
   const { from: defaultFrom, to: defaultTo } = getMonthRange();
   const [fromDate, setFromDate] = useState(defaultFrom);
   const [toDate, setToDate] = useState(defaultTo);

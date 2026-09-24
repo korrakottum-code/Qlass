@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { CUSTOMER_TYPES, ROOM_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
+import { CUSTOMER_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
 import { WORK_BLOCKS, blockToTime, formatRecorderLabel, formatThaiDate, getEmptyBookingForm, getTodayStr, isActiveQueueStatus, requiresRecorderNote } from "../utils/helpers";
 import { proceduresForRoom, isRoomConfigured, roomLockLabel } from "../utils/roomProcedures";
 import { areasForProcedure, durationFromAreas, keepValidAreaIds, areaNamesText } from "../utils/procedureAreas";
@@ -495,7 +495,6 @@ export default function BookingPage({
                 >
                   <option value="">-- เลือกห้อง --</option>
                   {branchRooms.map((r) => {
-                    const rt = ROOM_TYPES.find((t) => t.value === r.type);
                     return <option key={r.id} value={r.id}>[{r.type}] {r.name}</option>;
                   })}
                 </select>

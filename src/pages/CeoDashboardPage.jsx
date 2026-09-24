@@ -230,7 +230,7 @@ function GrowthList({ rows, cap, showAll, onToggleShowAll, expandedId, onToggleR
   );
 }
 
-export default function CeoDashboardPage({ queues, allQueues, branches, rooms, procedures, promos, staff, currentUser, onRangeNeeded }) {
+export default function CeoDashboardPage({ queues, allQueues, branches, procedures, promos, staff, onRangeNeeded }) {
   const todayKey = getTodayStr();
   const RANGES = [
     { key: "today", label: "วันนี้" },
@@ -1066,7 +1066,7 @@ export default function CeoDashboardPage({ queues, allQueues, branches, rooms, p
             const visible = showAllBranchBreakdown ? activeBranches : activeBranches.slice(0, LIST_CAP);
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {visible.map((b,i) => (
+                {visible.map((b) => (
                   <div key={b.id || b.name} style={{ padding: 14, borderRadius: 14, background: "#faf7f5", border: "1px solid #f0ebe8" }}>
                     <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>{b.name}</div>
                     <div className="ceo-branch-metrics" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, fontSize: 11 }}>

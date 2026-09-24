@@ -24,7 +24,7 @@ import {
   createQueue, updateQueue, updateQueueStatus as updateQueueStatusDB, deleteQueue as deleteQueueDB,
   getAllCategories, createCategory as createCategoryDB, deleteCategory as deleteCategoryDB,
   fetchTickets, createTicketDB, updateTicketDB, deleteTicketDB,
-  createActivityLog, fetchActivityLogs,
+  createActivityLog,
   mapQueueRow, fetchQueuesForRoomDate, fetchWaitingQueues, searchQueues
 } from "./utils/supabaseService";
 import { supabase } from "./utils/supabaseClient";
@@ -113,7 +113,7 @@ export default function App() {
     try { return localStorage.getItem("qlass_page") || "booking"; } catch { return "booking"; }
   });
   const navigateTo = useCallback((p) => {
-    try { localStorage.setItem("qlass_page", p); } catch { }
+    try { localStorage.setItem("qlass_page", p); } catch { /* บันทึกหน้าที่เปิดไม่ได้ (เช่นโหมดส่วนตัว) — ข้าม ไม่กระทบการใช้งาน */ }
     setPage(p);
   }, []);
   const [toast, setToast] = useState(null);
@@ -385,10 +385,9 @@ export default function App() {
     if (!currentUser) return;
     if (allowedPages.length > 0 && !allowedPages.includes(page)) {
       const target = allowedPages[0] || "queue-table";
-      try { localStorage.setItem("qlass_page", target); } catch { }
+      try { localStorage.setItem("qlass_page", target); } catch { /* บันทึกหน้าที่เปิดไม่ได้ — ข้าม */ }
       setPage(target);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, allowedPages, page]);
 
   // ─── Toast auto-dismiss ───

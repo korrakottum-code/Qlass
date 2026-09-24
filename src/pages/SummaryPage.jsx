@@ -90,7 +90,7 @@ function MiniBarChart({ title, data, colorFn, onSelect, selectedValues, maxItems
               <div style={{ width: 96, fontSize: 11, color: isSelected ? "var(--accent)" : "var(--text2)", fontWeight: isSelected ? 700 : 400, textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>
                 {d.label}
               </div>
-              <div style={{ flex: 1, background: "var(--surface2)", borderRadius: 4, height: 18, position: "relative", overflow: "hidden", outline: isSelected ? "2px solid var(--accent)" : "none", borderRadius: 4 }}>
+              <div style={{ flex: 1, background: "var(--surface2)", borderRadius: 4, height: 18, position: "relative", overflow: "hidden", outline: isSelected ? "2px solid var(--accent)" : "none" }}>
                 <div style={{
                   width: `${(d.value / max) * 100}%`,
                   height: "100%",
@@ -158,7 +158,7 @@ function CollapsibleCard({ title, subtitle, badge, children, defaultOpen = true 
   );
 }
 
-function QueueMiniTable({ items, procedures, promos, rooms, branches, emptyText }) {
+function QueueMiniTable({ items, procedures, rooms, branches, emptyText }) {
   if (items.length === 0) {
     return (
       <div style={{ padding: "20px 0", textAlign: "center", color: "var(--text3)", fontSize: 13 }}>
@@ -243,7 +243,7 @@ function StatChip({ label, value, color }) {
   );
 }
 
-function SectionStats({ queues, procedures, promoPriceIndex, showStatus = false }) {
+function SectionStats({ queues, promoPriceIndex, showStatus = false }) {
   const total = queues.length;
   const revenue = queues.reduce((s, q) => s + queueBookedValue(q, promoPriceIndex), 0);
   const byType = {
@@ -876,7 +876,7 @@ function ActivationReportCard({ queues, branches, procedures, rooms, rangeLabel,
   );
 }
 
-export default function SummaryPage({ queues, allQueues, branches, allBranches, rooms, procedures, promos, staff, currentUser, onRangeNeeded }) {
+export default function SummaryPage({ queues, allQueues, branches, rooms, procedures, promos, staff, currentUser, onRangeNeeded }) {
   const [viewMode, setViewMode] = useState("day"); // day | week | month
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
   const [filterCategory, setFilterCategory] = useState("all");

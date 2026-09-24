@@ -22,13 +22,13 @@ test("App wires an abandon-draft reset into both request-id refs", () => {
 
 test("Booking page resets the request id when the draft is cleared, not just on success/rejection", () => {
   assert.match(bookingPage, /onAbandonDraft/);
-  const handleClear = bookingPage.match(/function handleClear\(\) \{[\s\S]*?\n  \}/);
+  const handleClear = bookingPage.match(/function handleClear\(\) \{[\s\S]*?\n {2}\}/);
   assert.ok(handleClear, "handleClear not found");
   assert.match(handleClear[0], /onAbandonDraft\?\.\(\)/);
 });
 
 test("Timeline popup resets the request id on every dismissal path, not just success", () => {
-  const closeHelper = timelinePage.match(/function closeBookingForm\(\) \{[\s\S]*?\n  \}/);
+  const closeHelper = timelinePage.match(/function closeBookingForm\(\) \{[\s\S]*?\n {2}\}/);
   assert.ok(closeHelper, "closeBookingForm helper not found");
   assert.match(closeHelper[0], /onAbandonDraft\?\.\(\)/);
   assert.match(closeHelper[0], /setBookingForm\(null\)/);
