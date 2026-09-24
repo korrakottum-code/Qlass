@@ -120,7 +120,7 @@ const rowsFixture = () => buildActivationReport([
   q({ branchId: null, status: "pending", date: PAST }),
 ], { today: TODAY, branches }).rows;
 
-test("เรียงตามคอลัมน์ที่เลือกได้ทั้งขึ้นและลง", async (t) => {
+test("เรียงตามคอลัมน์ที่เลือกได้ทั้งขึ้นและลง", async () => {
   const { sortActivationRows } = await import("../src/utils/statusActivation.js");
   const rows = rowsFixture();
   assert.deepEqual(sortActivationRows(rows, "overdue", "desc").map((r) => r.branchName),
@@ -133,7 +133,7 @@ test("เรียงตามคอลัมน์ที่เลือกไ�
     ["สาขาขอนแก่น", "สาขาสยาม", "ไม่ระบุสาขา"]);
 });
 
-test("ไม่ระบุสาขาอยู่ท้ายเสมอ และการเรียงไม่แก้อาร์เรย์เดิม", async (t) => {
+test("ไม่ระบุสาขาอยู่ท้ายเสมอ และการเรียงไม่แก้อาร์เรย์เดิม", async () => {
   const { sortActivationRows } = await import("../src/utils/statusActivation.js");
   const rows = rowsFixture();
   const before = rows.map((r) => r.branchName);
@@ -146,7 +146,7 @@ test("ไม่ระบุสาขาอยู่ท้ายเสมอ แ�
   assert.deepEqual(rows.map((r) => r.branchName), before);
 });
 
-test("สาขาที่ยังไม่มีคิวครบกำหนด (% ว่าง) ไปอยู่ท้ายกลุ่ม ไม่ถูกนับเป็นศูนย์", async (t) => {
+test("สาขาที่ยังไม่มีคิวครบกำหนด (% ว่าง) ไปอยู่ท้ายกลุ่ม ไม่ถูกนับเป็นศูนย์", async () => {
   const { sortActivationRows } = await import("../src/utils/statusActivation.js");
   const rows = buildActivationReport([
     q({ branchId: "b1", status: "pending", date: FUTURE }),  // ยังไม่ครบกำหนด → activeRate = null
@@ -158,7 +158,7 @@ test("สาขาที่ยังไม่มีคิวครบกำห�
     ["สาขาสยาม", "สาขาขอนแก่น"]);
 });
 
-test("% ไม่มา คิดจากนัดทั้งหมดเหมือน % มาจริง และเรียงได้", async (t) => {
+test("% ไม่มา คิดจากนัดทั้งหมดเหมือน % มาจริง และเรียงได้", async () => {
   const { sortActivationRows } = await import("../src/utils/statusActivation.js");
   const { rows, total } = buildActivationReport([
     q({ branchId: "b1", status: "done", date: PAST }),

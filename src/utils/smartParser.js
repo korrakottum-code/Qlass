@@ -97,14 +97,14 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
 
   // ─── Phone (รองรับหลายรูปแบบ) ───
   const phonePatterns = [
-    /(?:เบอร์|โทร|tel|phone)?[:\s]*(0[689]\d[\d\s\-]{7,12})/i,
+    /(?:เบอร์|โทร|tel|phone)?[:\s]*(0[689]\d[\d\s-]{7,12})/i,
     /(0[689]\d{8})/,
   ];
   for (let i = 0; i < lines.length; i++) {
     for (const pat of phonePatterns) {
       const m = lines[i].match(pat);
       if (m) {
-        result.phone = m[1].replace(/[\s\-]/g, "");
+        result.phone = m[1].replace(/[\s-]/g, "");
         if (result.phone.length >= 9 && result.phone.length <= 10) {
           confidence.phone = "high";
           usedLines.add(i);
@@ -121,7 +121,7 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
     for (const pat of phonePatterns) {
       const m = fullText.match(pat);
       if (m) {
-        result.phone = m[1].replace(/[\s\-]/g, "");
+        result.phone = m[1].replace(/[\s-]/g, "");
         if (result.phone.length >= 9 && result.phone.length <= 10) {
           confidence.phone = "high";
           break;
@@ -133,7 +133,7 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
   // ─── Date (หลายรูปแบบ: dd/mm/yy, dd-mm-yyyy, 5 เม.ย. 69, วันที่ 5/4/69, พรุ่งนี้, มะรืน) ───
   // รูปแบบตัวเลข
   for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/(?:วันที่\s*)?(\d{1,2})\s*[\/\-\.]\s*(\d{1,2})\s*[\/\-\.]\s*(\d{2,4})/);
+    const m = lines[i].match(/(?:วันที่\s*)?(\d{1,2})\s*[/\-.]\s*(\d{1,2})\s*[/\-.]\s*(\d{2,4})/);
     if (m) {
       const d = String(m[1]).padStart(2, "0");
       const mo = String(m[2]).padStart(2, "0");
@@ -190,9 +190,9 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
 
   // ─── Time → block (รองรับ "15.00", "3โมง", "บ่าย3", "15 นาฬิกา") ───
   const timePatterns = [
-    /(?:เวลา\s*)?(\d{1,2})\s*[:\.]\s*(\d{2})\s*(?:น\.?)?/,
+    /(?:เวลา\s*)?(\d{1,2})\s*[:.]\s*(\d{2})\s*(?:น\.?)?/,
     /(?:เวลา\s*)(\d{1,2})\s*(?:โมง|นาฬิกา)/,
-    /บ่าย\s*(\d{1,2})(?:\s*[:\.]\s*(\d{2}))?/,
+    /บ่าย\s*(\d{1,2})(?:\s*[:.]\s*(\d{2}))?/,
   ];
   for (let i = 0; i < lines.length; i++) {
     for (const pat of timePatterns) {
@@ -243,7 +243,7 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
   // ─── Price (หลายรูปแบบ: 1990฿, ฿1990, 1,990 บาท, ราคา 1990, 1990.-) ───
   const pricePatterns = [
     /(?:ราคา|price|โปร)\s*[:=]?\s*(\d[\d,]*)\s*(?:฿|บาท|baht)?/i,
-    /(\d[\d,]*)\s*(?:฿|บาท|baht|\.\-)/i,
+    /(\d[\d,]*)\s*(?:฿|บาท|baht|\.-)/i,
     /฿\s*(\d[\d,]*)/,
   ];
   for (let i = 0; i < lines.length; i++) {
@@ -481,7 +481,7 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
   // ขั้น 1: pattern ที่ชัดเจนว่าเป็นชื่อ
   const namePatterns = [
     /(?:ชื่อ|คุณ|นาย|นาง|น\.?ส\.?|Ms\.?|Mr\.?|Mrs\.?)\s*([^\d\n]{2,30})/i,
-    /^\d+[\.\)]\s*([ก-๙][ก-๙a-zA-Z\s]{1,30})/,  // "1.หมวย", "2.จิตราพร ทรงชัยเจริญ"
+    /^\d+[.)]\s*([ก-๙][ก-๙a-zA-Z\s]{1,30})/,  // "1.หมวย", "2.จิตราพร ทรงชัยเจริญ"
   ];
   for (let i = 0; i < lines.length; i++) {
     if (usedLines.has(i)) continue;
@@ -507,13 +507,13 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
       if (usedLines.has(i)) continue;
       const line = lines[i];
       // skip obvious non-name patterns
-      if (/^[\d\-\+\s]+$/.test(line)) continue;
+      if (/^[\d\-+\s]+$/.test(line)) continue;
       if (/฿|บาท/.test(line) && /\d/.test(line)) continue;
       if (/วันที่|เวลา|ราคา|หมายเหตุ|note/i.test(line)) continue;
-      if (/^\d{1,2}\s*[:\.]\s*\d{2}$/.test(line)) continue;
+      if (/^\d{1,2}\s*[:.]\s*\d{2}$/.test(line)) continue;
       if (/^[MT]\d{1,2}$/i.test(line)) continue;
       // remove leading numbering (1. 2. 3) etc.)
-      const cleaned = line.replace(/^\d+[\.\)\s]+/, "").replace(/^[-–•]\s*/, "").trim();
+      const cleaned = line.replace(/^\d+[.)\s]+/, "").replace(/^[-–•]\s*/, "").trim();
       if (NOT_NAMES.test(cleaned)) continue;
       // name should be 2-40 chars, start with Thai/English letter
       if (cleaned.length >= 2 && cleaned.length <= 40 && /^[ก-๙a-zA-Z]/.test(cleaned)) {
@@ -530,7 +530,7 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
     if (usedLines.has(i)) continue;
     const line = lines[i];
     // skip pure numbers and very short
-    if (/^[\d\-\+\s]+$/.test(line)) continue;
+    if (/^[\d\-+\s]+$/.test(line)) continue;
     if (line.length <= 2) continue;
     // skip if it's already matched as name
     if (result.name && line.includes(result.name)) continue;
@@ -542,7 +542,7 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
       continue;
     }
     // remaining meaningful lines → collect as potential notes
-    const cleaned = line.replace(/^\d+[\.\)\s]+/, "").trim();
+    const cleaned = line.replace(/^\d+[.)\s]+/, "").trim();
     if (cleaned.length > 3 && !/^0[689]/.test(cleaned) && !/^\d+$/.test(cleaned)) {
       notes.push(cleaned);
     }
@@ -566,7 +566,7 @@ export function splitMultiBooking(rawText) {
   // ─── ขั้น 1: ตรวจว่ามีเลขนำหน้า (1. 2. 3.) หรือไม่ ───
   const numberedStarts = [];
   for (let i = 0; i < lines.length; i++) {
-    if (/^\d+[\.\)]\s*\S/.test(lines[i])) {
+    if (/^\d+[.)]\s*\S/.test(lines[i])) {
       numberedStarts.push(i);
     }
   }
@@ -591,7 +591,7 @@ export function splitMultiBooking(rawText) {
   // ถ้ามี phone >= 2 ตัว → ย้อนขึ้น 1 บรรทัด (ชื่อ) เป็นจุดเริ่ม block
   const phoneLines = [];
   for (let i = 0; i < lines.length; i++) {
-    if (/^\s*0[689]\d[\d\s\-]{7,12}$/.test(lines[i])) {
+    if (/^\s*0[689]\d[\d\s-]{7,12}$/.test(lines[i])) {
       phoneLines.push(i);
     }
   }
@@ -637,13 +637,13 @@ export function learnFromCorrection(hints, rawText, parsedFields, finalFields, {
 
   const candidates = rawText
     .split(/\n/)
-    .map((l) => l.trim().replace(/^\d+[\.\)\s]+/, "").trim())
+    .map((l) => l.trim().replace(/^\d+[.)\s]+/, "").trim())
     .filter((l) => l.length > 1 && l.length <= 25);
 
   const isNoise = (l) =>
-    /^[\d\-\+]+$/.test(l) ||
+    /^[\d\-+]+$/.test(l) ||
     /฿/.test(l) ||
-    /\d{1,2}[\/\-]\d{1,2}/.test(l) ||
+    /\d{1,2}[/-]\d{1,2}/.test(l) ||
     /\d{1,2}:\d{2}/.test(l) ||
     /^(ใหม่|เก่า|คอร์ส|วันที่|เวลา)$/.test(l) ||
     /0[689]\d{8}/.test(l);

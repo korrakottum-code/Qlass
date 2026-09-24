@@ -93,12 +93,6 @@ export default function RoomTimeGrid({
     }
   }, [selectedTimeBlock]);
 
-  // hour labels (แสดงทุกชั่วโมง)
-  const hourBlocks = useMemo(() =>
-    timeRange.blocks.filter((b) => b % 12 === 0),
-    [timeRange.blocks]
-  );
-
   const CELL_W = 28;
   const CELL_H = 36;
 
@@ -109,7 +103,7 @@ export default function RoomTimeGrid({
         <div style={{ display: "flex", position: "sticky", top: 0, zIndex: 3, background: "var(--surface2)", borderBottom: "1px solid var(--border)" }}>
           <div style={{ width: 96, minWidth: 96, flexShrink: 0, fontSize: 11, color: "var(--text3)", padding: "4px 8px", borderRight: "1px solid var(--border)" }} />
           <div style={{ display: "flex", position: "relative", flex: 1 }}>
-            {timeRange.blocks.map((b, i) => {
+            {timeRange.blocks.map((b) => {
               const isHour = b % 12 === 0;
               const hIdx = Math.floor((b - timeRange.minB) / 12) % HOUR_COLOR.length;
               return (
@@ -177,7 +171,6 @@ export default function RoomTimeGrid({
                       && b > selectedTimeBlock && b < selectedTimeBlock + selectedProcBlocks;
                     const isOccupiedByEditing = occ?.isEditing;
                     const isBlocked = occ && !isOccupiedByEditing;
-                    const hIdx = Math.floor((b - timeRange.minB) / 12) % HOUR_COLOR.length;
 
                     let bg = "transparent";
                     let border = isHour ? "2px solid var(--border2)" : "1px solid var(--border)";

@@ -23,11 +23,13 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // พารามิเตอร์ที่ขึ้นต้นด้วย _ = ตั้งใจไม่ใช้ (เช่น _images ที่เว้นไว้ให้ฟีเจอร์แนบรูปตั๋ว)
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^_' }],
     },
   },
   {
-    files: ['tests/**/*.js'],
+    // ไฟล์ที่รันบน Node ไม่ใช่เบราว์เซอร์ (ตั้งค่า Vite ใช้ process.env, เทสต์รันด้วย node --test)
+    files: ['tests/**/*.js', 'test/**/*.js', 'vite.config.js'],
     languageOptions: {
       globals: globals.node,
     },

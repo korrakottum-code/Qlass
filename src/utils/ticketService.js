@@ -122,7 +122,7 @@ export async function uploadTicketImage(file) {
   const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
   const filePath = `tickets/${fileName}`;
 
-  const { data, error } = await supabase.storage
+  const { error } = await supabase.storage
     .from("ticket-images")
     .upload(filePath, file, {
       cacheControl: "3600",
