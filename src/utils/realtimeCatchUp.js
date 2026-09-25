@@ -162,3 +162,96 @@ export function createRealtimeCatchUpController({
     _state: () => ({ ready, channelUp, running, pendingSince, attempts, hasTimer: timer !== null }),
   };
 }
+
+// ─── ดึงของที่เปลี่ยนเป็นระยะ (25 ก.ย. 2569) ───
+// ที่มา: ตรวจข้อมูลจริงพบว่า Realtime บางครั้งส่งเหตุการณ์ช้า 52–125 วินาที ทั้งที่การเชื่อมต่อปกติดี (ไม่มีสถานะหลุด
+// ให้ตัวตามข้อมูลด้านบนทำงาน) จึงเพิ่มตาข่ายชั้นสอง: ทุก ~30 วินาที ถามฐานข้อมูลเฉพาะ "แถวที่เปลี่ยนหลังรอบก่อน"
+// ใช้กติกาการรวมข้อมูลชุดเดิม (applyQueueCatchUp) จึงไม่ทับข้อมูลสดของเครื่อง และถ้า Realtime ส่งมาแล้วจะไม่มีอะไรเปลี่ยน
+//
+// ทำไมจึงเบา:
+//   - จุดเริ่มรอบถัดไป = updated_at สูงสุดที่เห็นรอบก่อน (เวลาเซิร์ฟเวอร์ ไม่พึ่งนาฬิกาเครื่อง) ถอยหลังเผื่ออีก overlapMs
+//     (กันธุรกรรมที่ commit ช้ากว่าเวลาที่เขียน) → ปกติได้ 0–3 แถว ไม่ใช่ 5 นาทีย้อนหลังทุกรอบ
+//   - ต้องมี idx_queues_updated_at (query ~0.2 ms) — ก่อนมีดัชนีเป็นการสแกนทั้งตาราง ~130 ms
+//   - แท็บที่ซ่อน/ยังโหลดไม่เสร็จ ไม่ยิง; ล้มเหลว = ถอยเวลาแบบทวีคูณ (เพดาน maxBackoffMs) เงียบ ๆ ไม่รบกวนผู้ใช้
+//   - กระจายเวลาแต่ละเครื่องด้วย jitter ไม่ให้ยิงพร้อมกัน
+//
+// run({ sinceIso, deletedSinceIso }) ต้องคืน { maxUpdatedAt } เมื่อสำเร็จ หรือ null ถ้ามีรอบอื่นทำงานอยู่ (ไม่นับว่าล้มเหลว
+// และห้ามขยับจุดเริ่ม เพราะผลของรอบอื่นอาจเริ่มจากจุดที่ใหม่กว่า)
+export function createPeriodicRefreshController({
+  run,
+  isVisible = () => true,
+  now = () => Date.now(),
+  setTimer = (fn, ms) => setTimeout(fn, ms),
+  clearTimer = (id) => clearTimeout(id),
+  random = Math.random,
+  intervalMs = 30 * 1000,
+  jitterMs = 5 * 1000,
+  overlapMs = 60 * 1000,
+  marginMs = CATCH_UP_MARGIN_MS,
+  maxLookbackMs = CATCH_UP_MAX_LOOKBACK_MS,
+  maxBackoffMs = 5 * 60 * 1000,
+} = {}) {
+  let ready = false;
+  let disposed = false;
+  let running = false;
+  let timer = null;
+  let failures = 0;
+  let watermarkMs = null;      // updated_at (เวลาเซิร์ฟเวอร์) สูงสุดที่เห็น
+  let lastSuccessAt = null;    // เวลาเริ่มของรอบล่าสุดที่สำเร็จ (นาฬิกาเครื่อง) ใช้กับประวัติการลบซึ่งไม่มี updated_at
+  let lastAttemptAt = -Infinity;
+
+  const spacing = () => Math.min(intervalMs * 2 ** failures, maxBackoffMs);
+
+  function schedule() {
+    if (disposed || running || timer !== null || !ready || !isVisible()) return;
+    const wait = Math.max(0, lastAttemptAt + spacing() - now()) + random() * jitterMs;
+    timer = setTimer(fire, wait);
+  }
+
+  async function fire() {
+    timer = null;
+    if (disposed || !ready || !isVisible()) return; // รอสัญญาณ setReady / visibilitychange
+    running = true;
+    const startedAt = now();
+    lastAttemptAt = startedAt;
+    try {
+      const sinceMs = Math.max(watermarkMs - overlapMs, startedAt - maxLookbackMs);
+      const deletedSinceMs = Math.max(lastSuccessAt - marginMs, startedAt - maxLookbackMs);
+      const result = await run({
+        sinceIso: new Date(sinceMs).toISOString(), // timestamp เทียบคอลัมน์ timestamptz (ไม่ใช่วันที่)
+        deletedSinceIso: new Date(deletedSinceMs).toISOString(), // timestamp เทียบคอลัมน์ timestamptz (ไม่ใช่วันที่)
+      });
+      if (result) {
+        failures = 0;
+        lastSuccessAt = startedAt;
+        const seen = result.maxUpdatedAt ? Date.parse(result.maxUpdatedAt) : NaN;
+        if (Number.isFinite(seen) && seen > watermarkMs) watermarkMs = seen;
+      }
+    } catch {
+      failures += 1;
+    }
+    running = false;
+    schedule();
+  }
+
+  return {
+    setReady(value) {
+      const next = !!value;
+      if (next && !ready) {
+        // เริ่มนับจากตอนโหลดข้อมูลหลักเสร็จ: ของก่อนหน้านี้อยู่ในข้อมูลที่เพิ่งโหลดแล้ว (เผื่อนาฬิกาเครื่องเพี้ยน marginMs)
+        const t = now();
+        watermarkMs = t - marginMs;
+        lastSuccessAt = t;
+        lastAttemptAt = t;
+        failures = 0;
+      }
+      ready = next;
+      if (!ready && timer !== null) { clearTimer(timer); timer = null; }
+      if (ready) schedule();
+    },
+    onVisibilityChange() { schedule(); },
+    dispose() { disposed = true; if (timer !== null) { clearTimer(timer); timer = null; } },
+    // เฉพาะทดสอบ
+    _state: () => ({ ready, running, failures, watermarkMs, lastSuccessAt, hasTimer: timer !== null }),
+  };
+}

@@ -1,0 +1,12 @@
+-- ดัชนี queues.updated_at — รองรับคำถาม "แถวไหนเปลี่ยนตั้งแต่เวลา X" ของตัวตามข้อมูลหลัง Realtime หลุด
+-- และตัวดึงเป็นระยะ (src/utils/realtimeCatchUp.js). ก่อนมีดัชนีเป็นการสแกนทั้งตาราง (~130 ms ตาราง ~200k แถว)
+-- หลังมีดัชนี ~0.2 ms (วัดบนโปรดักชัน 25 ก.ย. 2569)
+--
+-- ⚠️ บนโปรดักชันดัชนีนี้ถูกสร้างด้วยคำสั่งด้านล่างนี้ (CONCURRENTLY = ไม่ล็อกการเขียน พนักงานใช้งานต่อได้ตามปกติ):
+--     CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_queues_updated_at ON public.queues (updated_at);
+-- CONCURRENTLY รันในทรานแซกชันไม่ได้ ไฟล์ migration นี้จึงใช้ IF NOT EXISTS แบบปกติ: ที่โปรดักชันเป็น no-op (มีดัชนีแล้ว)
+-- ส่วนฐานข้อมูลใหม่ (เช่น staging) จะสร้างตอนตารางยังเล็ก ล็อกแค่เสี้ยววินาที
+--
+-- ข้อแลกเปลี่ยน: updated_at เปลี่ยนทุกครั้งที่แก้แถว จึงเสีย HOT update ของ queues (ตารางมีดัชนีอื่นหลายตัวอยู่แล้ว
+-- และปริมาณเขียนต่ำ ~ร้อยครั้ง/ชม.) — ยอมรับได้
+create index if not exists idx_queues_updated_at on public.queues (updated_at);

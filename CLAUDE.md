@@ -82,6 +82,8 @@ Must be set in `.env` (or Vercel/Netlify dashboard):
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
+Optional: `VITE_QUEUE_REFRESH_SECONDS` — interval of the periodic queue delta refresh in `App.jsx` (safety net for Realtime events that arrive 1–2 min late; see `createPeriodicRefreshController` in `src/utils/realtimeCatchUp.js`). Default 30, minimum 15, `0` = off (kill switch; needs a redeploy).
+
 Supabase Edge Function secrets (`supabase secrets set`):
 - `QLASS_SUPABASE_SECRET_KEY` (or legacy `SUPABASE_SERVICE_ROLE_KEY`)
 - `QLASS_ALLOWED_ORIGIN` / `QLASS_ALLOWED_ORIGINS` — browser-called functions only

@@ -9,7 +9,7 @@ const app = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 const svc = readFileSync(new URL("../src/utils/supabaseService.js", import.meta.url), "utf8");
 
 test("App.jsx ป้อนสถานะ Realtime เข้าตัวคุมทุกครั้ง (ยังบันทึก diagnostics เดิมอยู่ด้วย)", () => {
-  assert.match(app, /import \{ applyQueueCatchUp, createRealtimeCatchUpController \} from "\.\/utils\/realtimeCatchUp";/);
+  assert.match(app, /import \{ applyQueueCatchUp, createRealtimeCatchUpController, createPeriodicRefreshController \} from "\.\/utils\/realtimeCatchUp";/);
   assert.match(app, /recordClientDiagnostic\("realtime_status", \{ status \}\);\s*catchUp\.onStatus\(status\);/);
 });
 
@@ -24,7 +24,7 @@ test("ตัวคุมรู้ว่าโหลดข้อมูลหล�
 });
 
 test("effect Realtime ยังรันครั้งเดียวตอนเปิดแอป (deps เป็นฟังก์ชันที่ identity คงที่ ไม่ทำให้สมัครใหม่ซ้ำ)", () => {
-  assert.match(app, /const runQueueCatchUp = useCallback\(async \(sinceIso\) => \{[\s\S]*?\}, \[\]\);/);
+  assert.match(app, /const runQueueCatchUp = useCallback\(async \(sinceIso, opts = \{\}\) => \{[\s\S]*?\}, \[\]\);/);
   assert.match(app, /supabase\.removeChannel\(channel\);\s*\};\s*\}, \[runQueueCatchUp\]\);/);
 });
 

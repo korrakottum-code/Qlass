@@ -1175,6 +1175,10 @@ export async function fetchQueuesChangedSince(sinceIso, { maxPages = 5 } = {}) {
   if (Number.isNaN(since.getTime())) throw new Error("fetchQueuesChangedSince: invalid sinceIso");
   const PAGE_SIZE = 1000;
   const byId = new Map();
+  // updated_at สูงสุดที่เห็น (เวลาเซิร์ฟเวอร์) — ตัวดึงเป็นระยะใช้เป็นจุดเริ่มรอบถัดไป ไม่พึ่งนาฬิกาเครื่องพนักงาน
+  // เรียงจากเก่าไปใหม่ ดังนั้นแม้ดึงได้ไม่ครบทุกหน้า ค่านี้ก็ยังเป็นความคืบหน้าที่ปลอดภัย
+  let maxUpdatedAt = null;
+  const finish = (truncated) => ({ rows: Array.from(byId.values()).map(mapQueueRow), truncated, maxUpdatedAt });
   for (let page = 0; page < maxPages; page += 1) {
     const { data, error } = await supabase
       .from("queues")
@@ -1184,12 +1188,13 @@ export async function fetchQueuesChangedSince(sinceIso, { maxPages = 5 } = {}) {
       .order("id", { ascending: true })
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
     if (error) throw error;
-    for (const row of data || []) byId.set(row.id, row);
-    if (!data || data.length < PAGE_SIZE) {
-      return { rows: Array.from(byId.values()).map(mapQueueRow), truncated: false };
+    for (const row of data || []) {
+      byId.set(row.id, row);
+      if (row.updated_at && (maxUpdatedAt === null || row.updated_at > maxUpdatedAt)) maxUpdatedAt = row.updated_at;
     }
+    if (!data || data.length < PAGE_SIZE) return finish(false);
   }
-  return { rows: Array.from(byId.values()).map(mapQueueRow), truncated: true };
+  return finish(true);
 }
 
 // id ของคิวที่ถูกลบตั้งแต่ sinceIso ตามประวัติการลบ (activity_logs) — แอปบันทึกทุกครั้งที่ลบคิวผ่านหน้าจอ
