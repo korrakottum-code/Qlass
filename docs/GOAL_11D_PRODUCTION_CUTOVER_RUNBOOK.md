@@ -76,3 +76,30 @@ records. If a later incident specifically requires removing the foundation,
 first disable both browser/server controls, then unschedule only
 `goal11d_purge_expired_client_diagnostics` and review the isolated removal in a
 separate change. Do not restore the database as normal rollback.
+
+## Production status update — 2026-09-25 (supersedes "Current production fact" above)
+
+The 2026-08-02 preflight is out of date. Verified read-only on 2026-09-25:
+
+- Goal 13 (`create_queue_v1`) has been recorded on production for a long time, and the deployed
+  `staff-session` (v20) already contains the `client_diagnostics` action with the allowlist sanitizer.
+- `client_diagnostics` exists (created by `20260913080000`, **without** `expires_at`) and is empty,
+  RLS on, no browser grants. `20260724192800` was deliberately **not** applied and must not be:
+  it would try to create the same table with a different shape.
+- Both browser and server switches are still off; the table stays empty.
+
+### Staged enablement (each step needs its own explicit Go)
+
+1. **Purge job (done 2026-09-25, migration `20260924175906`).** `pg_cron` in `pg_catalog`, job
+   `goal11d_purge_expired_client_diagnostics`, hourly at minute 17, deletes rows older than 14 days by
+   `created_at`. Verified: job active and owned by `postgres`; `anon`/`authenticated` get
+   `permission denied for schema cron`; the stored command, run against 4 dummy rows, removed the 20-day
+   and 15-day rows and kept the 13-day and fresh rows; business control totals unchanged.
+   Rollback: `select cron.unschedule('goal11d_purge_expired_client_diagnostics');`
+2. **Server switch:** set `QLASS_OBSERVABILITY_ENABLED=true` on the `staff-session` function. No effect
+   until the browser also sends.
+3. **Browser switch:** set `VITE_ENABLE_SERVER_DIAGNOSTICS=true` in Vercel Production and redeploy.
+   Never set `VITE_ENABLE_CONTROLLED_REFRESH` or `QLASS_CONTROLLED_REFRESH_ENABLED` in this rollout.
+4. **Watch 1-2 days:** rows arrive; only `release_id`, `event_name`, `outcome`, `stage`,
+   `realtime_status`, `duration_ms`, `created_at` are ever present; rows per day stay small; purge job
+   `cron.job_run_details` shows successful hourly runs. Any surprise: undo step 3, then step 2.
