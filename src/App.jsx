@@ -38,7 +38,7 @@ import { serverErrorCode } from "./utils/sessionApi";
 import { recordClientDiagnostic } from "./utils/clientDiagnostics";
 import { controlledRefreshEnabled, getControlledRefreshStatus, serverDiagnosticsEnabled, flushClientDiagnostics as flushDiagnostics } from "./utils/clientObservability";
 import { reconcileRealtimeQueue, reconcileRealtimeById, reconcileRealtimeRoomProcedure } from "./utils/realtimeQueueState";
-import { applyQueueCatchUp, createRealtimeCatchUpController } from "./utils/realtimeCatchUp";
+import { applyQueueCatchUp, createRealtimeCatchUpController, createPeriodicRefreshController } from "./utils/realtimeCatchUp";
 import { getBedSwitchState, buildBedSwitchClosure, listQueuesOnBed, isSamePlacement } from "./utils/bedSwitch";
 import { buildRescheduledQueue } from "./utils/rescheduleQueue";
 import { buildRoomProcedureIndex, isProcedureAllowedInRoom, shouldEnforceOnSave, procedureRoomBlockMessage } from "./utils/roomProcedures";
@@ -136,6 +136,8 @@ export default function App() {
   // state คิวล่าสุด (ไว้ให้ตัวตามข้อมูลหลัง Realtime หลุดถ่าย "ภาพก่อนเริ่มดึง") + ตัวคุมจังหวะการตาม
   const queuesRef = useRef([]);
   const catchUpControllerRef = useRef(null);
+  const periodicRefreshRef = useRef(null);
+  const isDataReadyRef = useRef(false);
   const [refreshRequired, setRefreshRequired] = useState(false);
 
   // ─── Booking form ───
@@ -275,9 +277,13 @@ export default function App() {
   // เหตุผลการออกแบบและกติกาทั้งหมดอยู่ที่หัวไฟล์ src/utils/realtimeCatchUp.js
   // ใช้กลไก deletedDuringHistoryLoadRef/rangeInFlightRef เดียวกับการโหลดช่วงอื่น: คิวที่ถูกลบระหว่างดึงต้องไม่โผล่กลับมา
   // ล้มเหลว = เงียบ (ตัวคุมลองใหม่เอง สูงสุด 3 ครั้ง) ห้ามรบกวนพนักงาน หน้าจอเหลือสภาพเดียวกับก่อนมีฟีเจอร์นี้
-  const runQueueCatchUp = useCallback(async (sinceIso) => {
+  // opts.deletedSinceIso  — ให้ประวัติการลบเริ่มคนละจุดกับ sinceIso (รอบเป็นระยะ: คิวที่เปลี่ยนใช้เวลาเซิร์ฟเวอร์ ส่วนประวัติการลบใช้นาฬิกาเครื่อง)
+  // opts.skipIfBusy       — ถ้ามีรอบตามข้อมูล/โหลดช่วงอื่นค้างอยู่ ให้ข้าม (คืน null) แทนที่จะเกาะผลของรอบนั้น เพราะจุดเริ่มอาจไม่ตรงกัน
+  // opts.quiet            — ไม่ log เมื่อไม่มีอะไรเปลี่ยน (รอบเป็นระยะรันทุก ~30 วินาที)
+  // คืน { maxUpdatedAt } = updated_at สูงสุดที่เห็น ให้ตัวดึงเป็นระยะใช้เป็นจุดเริ่มรอบหน้า
+  const runQueueCatchUp = useCallback(async (sinceIso, opts = {}) => {
     const key = "CATCHUP";
-    if (rangeInFlightRef.current.has(key)) return rangeInFlightRef.current.get(key);
+    if (rangeInFlightRef.current.has(key)) return opts.skipIfBusy ? null : rangeInFlightRef.current.get(key);
     const job = (async () => {
       const startQueues = queuesRef.current;
       const deletedIds = deletedDuringHistoryLoadRef.current ?? new Set();
@@ -285,11 +291,14 @@ export default function App() {
       try {
         const [changed, removedIds] = await Promise.all([
           fetchQueuesChangedSince(sinceIso),
-          fetchDeletedQueueIdsSince(sinceIso),
+          fetchDeletedQueueIdsSince(opts.deletedSinceIso ?? sinceIso),
         ]);
         if (changed.truncated) console.warn("[Realtime] catch-up: changed rows exceeded the page cap, applied the first pages only");
-        console.log("[Realtime] catch-up:", { since: sinceIso, changed: changed.rows.length, deleted: removedIds.length });
+        if (!opts.quiet || removedIds.length > 0) { // รอบเป็นระยะได้แถวซ้ำในช่วงเผื่อเวลาทุกรอบ ไม่ log ทุก 30 วินาที
+          console.log("[Realtime] catch-up:", { since: sinceIso, changed: changed.rows.length, deleted: removedIds.length });
+        }
         setQueues((prev) => applyQueueCatchUp(prev, changed.rows, { startQueues, deletedIds, removedIds }));
+        return { maxUpdatedAt: changed.maxUpdatedAt };
       } finally {
         rangeInFlightRef.current.delete(key);
         if (rangeInFlightRef.current.size === 0) deletedDuringHistoryLoadRef.current = null;
@@ -300,6 +309,31 @@ export default function App() {
   }, []);
 
   useEffect(() => { catchUpControllerRef.current?.setReady(isDataReady); }, [isDataReady]);
+
+  // ─── ตาข่ายชั้นสอง: ดึงของที่เปลี่ยนเป็นระยะ (25 ก.ย. 2569) ───
+  // Realtime บางครั้งส่งเหตุการณ์ช้า 52–125 วินาทีทั้งที่ต่อปกติ (ไม่มีสถานะหลุดให้ตัวตามข้อมูลด้านบนจับ) จึงถามฐานข้อมูลเองทุก ~30 วินาที
+  // เฉพาะแถวที่เปลี่ยนหลังรอบก่อน (ปกติ 0–3 แถว, ใช้ดัชนี updated_at) รวมด้วยกติกาเดียวกับตัวตามข้อมูล → ไม่ทับข้อมูลสดของเครื่อง
+  // ปิดฉุกเฉินได้โดยตั้ง VITE_QUEUE_REFRESH_SECONDS=0 แล้ว redeploy (ค่าเริ่มต้น 30, ขั้นต่ำ 15)
+  useEffect(() => {
+    const raw = import.meta.env.VITE_QUEUE_REFRESH_SECONDS;
+    const seconds = raw === undefined || raw === "" ? 30 : Number(raw);
+    if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+    const periodic = createPeriodicRefreshController({
+      run: ({ sinceIso, deletedSinceIso }) => runQueueCatchUp(sinceIso, { deletedSinceIso, skipIfBusy: true, quiet: true }),
+      isVisible: () => typeof document === "undefined" || document.visibilityState !== "hidden",
+      intervalMs: Math.max(15, seconds) * 1000,
+    });
+    periodicRefreshRef.current = periodic;
+    const onVisibilityChange = () => periodic.onVisibilityChange();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    periodic.setReady(isDataReadyRef.current);
+    return () => {
+      periodic.dispose();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (periodicRefreshRef.current === periodic) periodicRefreshRef.current = null;
+    };
+  }, [runQueueCatchUp]);
+  useEffect(() => { isDataReadyRef.current = isDataReady; periodicRefreshRef.current?.setReady(isDataReady); }, [isDataReady]);
 
   // ─── Realtime subscription for queues ───
   useEffect(() => {
