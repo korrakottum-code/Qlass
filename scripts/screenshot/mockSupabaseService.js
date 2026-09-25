@@ -241,6 +241,9 @@ export async function updateQueueStatus(id, statusUpdate) {
   return clone(upsert(DB.queues, { ...cur, status: u.status ?? cur.status, statusNote: u.status_note ?? cur.statusNote, statusUpdatedAt: u.status_updated_at }));
 }
 export async function deleteQueue(id) { remove(DB.queues, id); }
+// ตัวตามข้อมูลหลัง Realtime หลุด + ตัวดึงเป็นระยะ (#211/#212): โหมดสาธิตไม่มีเครื่องอื่นแก้คิว จึงไม่มีอะไรเปลี่ยน/ถูกลบ
+export async function fetchQueuesChangedSince() { return { rows: [], truncated: false, maxUpdatedAt: null }; }
+export async function fetchDeletedQueueIdsSince() { return []; }
 export async function fetchQueuesForRoomDate(roomId, date) {
   if (!roomId || !date) return [];
   return clone(DB.queues.filter((q) => q.roomId === roomId && q.date === date && !["cancelled", "no_show", "rescheduled"].includes(q.status)));
