@@ -1,5 +1,6 @@
 // ─── Smart Text Parser + Learning Engine (v2 — เทพ edition) ───
 import { isProcedureAllowedInRoom } from "./roomProcedures";
+import { extractPhone, isPhoneOnlyLine, containsPhone } from "./phoneExtract";
 
 // วันที่ตามเวลาเครื่อง (เวลาไทยสำหรับหน้าร้าน) — ห้ามใช้ toISOString() ที่เป็น UTC
 // ไม่ import จาก helpers.js เพื่อให้ไฟล์นี้ยัง import ตรง ๆ ใน unit test ได้เหมือนเดิม
@@ -95,38 +96,22 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
   const usedLines = new Set();
   const notes = [];
 
-  // ─── Phone (รองรับหลายรูปแบบ) ───
-  const phonePatterns = [
-    /(?:เบอร์|โทร|tel|phone)?[:\s]*(0[689]\d[\d\s-]{7,12})/i,
-    /(0[689]\d{8})/,
-  ];
+  // ─── Phone (รองรับหลายรูปแบบ — ตรรกะอยู่ใน phoneExtract.js ทดสอบแยกได้) ───
   for (let i = 0; i < lines.length; i++) {
-    for (const pat of phonePatterns) {
-      const m = lines[i].match(pat);
-      if (m) {
-        result.phone = m[1].replace(/[\s-]/g, "");
-        if (result.phone.length >= 9 && result.phone.length <= 10) {
-          confidence.phone = "high";
-          usedLines.add(i);
-          break;
-        } else {
-          delete result.phone;
-        }
-      }
+    const phone = extractPhone(lines[i]);
+    if (phone) {
+      result.phone = phone;
+      confidence.phone = "high";
+      usedLines.add(i);
+      break;
     }
-    if (result.phone) break;
   }
   // fullText fallback for phone (don't mark usedLines)
   if (!result.phone) {
-    for (const pat of phonePatterns) {
-      const m = fullText.match(pat);
-      if (m) {
-        result.phone = m[1].replace(/[\s-]/g, "");
-        if (result.phone.length >= 9 && result.phone.length <= 10) {
-          confidence.phone = "high";
-          break;
-        } else { delete result.phone; }
-      }
+    const phone = extractPhone(fullText);
+    if (phone) {
+      result.phone = phone;
+      confidence.phone = "high";
     }
   }
 
@@ -591,7 +576,7 @@ export function splitMultiBooking(rawText) {
   // ถ้ามี phone >= 2 ตัว → ย้อนขึ้น 1 บรรทัด (ชื่อ) เป็นจุดเริ่ม block
   const phoneLines = [];
   for (let i = 0; i < lines.length; i++) {
-    if (/^\s*0[689]\d[\d\s-]{7,12}$/.test(lines[i])) {
+    if (isPhoneOnlyLine(lines[i])) {
       phoneLines.push(i);
     }
   }
@@ -646,7 +631,7 @@ export function learnFromCorrection(hints, rawText, parsedFields, finalFields, {
     /\d{1,2}[/-]\d{1,2}/.test(l) ||
     /\d{1,2}:\d{2}/.test(l) ||
     /^(ใหม่|เก่า|คอร์ส|วันที่|เวลา)$/.test(l) ||
-    /0[689]\d{8}/.test(l);
+    containsPhone(l);
 
   function addAlias(map, line, targetId, targetNames) {
     if (isNoise(line)) return;
