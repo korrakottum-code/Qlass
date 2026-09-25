@@ -1164,6 +1164,51 @@ export const getAllRoomSchedules = fetchRoomSchedules;
 export const getAllStaff = fetchStaff;
 export const getAllQueues = fetchQueues;
 
+// ─── ตามข้อมูลหลัง Realtime หลุดแล้วต่อกลับ (ดู src/utils/realtimeCatchUp.js) ───
+// คิวที่ถูกเพิ่ม/แก้ตั้งแต่ sinceIso: queues.updated_at ตั้งโดย trigger queue_set_concurrency_metadata เป็นเวลา
+// เซิร์ฟเวอร์ทุกครั้งที่แถวถูก INSERT หรือเปลี่ยนจริง (ทุกทางเขียน) ปกติได้ไม่กี่สิบแถว
+// แบ่งหน้าแบบต่อเนื่องเรียงตาม updated_at,id — ผลอาจตกหล่นได้เล็กน้อยถ้ามีการแก้ระหว่างดึง แต่ใช้เพื่อ "เพิ่ม/ทับ"
+// เท่านั้น ห้ามใช้ตีความว่า "ไม่อยู่ในผล = ถูกลบ" (ตัวลบใช้ประวัติการลบแทน ดู fetchDeletedQueueIdsSince)
+// truncated = ยังมีแถวเหลือเกินเพดาน maxPages (ปกติไม่เกิดเพราะจำกัดย้อนหลังไม่เกิน 24 ชม. ~3.7k แถว)
+export async function fetchQueuesChangedSince(sinceIso, { maxPages = 5 } = {}) {
+  const since = new Date(sinceIso);
+  if (Number.isNaN(since.getTime())) throw new Error("fetchQueuesChangedSince: invalid sinceIso");
+  const PAGE_SIZE = 1000;
+  const byId = new Map();
+  for (let page = 0; page < maxPages; page += 1) {
+    const { data, error } = await supabase
+      .from("queues")
+      .select("*")
+      .gte("updated_at", since.toISOString())
+      .order("updated_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+    if (error) throw error;
+    for (const row of data || []) byId.set(row.id, row);
+    if (!data || data.length < PAGE_SIZE) {
+      return { rows: Array.from(byId.values()).map(mapQueueRow), truncated: false };
+    }
+  }
+  return { rows: Array.from(byId.values()).map(mapQueueRow), truncated: true };
+}
+
+// id ของคิวที่ถูกลบตั้งแต่ sinceIso ตามประวัติการลบ (activity_logs) — แอปบันทึกทุกครั้งที่ลบคิวผ่านหน้าจอ
+// เลือกเฉพาะ target_id: คอลัมน์ detail มีชื่อ/เบอร์ลูกค้า ไม่มีเหตุผลต้องดึงมาเครื่องอื่น
+// (ลบตรงผ่าน API ไม่ทิ้งประวัติ จึงตามไม่ทัน = พฤติกรรมเดิมก่อนมีฟังก์ชันนี้ ไม่แย่ลง)
+export async function fetchDeletedQueueIdsSince(sinceIso) {
+  const since = new Date(sinceIso);
+  if (Number.isNaN(since.getTime())) throw new Error("fetchDeletedQueueIdsSince: invalid sinceIso");
+  const { data, error } = await supabase
+    .from("activity_logs")
+    .select("target_id")
+    .eq("action", "delete_queue")
+    .eq("target_type", "queue")
+    .gte("created_at", since.toISOString())
+    .limit(500);
+  if (error) throw error;
+  return (data || []).map((r) => r.target_id).filter(Boolean);
+}
+
 // ─── ดึงคิวเฉพาะห้อง+วัน (สำหรับเช็ค conflict จาก DB สด ก่อน save) ───
 // query เล็กมาก (ห้องเดียว วันเดียว) เร็ว ไม่กระทบ performance
 // คิวรอทั้งหมดที่ยังค้างอยู่ ไม่จำกัดวันที่

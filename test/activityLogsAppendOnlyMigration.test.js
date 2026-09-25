@@ -37,5 +37,7 @@ test("ไม่มี grant และไม่แตะ INSERT policy เดิ�
 test("แอปใช้ activity_logs แค่เพิ่มกับอ่าน — ถ้าเริ่มแก้/ลบ ต้องมาคิดใหม่ (สิทธิ์ถูกถอนแล้ว)", () => {
   const svc = readFileSync(new URL("../src/utils/supabaseService.js", import.meta.url), "utf8");
   const uses = [...svc.matchAll(/from\("activity_logs"\)\s*\n?\s*\.(\w+)/g)].map((m) => m[1]);
-  assert.deepEqual(uses.sort(), ["insert", "select"]);
+  // อ่านได้หลายจุด (หน้าประวัติการลบ + ตามข้อมูลหลัง Realtime หลุด) แต่ต้องมีแค่ insert กับ select เท่านั้น
+  assert.ok(uses.length >= 2);
+  assert.deepEqual([...new Set(uses)].sort(), ["insert", "select"]);
 });

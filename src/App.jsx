@@ -25,7 +25,8 @@ import {
   getAllCategories, createCategory as createCategoryDB, deleteCategory as deleteCategoryDB,
   fetchTickets, createTicketDB, updateTicketDB, deleteTicketDB,
   createActivityLog,
-  mapQueueRow, fetchQueuesForRoomDate, fetchWaitingQueues, searchQueues
+  mapQueueRow, fetchQueuesForRoomDate, fetchWaitingQueues, searchQueues,
+  fetchQueuesChangedSince, fetchDeletedQueueIdsSince
 } from "./utils/supabaseService";
 import { supabase } from "./utils/supabaseClient";
 import { learnFromCorrection } from "./utils/smartParser";
@@ -37,6 +38,7 @@ import { serverErrorCode } from "./utils/sessionApi";
 import { recordClientDiagnostic } from "./utils/clientDiagnostics";
 import { controlledRefreshEnabled, getControlledRefreshStatus, serverDiagnosticsEnabled, flushClientDiagnostics as flushDiagnostics } from "./utils/clientObservability";
 import { reconcileRealtimeQueue, reconcileRealtimeById, reconcileRealtimeRoomProcedure } from "./utils/realtimeQueueState";
+import { applyQueueCatchUp, createRealtimeCatchUpController } from "./utils/realtimeCatchUp";
 import { getBedSwitchState, buildBedSwitchClosure, listQueuesOnBed, isSamePlacement } from "./utils/bedSwitch";
 import { buildRescheduledQueue } from "./utils/rescheduleQueue";
 import { buildRoomProcedureIndex, isProcedureAllowedInRoom, shouldEnforceOnSave, procedureRoomBlockMessage } from "./utils/roomProcedures";
@@ -131,6 +133,9 @@ export default function App() {
   // กัน in-flight ซ้ำ: key "from|to" → Promise
   const rangeInFlightRef = useRef(new Map());
   const loadedRangesRef = useRef([]); // [{from,to}] เรียงแล้ว ไม่ซ้อน — เก็บใน ref เพราะไม่มี UI อ่านโดยตรง
+  // state คิวล่าสุด (ไว้ให้ตัวตามข้อมูลหลัง Realtime หลุดถ่าย "ภาพก่อนเริ่มดึง") + ตัวคุมจังหวะการตาม
+  const queuesRef = useRef([]);
+  const catchUpControllerRef = useRef(null);
   const [refreshRequired, setRefreshRequired] = useState(false);
 
   // ─── Booking form ───
@@ -262,8 +267,51 @@ export default function App() {
     };
   }, [currentUser?.id]);
 
+  useEffect(() => { queuesRef.current = queues; }, [queues]);
+
+  // ─── ตามข้อมูลให้ทัน หลัง Realtime หลุดแล้วต่อกลับ (25 ก.ย. 2569) ───
+  // ตอนหลุด เหตุการณ์ที่เครื่องอื่นทำ (ลงคิว/เปลี่ยนสถานะ/ลบ) จะไม่ถูกส่งซ้ำ ของเดิมตอนต่อกลับแค่ log จึงตกหล่นจนกว่า
+  // จะรีเฟรช — ตอนนี้ดึงเฉพาะสิ่งที่เปลี่ยนตั้งแต่ก่อนหลุด (ปกติไม่กี่สิบแถว) แล้วรวมด้วยกติกาที่ไม่ทับข้อมูลสดของเครื่อง
+  // เหตุผลการออกแบบและกติกาทั้งหมดอยู่ที่หัวไฟล์ src/utils/realtimeCatchUp.js
+  // ใช้กลไก deletedDuringHistoryLoadRef/rangeInFlightRef เดียวกับการโหลดช่วงอื่น: คิวที่ถูกลบระหว่างดึงต้องไม่โผล่กลับมา
+  // ล้มเหลว = เงียบ (ตัวคุมลองใหม่เอง สูงสุด 3 ครั้ง) ห้ามรบกวนพนักงาน หน้าจอเหลือสภาพเดียวกับก่อนมีฟีเจอร์นี้
+  const runQueueCatchUp = useCallback(async (sinceIso) => {
+    const key = "CATCHUP";
+    if (rangeInFlightRef.current.has(key)) return rangeInFlightRef.current.get(key);
+    const job = (async () => {
+      const startQueues = queuesRef.current;
+      const deletedIds = deletedDuringHistoryLoadRef.current ?? new Set();
+      deletedDuringHistoryLoadRef.current = deletedIds;
+      try {
+        const [changed, removedIds] = await Promise.all([
+          fetchQueuesChangedSince(sinceIso),
+          fetchDeletedQueueIdsSince(sinceIso),
+        ]);
+        if (changed.truncated) console.warn("[Realtime] catch-up: changed rows exceeded the page cap, applied the first pages only");
+        console.log("[Realtime] catch-up:", { since: sinceIso, changed: changed.rows.length, deleted: removedIds.length });
+        setQueues((prev) => applyQueueCatchUp(prev, changed.rows, { startQueues, deletedIds, removedIds }));
+      } finally {
+        rangeInFlightRef.current.delete(key);
+        if (rangeInFlightRef.current.size === 0) deletedDuringHistoryLoadRef.current = null;
+      }
+    })();
+    rangeInFlightRef.current.set(key, job);
+    return job;
+  }, []);
+
+  useEffect(() => { catchUpControllerRef.current?.setReady(isDataReady); }, [isDataReady]);
+
   // ─── Realtime subscription for queues ───
   useEffect(() => {
+    const catchUp = createRealtimeCatchUpController({
+      run: runQueueCatchUp,
+      // แท็บที่ซ่อนอยู่ (ต้นเหตุของการหลุดบ่อยสุด) ไม่ตาม รอกลับมาดูแล้วค่อยตาม
+      isVisible: () => typeof document === "undefined" || document.visibilityState !== "hidden",
+    });
+    catchUpControllerRef.current = catchUp;
+    const onVisibilityChange = () => catchUp.onVisibilityChange();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     const channel = supabase
       .channel("queues-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "queues" }, (payload) => {
@@ -316,13 +364,19 @@ export default function App() {
       .subscribe((status) => {
         console.log("[Realtime] status:", status);
         recordClientDiagnostic("realtime_status", { status });
+        catchUp.onStatus(status);
         if (status === "CHANNEL_ERROR") {
-          console.warn("Realtime channel error — falling back to manual fetch");
+          console.warn("Realtime channel error — will catch up once the channel is back");
         }
       });
 
-    return () => { supabase.removeChannel(channel); };
-  }, []);
+    return () => {
+      catchUp.dispose();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (catchUpControllerRef.current === catchUp) catchUpControllerRef.current = null;
+      supabase.removeChannel(channel);
+    };
+  }, [runQueueCatchUp]);
 
   // Note: All data is now stored in Supabase only, no localStorage
 
