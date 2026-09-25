@@ -24,9 +24,11 @@ function walk(dir) {
 }
 
 // toISOString() ใช้ได้อย่างเดียว: เก็บ "เวลาที่เกิดเหตุ" ลงคอลัมน์ timestamp
-// (updated_at / status_updated_at / resolved_at / at / exportedAt / ขอบช่วงเวลาที่สร้างจาก
+// (updated_at / created_at / status_updated_at / resolved_at / at / exportedAt / ขอบช่วงเวลาที่สร้างจาก
 // เวลาเครื่องอยู่แล้ว) — ห้ามเอาไปตัดเป็นวันที่
-const TIMESTAMP_OK = /(updated_at|resolved_at|statusUpdatedAt|at: new Date|exportedAt|start\.toISOString|end\.toISOString)/;
+// จุดที่เทียบกับคอลัมน์ timestamptz ตรง ๆ แต่ชื่อบรรทัดไม่ระบุคอลัมน์ ให้ต่อท้ายว่า `// timestamp ...` เพื่อยืนยันเจตนา
+// (ใช้ใน catchUpSince ของ realtimeCatchUp.js — ตามข้อมูลหลัง Realtime หลุด 25 ก.ย. 2569)
+const TIMESTAMP_OK = /(updated_at|created_at|resolved_at|statusUpdatedAt|at: new Date|exportedAt|start\.toISOString|end\.toISOString|\/\/ timestamp )/;
 
 test("ห้ามตัดวันที่ออกจาก toISOString() ที่ไหนอีก", () => {
   const offenders = [];
