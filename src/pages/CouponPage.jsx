@@ -93,6 +93,23 @@ const STAT_COLORS = { used: STATUS.used_up.color, active: STATUS.active.color, e
 const baht = (v) => `฿${Number(v || 0).toLocaleString()}`;
 const num = (v) => Number(v || 0).toLocaleString();
 
+// เดือนเป็นข้อความ "YYYY-MM" คำนวณด้วยเวลาเครื่อง (ไม่ผ่าน toISOString)
+const addMonth = (ym, n) => {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+// ทั้งเดือน (เดือนปัจจุบันนับถึงวันนี้ ไม่ล้ำไปอนาคต)
+const monthRange = (ym, today) => {
+  const [y, m] = ym.split("-").map(Number);
+  const end = `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+  return { from: `${ym}-01`, to: end > today ? today : end };
+};
+const monthLabel = (ym) => {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("th-TH", { month: "long", year: "numeric" });
+};
+
 function Tile({ label, value, sub }) {
   return (
     <div className="card" style={{ padding: "10px 12px", minWidth: 0 }}>
@@ -152,7 +169,13 @@ function StatsView({ token, onToast }) {
   }, [load]);
 
   const preset = (days) => data && setRange({ from: shiftDay(data.today, -(days - 1)), to: data.today });
-  const monthStart = () => data && setRange({ from: `${data.today.slice(0, 8)}01`, to: data.today });
+  // ลูกศรเปลี่ยนเดือน: อิงเดือนของวันสิ้นสุดที่กำลังดูอยู่ (ช่วง 30 วันที่คร่อมสองเดือน → ‹ ไปเดือนก่อนของวันสิ้นสุด)
+  const thisMonth = data ? data.today.slice(0, 7) : "";
+  const anchor = (range.to || data?.to || "").slice(0, 7);
+  const gotoMonth = (ym) => data && setRange(monthRange(ym, data.today));
+  const viewFrom = range.from || data?.from || "";
+  const viewTo = range.to || data?.to || "";
+  const isMonthView = !!data && anchor !== "" && viewFrom === monthRange(anchor, data.today).from && viewTo === monthRange(anchor, data.today).to;
 
   const t = data?.totals;
   const pct = t && t.issued ? Math.round((t.used / t.issued) * 100) : 0;
@@ -164,16 +187,24 @@ function StatsView({ token, onToast }) {
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button className="btn btn-sm btn-secondary" aria-label="เดือนก่อนหน้า" onClick={() => gotoMonth(addMonth(anchor, -1))} disabled={!data}>‹</button>
+        <span style={{ minWidth: 130, textAlign: "center", fontWeight: 700, fontSize: 14, color: isMonthView ? "inherit" : "var(--text3)" }} aria-live="polite">
+          {isMonthView ? monthLabel(anchor) : "กำหนดช่วงเอง"}
+        </span>
+        <button className="btn btn-sm btn-secondary" aria-label="เดือนถัดไป" onClick={() => gotoMonth(addMonth(anchor, 1))} disabled={!data || anchor >= thisMonth}>›</button>
+        <button className="btn btn-sm btn-secondary" onClick={() => gotoMonth(thisMonth)} disabled={!data}>เดือนนี้</button>
+        <button className="btn btn-sm btn-secondary" onClick={() => gotoMonth(addMonth(thisMonth, -1))} disabled={!data}>เดือนที่แล้ว</button>
+        <button className="btn btn-sm btn-secondary" onClick={() => preset(7)} disabled={!data}>7 วัน</button>
+        <button className="btn btn-sm btn-secondary" onClick={() => preset(30)} disabled={!data}>30 วัน</button>
+        {loading && <span style={{ fontSize: 12, color: "var(--text3)" }}>กำลังโหลด…</span>}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <label style={{ fontSize: 12 }}>ตั้งแต่
           <input className="input" type="date" value={range.from || data?.from || ""} onChange={(e) => setRange({ ...range, from: e.target.value })} />
         </label>
         <label style={{ fontSize: 12 }}>ถึง
           <input className="input" type="date" value={range.to || data?.to || ""} onChange={(e) => setRange({ ...range, to: e.target.value })} />
         </label>
-        <button className="btn btn-sm btn-secondary" onClick={() => preset(7)} disabled={!data}>7 วัน</button>
-        <button className="btn btn-sm btn-secondary" onClick={() => preset(30)} disabled={!data}>30 วัน</button>
-        <button className="btn btn-sm btn-secondary" onClick={monthStart} disabled={!data}>เดือนนี้</button>
-        {loading && <span style={{ fontSize: 12, color: "var(--text3)" }}>กำลังโหลด…</span>}
       </div>
 
       {!data ? <div style={{ color: "var(--text3)" }}>{loading ? "กำลังโหลด…" : "ยังไม่มีข้อมูล"}</div> : (

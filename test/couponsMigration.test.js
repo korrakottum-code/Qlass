@@ -105,3 +105,14 @@ test("สถิติคูปอง: เฉพาะ superadmin/head_admin/admi
   // ผลรวมสถานะครบทุกใบ: 4 กลุ่ม (ใช้แล้ว/ใช้ได้/หมดอายุ/ยกเลิก) นับแบบไม่ซ้ำกัน
   assert.match(sql, /'cancelled', count\(\*\) filter \(where cancelled_at is not null\)/);
 });
+
+test("สถิติ: มีลูกศรเปลี่ยนเดือนและปุ่มเดือนที่แล้ว โดยไม่ใช้ toISOString คำนวณวันที่", () => {
+  const page = readFileSync(new URL("../src/pages/CouponPage.jsx", import.meta.url), "utf8");
+  assert.match(page, /aria-label="เดือนก่อนหน้า"/);
+  assert.match(page, /aria-label="เดือนถัดไป"/);
+  assert.match(page, /เดือนที่แล้ว/);
+  assert.match(page, /anchor >= thisMonth/);   // ห้ามกด › ไปเดือนในอนาคต
+  // ตรวจเฉพาะโค้ด (ตัดคอมเมนต์บรรทัดออกก่อน — คอมเมนต์อธิบายกฎข้อนี้เองได้)
+  const code = page.split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n");
+  assert.doesNotMatch(code, /toISOString/);
+});
