@@ -58,6 +58,37 @@ export function createSessionApi(invoke) {
     async deleteBranchServer(token, branchId) {
       await callSessionFunction({ action: "branch_delete", token, branchId });
     },
+    // คูปอง: ทุกการอ่าน/เขียนผ่าน staff-session (ตารางปิดจากคีย์หน้าเว็บ) — คืน { coupon } หรือ { total, coupons }
+    async lookupCoupon(token, code) {
+      return (await callSessionFunction({ action: "coupon_lookup", token, code })).coupon;
+    },
+    listCoupons(token, { search = "", status = "all", limit = 50, offset = 0 } = {}) {
+      return callSessionFunction({ action: "coupon_list", token, search, status, limit, offset });
+    },
+    listCouponBatches(token, { limit = 100, offset = 0 } = {}) {
+      return callSessionFunction({ action: "coupon_batches", token, limit, offset });
+    },
+    async redeemCoupon(token, { code, branchId, note }) {
+      return (await callSessionFunction({ action: "coupon_redeem", token, code, branchId, note })).coupon;
+    },
+    async revertCouponRedemption(token, redemptionId) {
+      return (await callSessionFunction({ action: "coupon_revert", token, redemptionId })).coupon;
+    },
+    async cancelCoupon(token, code, cancel = true) {
+      return (await callSessionFunction({ action: "coupon_cancel", token, code, cancel })).coupon;
+    },
+    async fetchCouponStats(token, { from = null, to = null } = {}) {
+      return (await callSessionFunction({ action: "coupon_stats", token, from, to })).stats;
+    },
+    cancelCouponBatch(token, batchId, cancel = true) {
+      return callSessionFunction({ action: "coupon_cancel_batch", token, batchId, cancel });
+    },
+    async fetchCouponCounters(token) {
+      return (await callSessionFunction({ action: "coupon_counters", token })).counters || {};
+    },
+    generateCoupons(token, batch) {
+      return callSessionFunction({ action: "coupon_generate", token, batch });
+    },
     flushClientDiagnostics(token, events) {
       return callSessionFunction({ action: "client_diagnostics", token, events });
     },

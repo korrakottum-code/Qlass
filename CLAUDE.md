@@ -68,6 +68,10 @@ Branch filtering is applied in `App.jsx` via `filterByUserBranch()`: admin-level
 | `scripts/exportManual.mjs` | `npm run manual:docs` regenerates `docs/USER_MANUAL.md` and `docs/QUIZ_PRE_POST.md` from the same two content files — edit the content, not the docs |
 | `scripts/screenshot/` | Manual screenshots (`public/manual/*.jpg`, referenced by `img` blocks). `npm run manual:demo` starts Vite with an in-memory mock of `supabaseService`/`supabaseClient` (deterministic demo data, no network, demo PINs from the mock only); then `npm run manual:shots` drives the real UI with playwright-core + installed Chrome and rewrites every image. Re-run both after UI changes so pictures match the screen |
 
+### Coupons (exception to "pages don't fetch")
+
+The coupon feature (`pages/CouponPage.jsx`, menu `coupons`) deliberately does **not** keep its data in `App.jsx` state: there can be 100 000+ coupons, so the page queries the server per lookup / per page (list 50 rows, batches, stats aggregated in SQL). All coupon tables (`coupons`, `coupon_redemptions`, `coupon_counters`, `coupon_batches`) are closed to the browser key (RLS on, no policy, privileges revoked); every read/write goes through `staff-session` `coupon_*` actions, which check the role server-side and call `coupon_*_v1` SQL functions (service_role only). The page talks to the server only through `src/utils/couponApi.js` (the demo mode `npm run manual:demo` swaps it for `scripts/screenshot/mockCouponApi.js`). Codes are `POS category + "-" + 7-digit running number` (e.g. `D1-0000001`), one counter per category that only moves forward. Roles: generate/cancel = superadmin, head_admin; redeem/lookup/list = + admin, branch_manager, cashier (branch roles are locked to their own branch and see customer phones masked); stats = superadmin, head_admin, admin.
+
 ### Conflict detection
 
 Before saving a queue, `App.jsx` fetches **fresh data from DB** (`fetchQueuesForRoomDate`) rather than trusting local state, to prevent race conditions when multiple devices book the same room simultaneously.

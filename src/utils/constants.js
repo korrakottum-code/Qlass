@@ -116,6 +116,7 @@ export const NAV_ITEMS = [
   { id: "commission",    label: "ค่าคอมมิชชั่น",       icon: "💰" },
   { id: "export",        label: "Export ข้อมูล",       icon: "📥" },
   { id: "tickets",       label: "แจ้งปัญหาระบบ",       icon: "🎫" },
+  { id: "coupons",       label: "คูปอง",                icon: "🎟️" },
   { section: "ตั้งค่าระบบ" },
   { id: "branches",      label: "จัดการสาขา",          icon: "🏢" },
   { id: "procedures",    label: "จัดการหัตถการ",        icon: "💉" },
@@ -145,7 +146,7 @@ export const ROLES = [
     branchScope: "all",
     color: "#dc2626",
     bg: "rgba(220,38,38,0.1)",
-    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","branches","procedures","promos","rooms","room-schedule","staff","activity-log","manual"],
+    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","coupons","branches","procedures","promos","rooms","room-schedule","staff","activity-log","manual"],
   },
   {
     value: "head_admin",
@@ -153,7 +154,7 @@ export const ROLES = [
     branchScope: "all",
     color: "#7c3aed",
     bg: "rgba(124,58,237,0.1)",
-    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","procedures","promos","rooms","room-schedule","staff","activity-log","manual"],
+    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","coupons","procedures","promos","rooms","room-schedule","staff","activity-log","manual"],
   },
   {
     value: "admin",
@@ -161,7 +162,7 @@ export const ROLES = [
     branchScope: "all",
     color: "#2563eb",
     bg: "rgba(37,99,235,0.1)",
-    pages: ["booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","room-schedule","manual"],
+    pages: ["booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","coupons","room-schedule","manual"],
   },
   {
     value: "branch_manager",
@@ -169,7 +170,7 @@ export const ROLES = [
     branchScope: "single",
     color: "#059669",
     bg: "rgba(5,150,105,0.1)",
-    pages: ["booking","queue-table","waiting-queue","timeline","summary","export","tickets","rooms","room-schedule","manual"],
+    pages: ["booking","queue-table","waiting-queue","timeline","summary","export","tickets","coupons","rooms","room-schedule","manual"],
   },
   {
     value: "cashier",
@@ -177,7 +178,7 @@ export const ROLES = [
     branchScope: "single",
     color: "#d97706",
     bg: "rgba(217,119,6,0.1)",
-    pages: ["booking","queue-table","waiting-queue","timeline","summary","export","tickets","manual"],
+    pages: ["booking","queue-table","waiting-queue","timeline","summary","export","tickets","coupons","manual"],
   },
 ];
 
