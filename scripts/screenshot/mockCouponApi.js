@@ -46,7 +46,7 @@ export async function generateCoupons(_t, b) {
   counters[prefix] = end;
   const batchId = uid();
   const now = new Date().toISOString();
-  batches.unshift({ id: batchId, prefix, firstCode: `${prefix}-${pad(start)}`, lastCode: `${prefix}-${pad(end)}`, name: b.name.trim(), price: Number(b.price), totalUses: uses, expiryDate: b.expiryDate, quantity: qty, note: b.note || null, createdAt: now });
+  batches.unshift({ id: batchId, prefix, firstCode: `${prefix}-${pad(start)}`, lastCode: `${prefix}-${pad(end)}`, name: b.name.trim(), category: b.category || "", price: Number(b.price), totalUses: uses, expiryDate: b.expiryDate, quantity: qty, note: b.note || null, createdAt: now });
   for (let n = start; n <= end; n++) {
     coupons.unshift({ id: uid(), code: `${prefix}-${pad(n)}`, name: b.name.trim(), category: b.category || "", price: Number(b.price), totalUses: uses, usedCount: 0, expiryDate: b.expiryDate, customerName: b.customerName, customerPhone: b.customerPhone, note: b.note, createdAt: now });
   }

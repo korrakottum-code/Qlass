@@ -49,3 +49,8 @@ test("คูปอง 1 ใบใช้ได้ 1 ครั้ง: edge functio
   assert.match(edge, /p_total_uses: 1,/);
   assert.doesNotMatch(edge, /p_total_uses: Number\(/);
 });
+
+test("รายการล็อตส่งหมวดกลับมาด้วย เพื่อออกเพิ่มจากล็อตเดิมโดยไม่ต้องกรอกใหม่", () => {
+  const body = sql.slice(sql.indexOf("function public.coupon_batches_v1"));
+  assert.match(body, /'category', b\.category/);
+});

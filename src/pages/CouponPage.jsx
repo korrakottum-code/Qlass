@@ -76,6 +76,9 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   const [gen, setGen] = useState({ name: "", category: "", price: "", quantity: 10, startAfter: "", prefix: "D1", expiryDate: "", customerName: "", customerPhone: "", note: "" });
   const [lastBatch, setLastBatch] = useState(null);
   const [counters, setCounters] = useState({});
+  // เพิ่มจำนวนจากล็อตเดิม: จำนวนและวันหมดอายุที่กรอกในแต่ละแถว (คีย์ = id ล็อต)
+  const [addQty, setAddQty] = useState({});
+  const [addExpiry, setAddExpiry] = useState({});
   const [batches, setBatches] = useState({ total: 0, batches: [] });
 
   const token = getServerSessionToken();
@@ -99,7 +102,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
 
   // เลขล่าสุดของแต่ละหมวด ใช้โชว์ตัวอย่างช่วงรหัสก่อนกดออกล็อต (โหลดใหม่ทุกครั้งที่เปิดแท็บ/ออกล็อตเสร็จ)
   useEffect(() => {
-    if (tab !== "generate" || !canManage) return;
+    if ((tab !== "generate" && tab !== "batches") || !canManage) return;
     fetchCouponCounters(token).then(setCounters).catch(() => setCounters({}));
   }, [tab, canManage, token, lastBatch]);
 
@@ -168,6 +171,32 @@ export default function CouponPage({ branches, currentUser, onToast }) {
     }
   }
 
+  // ออกเพิ่มจากล็อตที่เคยออกแล้ว: ใช้ชื่อ/ราคา/หมวด/หมายเหตุเดิม กรอกแค่จำนวน (และแก้วันหมดอายุได้) แล้วยืนยัน
+  async function handleAddMore(b) {
+    const qty = Number(addQty[b.id]);
+    const expiry = addExpiry[b.id] || String(b.expiryDate).slice(0, 10);
+    if (!(qty >= 1 && qty <= 20000)) { onToast?.("error", ERRORS.invalid_quantity); return; }
+    const last = counters[b.prefix] || 0;
+    const range = `${b.prefix}-${String(last + 1).padStart(7, "0")} – ${b.prefix}-${String(last + qty).padStart(7, "0")}`;
+    if (!window.confirm(`เพิ่ม ${qty.toLocaleString()} ใบ\n${b.name} · ฿${Number(b.price).toLocaleString()} · หมดอายุ ${formatThaiDate(expiry)}\nรหัสที่จะได้: ${range}\n\nยืนยันออกคูปอง?`)) return;
+    const r = await run(async () => {
+      try {
+        return await generateCoupons(token, {
+          name: b.name, category: b.category || "", price: Number(b.price), prefix: b.prefix,
+          quantity: qty, expiryDate: expiry, note: b.note || "",
+        });
+      } catch (err) {
+        onToast?.("error", await explain(err));
+        return null;
+      }
+    });
+    if (r.started && r.result) {
+      setLastBatch(r.result); // ทำให้รายการล็อตและเลขล่าสุดโหลดใหม่
+      setAddQty((prev) => ({ ...prev, [b.id]: "" }));
+      onToast?.("success", `เพิ่มแล้ว ${r.result.count.toLocaleString()} ใบ: ${r.result.firstCode} – ${r.result.lastCode}`);
+    }
+  }
+
   async function handleGenerate(e) {
     e.preventDefault();
     const r = await run(async () => {
@@ -185,6 +214,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
     });
     if (r.started && r.result) {
       setLastBatch(r.result);
+      setGen((g) => ({ ...g, startAfter: "" })); // ใช้ครั้งเดียว: ตัวนับเดินต่อเองแล้ว
       onToast?.("success", `ออกคูปอง ${r.result.count} ใบแล้ว`);
     }
   }
@@ -308,7 +338,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
       {tab === "batches" && (
         <div className="table-scroll">
           <table className="data-table">
-            <thead><tr><th>ช่วงรหัส</th><th>ชื่อ</th><th>ราคา</th><th>จำนวนใบ</th><th>หมดอายุ</th><th>วันที่ออก</th></tr></thead>
+            <thead><tr><th>ช่วงรหัส</th><th>ชื่อ</th><th>ราคา</th><th>จำนวนใบ</th><th>หมดอายุ</th><th>วันที่ออก</th>{canManage && <th>เพิ่มจำนวน (ออกต่อจากเลขล่าสุด)</th>}</tr></thead>
             <tbody>
               {batches.batches.map((b) => (
                 <tr key={b.id}>
@@ -318,9 +348,18 @@ export default function CouponPage({ branches, currentUser, onToast }) {
                   <td>{b.quantity.toLocaleString()}</td>
                   <td>{formatThaiDate(b.expiryDate)}</td>
                   <td>{new Date(b.createdAt).toLocaleDateString("th-TH")}</td>
+                  {canManage && (
+                    <td>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap" }}>
+                        <input className="input" type="number" min="1" max="20000" placeholder="จำนวน" style={{ width: 90 }} value={addQty[b.id] ?? ""} onChange={(e) => setAddQty({ ...addQty, [b.id]: e.target.value })} />
+                        <input className="input" type="date" style={{ width: 140 }} value={addExpiry[b.id] ?? String(b.expiryDate).slice(0, 10)} onChange={(e) => setAddExpiry({ ...addExpiry, [b.id]: e.target.value })} title="วันหมดอายุของล็อตใหม่" />
+                        <button className="btn btn-sm btn-primary" disabled={isSaving || !addQty[b.id]} onClick={() => handleAddMore(b)}>เพิ่ม</button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
-              {batches.batches.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text3)" }}>ยังไม่มีล็อต</td></tr>}
+              {batches.batches.length === 0 && <tr><td colSpan={canManage ? 7 : 6} style={{ textAlign: "center", color: "var(--text3)" }}>ยังไม่มีล็อต</td></tr>}
             </tbody>
           </table>
         </div>

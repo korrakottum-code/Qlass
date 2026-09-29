@@ -322,7 +322,7 @@ as $$
         'id', b.id, 'prefix', b.prefix,
         'firstCode', b.prefix || '-' || lpad(b.first_no::text, 7, '0'),
         'lastCode',  b.prefix || '-' || lpad(b.last_no::text, 7, '0'),
-        'name', b.name, 'price', b.price, 'totalUses', b.total_uses, 'expiryDate', b.expiry_date,
+        'name', b.name, 'category', b.category, 'price', b.price, 'totalUses', b.total_uses, 'expiryDate', b.expiry_date,
         'quantity', b.quantity, 'note', b.note, 'createdAt', b.created_at) order by b.created_at desc)
       from (select * from public.coupon_batches order by created_at desc
              limit least(greatest(coalesce(p_limit, 100), 1), 200) offset greatest(coalesce(p_offset, 0), 0)) b), '[]'::jsonb));
