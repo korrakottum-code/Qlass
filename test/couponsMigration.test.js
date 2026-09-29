@@ -74,3 +74,14 @@ test("ยกเลิกทั้งล็อต: ปิดเฉพาะใบ
   assert.ok(block.includes("couponManageRoles.has(role)"), "ต้องจำกัด role");
   assert.ok(block.indexOf("couponManageRoles.has(role)") < block.indexOf("coupon_cancel_batch_v1"), "เช็ค role ก่อนเรียกฟังก์ชัน");
 });
+
+test("ตัด/ยกเลิกรายใบ/ยกเลิกทั้งล็อต ต้องพิมพ์เลข 3 ตัวท้ายยืนยัน (ไม่ใช้ confirm ธรรมดา)", () => {
+  const page = readFileSync(new URL("../src/pages/CouponPage.jsx", import.meta.url), "utf8");
+  assert.match(page, /const ok = value === pending\.expect;/);
+  assert.match(page, /disabled=\{!ok \|\| busy\}/);
+  assert.match(page, /expect: last3\(found\.code\)/);          // ตัด
+  assert.match(page, /expect: last3\(c\.code\)/);              // ยกเลิกรายใบ
+  assert.match(page, /expect: last3\(x\.lastCode\)/);          // ยกเลิกทั้งล็อต
+  // ตัวที่ทำจริง (do*) ต้องถูกเรียกผ่านหน้าต่างยืนยันเท่านั้น ไม่ผูกกับปุ่มโดยตรง
+  assert.doesNotMatch(page, /onClick=\{doRedeem\}|onClick=\{\(\) => doCancel\(|onClick=\{\(\) => doCancelBatch\(/);
+});

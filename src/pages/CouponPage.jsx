@@ -3,6 +3,7 @@ import { formatThaiDate } from "../utils/helpers";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
 import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters, cancelCouponBatch } from "../utils/couponApi";
 import { serverErrorCode } from "../utils/sessionApi";
+import Modal, { ModalHeader, ModalBody } from "../components/Modal";
 
 // หมวดรหัส POS v6.2 — ต้องตรงกับ regex ใน coupon_generate_v1
 const POS_CATEGORIES = [
@@ -51,6 +52,39 @@ function StatusBadge({ status }) {
   return <span style={{ color: s.color, fontWeight: 700, fontSize: 12 }}>● {s.label}</span>;
 }
 
+// หน้าต่างยืนยันสำหรับการกระทำที่แก้ยาก (ตัด / ยกเลิก): ต้องพิมพ์เลข 3 ตัวท้ายของรหัสให้ตรงก่อนถึงกดยืนยันได้
+// กันกดผิดใบ/ผิดล็อต — ผู้ใช้ต้องมองรหัสจริง ๆ ไม่ใช่กด "ตกลง" ตามความเคยชิน
+function DigitConfirm({ pending, busy, onClose, onConfirm }) {
+  const [value, setValue] = useState("");
+  const ok = value === pending.expect;
+  return (
+    <Modal onClose={onClose}>
+      <ModalHeader title={pending.title} onClose={onClose} />
+      <ModalBody>
+        <div style={{ display: "grid", gap: 8 }}>
+          {pending.lines.map((l, i) => (
+            <div key={i} style={{ fontSize: i === 0 ? 15 : 13, fontWeight: i === 0 ? 700 : 400, color: i === 0 ? "inherit" : "var(--text3)" }}>{l}</div>
+          ))}
+          <div style={{ fontFamily: "var(--mono)", fontSize: 14 }}>{pending.codeLabel || "รหัสคูปอง"}: <b>{pending.code}</b></div>
+          <label style={{ fontSize: 13 }}>พิมพ์เลข 3 ตัวท้ายของรหัสนี้เพื่อยืนยัน
+            <input
+              className="input" autoFocus inputMode="numeric" maxLength={3} placeholder="เช่น 001" value={value}
+              style={{ fontFamily: "var(--mono)", letterSpacing: 4, fontSize: 16, marginTop: 4 }}
+              onChange={(e) => setValue(e.target.value.replace(/\D/g, ""))}
+              onKeyDown={(e) => { if (e.key === "Enter" && ok && !busy) onConfirm(); }}
+            />
+          </label>
+          {value.length === 3 && !ok && <div style={{ color: "#dc2626", fontSize: 12 }}>เลขไม่ตรงกับรหัส</div>}
+        </div>
+      </ModalBody>
+      <div className="modal-footer">
+        <button className="btn btn-secondary" onClick={onClose}>ปิด</button>
+        <button className="btn btn-primary" style={pending.danger ? { background: "#dc2626", borderColor: "#dc2626" } : undefined} disabled={!ok || busy} onClick={onConfirm}>{pending.label}</button>
+      </div>
+    </Modal>
+  );
+}
+
 // ทั้งหน้านี้ไม่เก็บอะไรใน state ของ App.jsx — ค้นเป็นรายใบ/แบ่งหน้าจากเซิร์ฟเวอร์เท่านั้น
 export default function CouponPage({ branches, currentUser, onToast }) {
   const role = currentUser?.role;
@@ -83,6 +117,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   const [addQty, setAddQty] = useState({});
   const [addExpiry, setAddExpiry] = useState({});
   const [batchTick, setBatchTick] = useState(0); // เพิ่มค่าเพื่อโหลดรายการล็อตใหม่หลังยกเลิก/กู้คืน
+  const [pending, setPending] = useState(null); // การกระทำที่รอพิมพ์เลข 3 ตัวท้ายยืนยัน
   const [openGroups, setOpenGroups] = useState(() => new Set()); // โปรที่กางดูช่วงรหัสของแต่ละล็อตอยู่
   const [batches, setBatches] = useState({ total: 0, batches: [] });
 
@@ -127,7 +162,25 @@ export default function CouponPage({ branches, currentUser, onToast }) {
     }
   }
 
-  async function handleRedeem() {
+  const last3 = (code) => String(code).slice(-3);
+  const askDigits = (cfg) => setPending({ ...cfg, id: Date.now() });
+  async function confirmPending() {
+    const p = pending;
+    setPending(null);
+    if (p) await p.onConfirm();
+  }
+
+  function handleRedeem() {
+    if (!found || !branchId) return;
+    const branchName = branches.find((b) => String(b.id) === String(branchId))?.name || branchId;
+    askDigits({
+      title: "ยืนยันตัดคูปอง", code: found.code, expect: last3(found.code), label: "ตัดคูปอง",
+      lines: [found.name, `สาขาที่ตัด: ${branchName}`, "ตัด = ลูกค้านำคูปองใบนี้มาใช้จริง ระบบบันทึกประวัติการใช้ (ถ้าตัดผิดใช้ปุ่ม “ย้อน”)"],
+      onConfirm: doRedeem,
+    });
+  }
+
+  async function doRedeem() {
     if (!found || !branchId) return;
     const r = await run(async () => {
       try {
@@ -160,8 +213,16 @@ export default function CouponPage({ branches, currentUser, onToast }) {
     }
   }
 
-  async function handleCancel(c, cancel) {
-    if (cancel && !window.confirm(`ยกเลิกคูปอง ${c.code}? จะตัดใช้ไม่ได้อีก (กู้คืนได้ภายหลัง)`)) return;
+  function handleCancel(c, cancel) {
+    if (!cancel) { doCancel(c, false); return; }
+    askDigits({
+      title: "ยืนยันยกเลิกคูปอง", code: c.code, expect: last3(c.code), label: "ยกเลิกคูปอง", danger: true,
+      lines: [c.name, "ยกเลิก = คูปองใบนี้ใช้ไม่ได้อีก (ออกผิด / คืนเงิน / คูปองหาย) ไม่ใช่การใช้ ไม่มีประวัติการใช้ กู้คืนได้ภายหลัง"],
+      onConfirm: () => doCancel(c, true),
+    });
+  }
+
+  async function doCancel(c, cancel) {
     const r = await run(async () => {
       try {
         return await cancelCoupon(token, c.code, cancel);
@@ -203,12 +264,20 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   }
 
   // ออกล็อตผิด → ยกเลิกทั้งล็อต: ปิดเฉพาะใบที่ยังไม่เคยถูกใช้ ใบที่ตัดไปแล้วไม่ถูกแตะ กู้คืนได้
-  async function handleCancelBatch(x, cancel) {
+  function handleCancelBatch(x, cancel) {
     const range = `${x.firstCode} – ${x.lastCode}`;
-    const msg = cancel
-      ? `ยกเลิกทั้งล็อต ${range} (${x.quantity.toLocaleString()} ใบ) ?\nใบที่ยังไม่เคยถูกใช้จะตัดไม่ได้อีก ใบที่ถูกใช้ไปแล้วไม่ถูกแตะ\n(กู้คืนได้ภายหลัง)`
-      : `กู้คืนล็อต ${range} ?\nคืนเฉพาะใบที่ล็อตนี้ยกเลิกเอง ใบที่ถูกยกเลิกรายใบมาก่อนไม่ถูกกู้คืน`;
-    if (!window.confirm(msg)) return;
+    if (!cancel) {
+      if (window.confirm(`กู้คืนล็อต ${range} ?\nคืนเฉพาะใบที่ล็อตนี้ยกเลิกเอง ใบที่ถูกยกเลิกรายใบมาก่อนไม่ถูกกู้คืน`)) doCancelBatch(x, false);
+      return;
+    }
+    askDigits({
+      title: "ยืนยันยกเลิกทั้งล็อต", code: x.lastCode, codeLabel: "รหัสสุดท้ายของล็อต", expect: last3(x.lastCode), label: "ยกเลิกทั้งล็อต", danger: true,
+      lines: [`${range} (${x.quantity.toLocaleString()} ใบ)`, "ยกเลิกทั้งล็อต = ปิดทุกใบที่ยังไม่เคยถูกใช้ (ใช้เมื่อออกล็อตผิด) ใบที่ถูกใช้ไปแล้วไม่ถูกแตะ กู้คืนได้ภายหลัง"],
+      onConfirm: () => doCancelBatch(x, true),
+    });
+  }
+
+  async function doCancelBatch(x, cancel) {
     const r = await run(async () => {
       try {
         return await cancelCouponBatch(token, x.id, cancel);
@@ -316,6 +385,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
                   )}
                   <input className="input" placeholder="หมายเหตุ (ถ้ามี)" value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
                   <button className="btn btn-primary" disabled={isSaving || !branchId} onClick={handleRedeem}>ตัดคูปอง</button>
+                  <div style={{ fontSize: 12, color: "var(--text3)" }}>ตัด = ลูกค้านำคูปองมาใช้จริง (บันทึกประวัติ) · ตัดผิดกด “ย้อน” ในประวัติการใช้ด้านล่าง</div>
                 </>
               )}
 
@@ -331,6 +401,9 @@ export default function CouponPage({ branches, currentUser, onToast }) {
                 </div>
               )}
 
+              {canManage && (
+                <div style={{ fontSize: 12, color: "var(--text3)" }}>ยกเลิก = คูปองใบนี้ใช้ไม่ได้อีก (ออกผิด / คืนเงิน / คูปองหาย) ไม่ใช่การใช้ · กู้คืนได้</div>
+              )}
               {canManage && (
                 <button className="btn btn-sm btn-secondary" disabled={isSaving} onClick={() => handleCancel(found, found.status !== "cancelled")}>
                   {found.status === "cancelled" ? "กู้คืนคูปอง" : "ยกเลิกคูปองนี้"}
@@ -351,7 +424,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
             </select>
             <span style={{ alignSelf: "center", fontSize: 12, color: "var(--text3)" }}>{loading ? "กำลังโหลด…" : `${list.total.toLocaleString()} ใบ`}</span>
           </div>
-          <div className="table-scroll">
+          <div className="table-scroll" style={{ overflowX: "auto" }}>
             <table className="data-table">
               <thead><tr><th>รหัส</th><th>ชื่อ</th><th>หมดอายุ</th><th>ลูกค้า</th><th>สถานะ</th><th /></tr></thead>
               <tbody>
@@ -378,12 +451,13 @@ export default function CouponPage({ branches, currentUser, onToast }) {
       )}
 
       {tab === "batches" && (
-        <div className="table-scroll">
+        <div className="table-scroll" style={{ overflowX: "auto" }}>
+          {canManage && <p style={{ fontSize: 12, color: "var(--text3)", margin: "0 0 8px" }}>ออกล็อตผิดกางโปรแล้วกด “ยกเลิกทั้งล็อต” = ปิดทุกใบที่ยังไม่เคยถูกใช้ (ใบที่ตัดไปแล้วไม่ถูกแตะ) กู้คืนได้ · ต้องพิมพ์เลข 3 ตัวท้ายของรหัสสุดท้ายในล็อตเพื่อยืนยัน</p>}
           <table className="data-table">
             <thead>
               <tr>
                 <th />
-                <th>โปร/คูปอง</th><th>หมวด</th><th>ราคา</th><th>จำนวนล็อต</th><th>จำนวนใบรวม</th><th>เลขล่าสุด</th>
+                <th>โปร/คูปอง</th><th>หมวด</th><th>ราคา</th><th style={{ whiteSpace: "nowrap" }}>ล็อต · ใบรวม</th><th>เลขล่าสุด</th>
                 {canManage && <th>เพิ่มจำนวน (ออกต่อจากเลขล่าสุด)</th>}
               </tr>
             </thead>
@@ -398,12 +472,11 @@ export default function CouponPage({ branches, currentUser, onToast }) {
                       <td><b>{g.name}</b></td>
                       <td style={{ fontFamily: "var(--mono)" }}>{g.prefix}</td>
                       <td>฿{Number(g.price).toLocaleString()}</td>
-                      <td>{g.batches.length}</td>
-                      <td>{g.total.toLocaleString()}</td>
-                      <td style={{ fontFamily: "var(--mono)" }}>{b.lastCode}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>{g.batches.length} ล็อต · {g.total.toLocaleString()} ใบ</td>
+                      <td style={{ fontFamily: "var(--mono)", whiteSpace: "nowrap" }}>{b.lastCode}</td>
                       {canManage && (
-                        <td>
-                          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap" }}>
+                        <td style={{ minWidth: 190 }}>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                             <input className="input" type="number" min="1" max="20000" placeholder="จำนวน" style={{ width: 90 }} value={addQty[b.id] ?? ""} onChange={(e) => setAddQty({ ...addQty, [b.id]: e.target.value })} />
                             <input className="input" type="date" style={{ width: 140 }} value={addExpiry[b.id] ?? String(b.expiryDate).slice(0, 10)} onChange={(e) => setAddExpiry({ ...addExpiry, [b.id]: e.target.value })} title="วันหมดอายุของล็อตใหม่" />
                             <button className="btn btn-sm btn-primary" disabled={isSaving || !addQty[b.id]} onClick={() => handleAddMore(b)}>เพิ่ม</button>
@@ -414,8 +487,8 @@ export default function CouponPage({ branches, currentUser, onToast }) {
                     {open && g.batches.map((x) => (
                       <tr key={x.id} style={{ background: "var(--surface2)" }}>
                         <td />
-                        <td colSpan={canManage ? 7 : 6} style={{ fontSize: 12 }}>
-                          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                        <td colSpan={canManage ? 6 : 5} style={{ fontSize: 12 }}>
+                          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", position: "sticky", left: 0, maxWidth: "calc(100vw - 72px)" }}>
                             <span style={{ opacity: x.cancelledAt ? 0.55 : 1 }}>
                               <span style={{ fontFamily: "var(--mono)", fontWeight: 700, textDecoration: x.cancelledAt ? "line-through" : "none" }}>{x.firstCode} – {x.lastCode}</span>
                               {` · ${x.quantity.toLocaleString()} ใบ · หมดอายุ ${formatThaiDate(x.expiryDate)} · ออกเมื่อ ${new Date(x.createdAt).toLocaleDateString("th-TH")}`}
@@ -433,7 +506,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
                   </Fragment>
                 );
               })}
-              {groups.length === 0 && <tr><td colSpan={canManage ? 8 : 7} style={{ textAlign: "center", color: "var(--text3)" }}>ยังไม่มีล็อต</td></tr>}
+              {groups.length === 0 && <tr><td colSpan={canManage ? 7 : 6} style={{ textAlign: "center", color: "var(--text3)" }}>ยังไม่มีล็อต</td></tr>}
             </tbody>
           </table>
         </div>
@@ -478,6 +551,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
           )}
         </form>
       )}
+      {pending && <DigitConfirm key={pending.id} pending={pending} busy={isSaving} onClose={() => setPending(null)} onConfirm={confirmPending} />}
     </div>
   );
 }
