@@ -12,4 +12,4 @@ export function getServerSessionToken() {
 }
 
 const sessionApi = createSessionApi((name, options) => supabase.functions.invoke(name, options));
-export const { fetchLoginDirectory, fetchAuthenticatedStaff, loginWithPin, createQueueV1, createStaffServer, updateStaffServer, deleteStaffServer, createBranchServer, updateBranchServer, deleteBranchServer, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters, cancelCouponBatch, fetchCouponStats, flushClientDiagnostics, getReleaseStatus, restoreServerSession, revokeServerSession } = sessionApi;
+export const { fetchLoginDirectory, fetchAuthenticatedStaff, loginWithPin, createQueueV1, createStaffServer, updateStaffServer, deleteStaffServer, createBranchServer, updateBranchServer, deleteBranchServer, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters, fetchCouponCategories, saveCouponCategory, cancelCouponBatch, fetchCouponStats, flushClientDiagnostics, getReleaseStatus, restoreServerSession, revokeServerSession } = sessionApi;

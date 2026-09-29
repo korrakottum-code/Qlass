@@ -77,6 +77,7 @@ const couponErrors = new Set([
   "coupon_not_found", "coupon_cancelled", "coupon_used_up", "coupon_expired", "invalid_branch",
   "redemption_not_found", "already_reverted", "invalid_quantity", "invalid_uses", "invalid_prefix",
   "invalid_expiry", "invalid_price", "invalid_name", "prefix_exhausted", "invalid_start", "batch_not_found", "batch_already_cancelled", "batch_not_cancelled", "invalid_range",
+  "category_exists", "category_not_found", "category_inactive", "invalid_category",
 ]);
 function validDay(value: unknown): string | null {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
@@ -336,7 +337,7 @@ Deno.serve(async (req) => {
 
       const fail = (error: { message?: string }) => {
         const code = String(error?.message ?? "");
-        if (couponErrors.has(code)) return response({ error: code }, code === "coupon_not_found" || code === "redemption_not_found" || code === "batch_not_found" ? 404 : 409, origin);
+        if (couponErrors.has(code)) return response({ error: code }, code === "coupon_not_found" || code === "redemption_not_found" || code === "batch_not_found" || code === "category_not_found" ? 404 : 409, origin);
         throw error;
       };
 
@@ -427,6 +428,28 @@ Deno.serve(async (req) => {
         const { data, error } = await supabase.rpc("coupon_stats_v1", { p_from: from, p_to: to });
         if (error) return fail(error);
         return response({ stats: data }, 200, origin);
+      }
+
+      if (body.action === "coupon_categories") {
+        if (!couponUseRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        const { data, error } = await supabase.rpc("coupon_categories_v1");
+        if (error) return fail(error);
+        return response({ categories: data }, 200, origin);
+      }
+
+      if (body.action === "coupon_category_save") {
+        // เพิ่ม/แก้ชื่อ/เปิด-ปิดหมวดรหัส: ระดับเดียวกับการออกล็อต (ผู้ดูแลระบบ + หัวหน้าแอดมิน)
+        if (!couponManageRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        const c = body.category;
+        if (!c || typeof c !== "object" || Array.isArray(c) || typeof c.prefix !== "string" || typeof c.label !== "string") {
+          return response({ error: "invalid_category" }, 400, origin);
+        }
+        const { data, error } = await supabase.rpc("coupon_category_save_v1", {
+          p_prefix: c.prefix.slice(0, 10), p_label: c.label.slice(0, 120),
+          p_active: typeof c.active === "boolean" ? c.active : null, p_create: c.create === true,
+        });
+        if (error) return fail(error);
+        return response({ categories: data }, 200, origin);
       }
 
       if (body.action === "coupon_counters") {

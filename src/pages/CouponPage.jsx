@@ -2,18 +2,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { formatThaiDate } from "../utils/helpers";
 import { addDays as shiftDay } from "../utils/queueRanges"; // ย้ายวันที่ด้วยตัวช่วยของโปรเจกต์ (ห้ามตัดวันจาก toISOString)
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
-import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters, cancelCouponBatch, fetchCouponStats } from "../utils/couponApi";
+import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters, cancelCouponBatch, fetchCouponStats, fetchCouponCategories, saveCouponCategory } from "../utils/couponApi";
 import { serverErrorCode } from "../utils/sessionApi";
 import Modal, { ModalHeader, ModalBody } from "../components/Modal";
-
-// หมวดรหัส POS v6.2 — ต้องตรงกับ regex ใน coupon_generate_v1
-const POS_CATEGORIES = [
-  ["T1", "T1 เลเซอร์ขน · IPL"], ["T2", "T2 Pico (พนักงาน)"], ["T3", "T3 ทรีตเมนต์หน้า · มาส์ก · กดสิว"], ["T4", "T4 HIFU (พนักงาน)"], ["T99", "T99 ของแถม · ฟรี (พนักงาน)"],
-  ["D1", "D1 Botox"], ["D2", "D2 Pico (แพทย์)"], ["D3", "D3 Meso หน้าใส"], ["D4", "D4 เครื่องโดยแพทย์"], ["D5", "D5 ปากกาลด นน. · ยาฉีด"],
-  ["D6", "D6 IV Drip · วิตามิน"], ["D7", "D7 หัตถการทั่วไป"], ["D8", "D8 Meso Fat · สลายไขมัน"], ["D9", "D9 Biostimulator"], ["D10", "D10 Filler"], ["D99", "D99 ของแถม · ฟรี (แพทย์)"],
-  ["S1", "S1 เซตฉีด + เครื่อง"], ["S2", "S2 โปรแคมเปญ · โปรประจำเดือน"],
-  ["O1", "O1 Gift Card · วงเงิน VIP"], ["O2", "O2 ยาเม็ด · ยาทา"], ["O3", "O3 สินค้าหน้าร้าน"], ["O4", "O4 มัดจำ / Deposit"], ["O9", "O9 อื่น ๆ · Other Income"],
-];
 
 const STATUS = {
   active:    { label: "ใช้ได้",     color: "#059669" },
@@ -38,7 +29,11 @@ const ERRORS = {
   invalid_expiry: "วันหมดอายุต้องไม่ใช่วันที่ผ่านมาแล้ว",
   invalid_price: "ราคาไม่ถูกต้อง",
   invalid_name: "กรุณาใส่ชื่อคูปอง/โปร",
-  invalid_prefix: "กรุณาเลือกหมวดรหัส POS",
+  invalid_prefix: "กรุณาเลือกหมวดรหัส",
+  category_exists: "มีหมวดรหัสนี้อยู่แล้ว",
+  category_not_found: "ไม่พบหมวดรหัสนี้",
+  category_inactive: "หมวดนี้ปิดใช้งานอยู่ — เปิดที่แท็บ “หมวดรหัส” ก่อนถึงจะออกล็อตได้",
+  invalid_category: "รหัสหมวดต้องเป็นตัวอักษรใหญ่ 1–3 ตัวตามด้วยตัวเลข 1–3 หลัก (เช่น D11) และชื่อ 1–80 ตัวอักษร",
   prefix_exhausted: "หมวดนี้ออกเลขครบ 9,999,999 แล้ว",
   forbidden: "บทบาทนี้ไม่มีสิทธิ์ทำรายการนี้",
   invalid_session: "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่",
@@ -147,7 +142,7 @@ function StatusBar({ item }) {
   );
 }
 
-function StatsView({ token, onToast }) {
+function StatsView({ token, onToast, labelOf }) {
   const [range, setRange] = useState({ from: "", to: "" });
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -280,6 +275,7 @@ function StatsView({ token, onToast }) {
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <strong style={{ overflowWrap: "anywhere" }}>{p.name}</strong>
                     <span style={{ fontFamily: "var(--mono)", fontSize: 12, padding: "1px 6px", borderRadius: 6, background: "var(--surface2)" }}>{p.prefix}</span>
+                    {labelOf?.(p.prefix) && <span style={{ fontSize: 12, color: "var(--text3)" }}>{labelOf(p.prefix)}</span>}
                     <span style={{ fontWeight: 700 }}>{baht(p.price)}</span>
                     <span style={{ fontSize: 12, color: "var(--text3)" }}>ออก {num(p.issued)} ใบ</span>
                   </div>
@@ -311,6 +307,58 @@ function StatsView({ token, onToast }) {
   );
 }
 
+// ─── จัดการหมวดรหัส POS ───
+function CategoryRow({ c, onSave, busy }) {
+  const [label, setLabel] = useState(c.label);
+  const [active, setActive] = useState(c.active);
+  const dirty = label.trim() !== c.label || active !== c.active;
+  async function save() {
+    if (c.active && !active && !window.confirm(`ปิดหมวด ${c.prefix}?\nออกล็อตใหม่ในหมวดนี้ไม่ได้ (คูปองเดิมยังเห็นและใช้ได้ตามปกติ) เปิดกลับได้ภายหลัง`)) return;
+    await onSave({ prefix: c.prefix, label: label.trim(), active, create: false });
+  }
+  return (
+    <div className="card" style={{ padding: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", opacity: c.active ? 1 : 0.65 }}>
+      <span style={{ fontFamily: "var(--mono)", fontWeight: 700, fontSize: 13, padding: "1px 8px", borderRadius: 6, background: "var(--surface2)", minWidth: 44, textAlign: "center" }}>{c.prefix}</span>
+      <input className="input" style={{ flex: "1 1 200px", minWidth: 0 }} value={label} maxLength={80} aria-label={`ชื่อหมวด ${c.prefix}`} onChange={(e) => setLabel(e.target.value)} />
+      {/* ส่วนท้ายแถวรวมเป็นกลุ่มเดียว ตัดบรรทัดทั้งกลุ่มเมื่อจอแคบ (ไม่หักทีละคำ) */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", whiteSpace: "nowrap" }}>
+        <label style={{ fontSize: 12, display: "inline-flex", gap: 4, alignItems: "center" }}>
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> เปิดใช้งาน
+        </label>
+        <span style={{ fontSize: 11, color: "var(--text3)" }}>{c.issued > 0 ? `ออกถึงเลข ${num(c.issued)}` : "ยังไม่เคยออก"}</span>
+        <button className="btn btn-sm btn-primary" disabled={busy || !dirty || !label.trim()} onClick={save}>บันทึก</button>
+      </div>
+    </div>
+  );
+}
+
+function CategoriesView({ categories, onSave, busy }) {
+  const [prefix, setPrefix] = useState("");
+  const [label, setLabel] = useState("");
+  const valid = /^[A-Z]{1,3}[0-9]{1,3}$/.test(prefix) && label.trim().length > 0;
+  async function add(e) {
+    e.preventDefault();
+    if (await onSave({ prefix, label: label.trim(), active: true, create: true })) { setPrefix(""); setLabel(""); }
+  }
+  return (
+    <div style={{ display: "grid", gap: 10 }}>
+      <p style={{ fontSize: 12, color: "var(--text3)", margin: 0 }}>
+        หมวดรหัสที่ออกคูปองได้ (ตามคู่มือรหัส POS) · <b>ตัวรหัสเปลี่ยนไม่ได้เมื่อเพิ่มแล้ว และลบไม่ได้</b> เพราะคูปองที่ออกไปแล้วกับ POS ใช้รหัสนี้
+        ถ้าต้องเปลี่ยน ให้ปิดหมวดเก่า แล้วเพิ่มหมวดใหม่ · ปิดหมวด = ออกล็อตใหม่ไม่ได้ (คูปองเดิมยังเห็นและใช้ได้) เปิดกลับได้
+      </p>
+      <form className="card" onSubmit={add} style={{ padding: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <input className="input" style={{ width: 130, fontFamily: "var(--mono)" }} placeholder="รหัส เช่น D11" value={prefix} maxLength={6}
+          onChange={(e) => setPrefix(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} aria-label="รหัสหมวดใหม่" />
+        <input className="input" style={{ flex: "1 1 200px", minWidth: 0 }} placeholder="ชื่อหมวดที่แสดง" value={label} maxLength={80} onChange={(e) => setLabel(e.target.value)} aria-label="ชื่อหมวดใหม่" />
+        <button className="btn btn-sm btn-primary" type="submit" disabled={busy || !valid}>เพิ่มหมวด</button>
+        {prefix && !/^[A-Z]{1,3}[0-9]{1,3}$/.test(prefix) && <span style={{ fontSize: 12, color: "#dc2626" }}>รูปแบบ: ตัวอักษร 1–3 ตัว + ตัวเลข 1–3 หลัก เช่น D11, T99</span>}
+      </form>
+      {categories.map((c) => <CategoryRow key={c.prefix} c={c} onSave={onSave} busy={busy} />)}
+      {categories.length === 0 && <div style={{ textAlign: "center", color: "var(--text3)", padding: 16 }}>ยังไม่มีหมวด (หรือโหลดไม่สำเร็จ)</div>}
+    </div>
+  );
+}
+
 // ทั้งหน้านี้ไม่เก็บอะไรใน state ของ App.jsx — ค้นเป็นรายใบ/แบ่งหน้าจากเซิร์ฟเวอร์เท่านั้น
 export default function CouponPage({ branches, currentUser, onToast }) {
   const role = currentUser?.role;
@@ -337,9 +385,10 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   const PAGE_SIZE = 50;
 
   // ── ออกล็อต ──
-  const [gen, setGen] = useState({ name: "", category: "", price: "", quantity: 10, startAfter: "", prefix: "D1", expiryDate: "", customerName: "", customerPhone: "", note: "" });
+  const [gen, setGen] = useState({ name: "", category: "", price: "", quantity: 10, startAfter: "", prefix: "", expiryDate: "", customerName: "", customerPhone: "", note: "" });
   const [lastBatch, setLastBatch] = useState(null);
   const [counters, setCounters] = useState({});
+  const [categories, setCategories] = useState([]); // หมวดรหัส POS (โหลดจากเซิร์ฟเวอร์ ไม่เขียนตายในโค้ด)
   const [countersOk, setCountersOk] = useState(false); // false = ยังไม่โหลด/โหลดพลาด/เก่าแล้ว → ห้ามโชว์ช่วงรหัสที่คาดเดา
   // เพิ่มจำนวนจากล็อตเดิม: จำนวนและวันหมดอายุที่กรอกในแต่ละแถว (คีย์ = id ล็อต)
   const [addQty, setAddQty] = useState({});
@@ -372,6 +421,12 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   }, [tab, refreshList]);
 
   // เลขล่าสุดของแต่ละหมวด ใช้โชว์ตัวอย่างช่วงรหัสก่อนกดออกล็อต (โหลดใหม่ทุกครั้งที่เปิดแท็บ/ออกล็อตเสร็จ)
+  useEffect(() => {
+    let alive = true;
+    fetchCouponCategories(token).then((c) => { if (alive) setCategories(c); }).catch(() => {});
+    return () => { alive = false; };
+  }, [token]);
+
   useEffect(() => {
     if ((tab !== "generate" && tab !== "batches") || !canManage) return undefined;
     let alive = true;
@@ -510,6 +565,17 @@ export default function CouponPage({ branches, currentUser, onToast }) {
     }
   }
 
+  // เพิ่ม/แก้ชื่อ/เปิด-ปิดหมวดรหัส: ตอบกลับเป็นรายการหมวดล่าสุด (เซิร์ฟเวอร์คือความจริง)
+  async function saveCategory(category) {
+    const r = await call(() => saveCouponCategory(token, category));
+    if (r.started && r.result) {
+      setCategories(r.result);
+      onToast?.("success", category.create ? `เพิ่มหมวด ${category.prefix} แล้ว` : "บันทึกหมวดแล้ว");
+      return true;
+    }
+    return false;
+  }
+
   async function handleGenerate(e) {
     e.preventDefault();
     const r = await call(() => generateCoupons(token, {
@@ -530,12 +596,12 @@ export default function CouponPage({ branches, currentUser, onToast }) {
     return <div className="card" style={{ padding: 24 }}>ระบบคูปองต้องเปิดโหมดเซสชันฝั่งเซิร์ฟเวอร์ (VITE_USE_SERVER_SESSION=true)</div>;
   }
 
-  const tabs = [["redeem", "🎟️ ตัดคูปอง"], ["list", "📋 รายการ"], ["batches", "📦 ล็อต/ช่วงรหัส"], ...(canStats ? [["stats", "📊 สถิติ"]] : []), ...(canManage ? [["generate", "➕ ออกคูปอง"]] : [])];
+  const tabs = [["redeem", "🎟️ ตัดคูปอง"], ["list", "📋 รายการ"], ["batches", "📦 ล็อต/ช่วงรหัส"], ...(canStats ? [["stats", "📊 สถิติ"]] : []), ...(canManage ? [["generate", "➕ ออกคูปอง"], ["categories", "🏷️ หมวดรหัส"]] : [])];
   // ตัวอย่างช่วงรหัสที่จะได้ (คำนวณแบบเดียวกับที่เซิร์ฟเวอร์ทำ: ต่อจากเลขล่าสุดของหมวด หรือเลขที่ระบุ ถ้ามากกว่า)
   const pad7 = (n) => String(n).padStart(7, "0");
   const lastNo = Math.max(counters[gen.prefix] || 0, gen.startAfter === "" ? 0 : Number(gen.startAfter) || 0);
   const qtyNum = Number(gen.quantity) || 0;
-  const preview = countersOk && qtyNum > 0 ? { first: `${gen.prefix}-${pad7(lastNo + 1)}`, last: `${gen.prefix}-${pad7(lastNo + qtyNum)}`, over: lastNo + qtyNum > 9999999 } : null;
+  const preview = countersOk && gen.prefix && qtyNum > 0 ? { first: `${gen.prefix}-${pad7(lastNo + 1)}`, last: `${gen.prefix}-${pad7(lastNo + qtyNum)}`, over: lastNo + qtyNum > 9999999 } : null;
   // หุบรวมเป็นโปรละหนึ่งแถว (หมวด+ชื่อ+ราคาเดียวกัน) กางออกดูช่วงรหัสของแต่ละล็อตได้
   // รายการเรียงใหม่→เก่า จึงได้ล็อตแรกของแต่ละกลุ่มเป็นล็อตล่าสุด (ใช้เป็นต้นแบบตอนกด "เพิ่ม")
   const groups = [];
@@ -550,6 +616,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
     }
   }
   const toggleGroup = (key) => setOpenGroups((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  const labelOf = (prefix) => categories.find((c) => c.prefix === prefix)?.label || "";
   const totalPages = Math.max(1, Math.ceil(list.total / PAGE_SIZE));
 
   return (
@@ -662,7 +729,9 @@ export default function CouponPage({ branches, currentUser, onToast }) {
         </div>
       )}
 
-      {tab === "stats" && canStats && <StatsView token={token} onToast={onToast} />}
+      {tab === "categories" && canManage && <CategoriesView categories={categories} onSave={saveCategory} busy={isSaving} />}
+
+      {tab === "stats" && canStats && <StatsView token={token} onToast={onToast} labelOf={labelOf} />}
 
       {tab === "batches" && (
         <div style={{ display: "grid", gap: 10 }}>
@@ -680,6 +749,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
                   <button className="btn btn-sm btn-secondary" aria-expanded={open} title={open ? "หุบ" : "กางดูช่วงรหัสของแต่ละล็อต"} onClick={() => toggleGroup(g.key)}>{open ? "▾" : "▸"}</button>
                   <strong style={{ overflowWrap: "anywhere" }}>{g.name}</strong>
                   <span style={{ fontFamily: "var(--mono)", fontSize: 12, padding: "1px 6px", borderRadius: 6, background: "var(--surface2)" }}>{g.prefix}</span>
+                  {labelOf(g.prefix) && <span style={{ fontSize: 12, color: "var(--text3)" }}>{labelOf(g.prefix)}</span>}
                   <span style={{ fontWeight: 700 }}>฿{Number(g.price).toLocaleString()}</span>
                 </div>
                 <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 4 }}>
@@ -732,9 +802,10 @@ export default function CouponPage({ branches, currentUser, onToast }) {
             <label style={{ fontSize: 12 }}>วันหมดอายุ
               <input className="input" type="date" value={gen.expiryDate} onChange={(e) => setGen({ ...gen, expiryDate: e.target.value })} required />
             </label>
-            <label style={{ fontSize: 12 }}>หมวดรหัส POS (รหัสจะเป็น หมวด-เลขรัน 7 หลัก)
+            <label style={{ fontSize: 12 }}>หมวดรหัส (รหัสจะเป็น หมวด-เลขรัน 7 หลัก)
               <select className="input" value={gen.prefix} onChange={(e) => setGen({ ...gen, prefix: e.target.value })} required>
-                {POS_CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                <option value="">— เลือกหมวด —</option>
+                {categories.filter((c) => c.active).map((c) => <option key={c.prefix} value={c.prefix}>{c.prefix} {c.label}</option>)}
               </select>
             </label>
             <label style={{ fontSize: 12 }}>ออกต่อจากเลขที่ (ถ้าเคยออกไว้ก่อนใช้ระบบนี้)
