@@ -74,7 +74,7 @@ const couponUseRoles = new Set(["superadmin", "head_admin", "admin", "branch_man
 const couponErrors = new Set([
   "coupon_not_found", "coupon_cancelled", "coupon_used_up", "coupon_expired", "invalid_branch",
   "redemption_not_found", "already_reverted", "invalid_quantity", "invalid_uses", "invalid_prefix",
-  "invalid_expiry", "invalid_price", "invalid_name", "prefix_exhausted", "invalid_start",
+  "invalid_expiry", "invalid_price", "invalid_name", "prefix_exhausted", "invalid_start", "batch_not_found", "batch_already_cancelled", "batch_not_cancelled",
 ]);
 function couponCode(value: unknown) {
   const code = String(value ?? "").trim().toUpperCase();
@@ -321,7 +321,7 @@ Deno.serve(async (req) => {
 
       const fail = (error: { message?: string }) => {
         const code = String(error?.message ?? "");
-        if (couponErrors.has(code)) return response({ error: code }, code === "coupon_not_found" || code === "redemption_not_found" ? 404 : 409, origin);
+        if (couponErrors.has(code)) return response({ error: code }, code === "coupon_not_found" || code === "redemption_not_found" || code === "batch_not_found" ? 404 : 409, origin);
         throw error;
       };
 
@@ -392,6 +392,16 @@ Deno.serve(async (req) => {
         const { data, error } = await supabase.rpc("coupon_cancel_v1", { p_code: code, p_cancel: body.cancel !== false });
         if (error) return fail(error);
         return response({ coupon: data }, 200, origin);
+      }
+
+      if (body.action === "coupon_cancel_batch") {
+        if (!couponManageRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        if (typeof body.batchId !== "string" || !/^[0-9a-f-]{36}$/i.test(body.batchId)) {
+          return response({ error: "invalid_coupon_payload" }, 400, origin);
+        }
+        const { data, error } = await supabase.rpc("coupon_cancel_batch_v1", { p_batch_id: body.batchId, p_cancel: body.cancel !== false });
+        if (error) return fail(error);
+        return response(data, 200, origin);
       }
 
       if (body.action === "coupon_counters") {

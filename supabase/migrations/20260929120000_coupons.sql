@@ -109,6 +109,7 @@ create table if not exists public.coupon_batches (
   quantity     integer not null,
   note         text,
   created_by   uuid references public.staff(id) on delete set null,
+  cancelled_at timestamptz,
   created_at   timestamptz not null default now()
 );
 create index if not exists coupon_batches_created_idx on public.coupon_batches (created_at desc);
@@ -323,9 +324,45 @@ as $$
         'firstCode', b.prefix || '-' || lpad(b.first_no::text, 7, '0'),
         'lastCode',  b.prefix || '-' || lpad(b.last_no::text, 7, '0'),
         'name', b.name, 'category', b.category, 'price', b.price, 'totalUses', b.total_uses, 'expiryDate', b.expiry_date,
-        'quantity', b.quantity, 'note', b.note, 'createdAt', b.created_at) order by b.created_at desc)
+        'quantity', b.quantity, 'note', b.note, 'cancelledAt', b.cancelled_at, 'createdAt', b.created_at) order by b.created_at desc)
       from (select * from public.coupon_batches order by created_at desc
              limit least(greatest(coalesce(p_limit, 100), 1), 200) offset greatest(coalesce(p_offset, 0), 0)) b), '[]'::jsonb));
+$$;
+
+-- ยกเลิก/กู้คืนทั้งล็อต (ออกล็อตผิด): ยกเลิกเฉพาะใบที่ยังไม่เคยถูกใช้ ใบที่ตัดไปแล้วไม่ถูกแตะ
+-- ประทับเวลายกเลิกของล็อตลงบนคูปองที่ถูกยกเลิกด้วยค่าเดียวกัน ตอนกู้คืนจึงคืนเฉพาะใบที่ล็อตนี้ยกเลิกเอง
+-- (ใบที่ถูกยกเลิกรายใบมาก่อนหน้าจะไม่ถูกกู้คืนตาม)
+create or replace function public.coupon_cancel_batch_v1(p_batch_id uuid, p_cancel boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  b public.coupon_batches;
+  v_now timestamptz := now();
+  v_changed int;
+  v_used int;
+begin
+  select * into b from public.coupon_batches where id = p_batch_id for update;
+  if not found then raise exception 'batch_not_found'; end if;
+
+  if p_cancel then
+    if b.cancelled_at is not null then raise exception 'batch_already_cancelled'; end if;
+    update public.coupons set cancelled_at = v_now
+     where batch_id = b.id and cancelled_at is null and used_count = 0;
+    get diagnostics v_changed = row_count;
+    update public.coupon_batches set cancelled_at = v_now where id = b.id;
+  else
+    if b.cancelled_at is null then raise exception 'batch_not_cancelled'; end if;
+    update public.coupons set cancelled_at = null where batch_id = b.id and cancelled_at = b.cancelled_at;
+    get diagnostics v_changed = row_count;
+    update public.coupon_batches set cancelled_at = null where id = b.id;
+  end if;
+
+  select count(*) into v_used from public.coupons where batch_id = b.id and used_count > 0;
+  return jsonb_build_object('changed', v_changed, 'usedKept', v_used, 'cancelled', p_cancel);
+end;
 $$;
 
 revoke all on function public.coupon_status(public.coupons), public.coupon_json(public.coupons) from public, anon, authenticated;
@@ -336,6 +373,7 @@ revoke all on function
   public.coupon_redeem_v1(uuid, text, text, text),
   public.coupon_revert_v1(uuid, uuid),
   public.coupon_cancel_v1(text, boolean),
+  public.coupon_cancel_batch_v1(uuid, boolean),
   public.coupon_list_v1(text, text, int, int),
   public.coupon_batches_v1(int, int)
   from public, anon, authenticated;

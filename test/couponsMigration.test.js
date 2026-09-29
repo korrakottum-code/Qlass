@@ -15,7 +15,7 @@ test("ตารางคูปองเปิด RLS โดยไม่มี po
 
 test("ฟังก์ชัน coupon_*_v1 ทุกตัวถอนสิทธิ์จาก public/anon/authenticated", () => {
   const fns = [...sql.matchAll(/create or replace function public\.(coupon_\w+_v1)\(/gi)].map((m) => m[1]);
-  assert.equal(fns.length, 8);
+  assert.equal(fns.length, 9);
   for (const fn of fns) assert.match(sql, new RegExp(String.raw`revoke all on function[\s\S]*public\.${fn}\(`, "i"), fn);
 });
 
@@ -61,4 +61,16 @@ test("แท็บล็อตหุบรวมเป็นโปรละแ�
   assert.match(page, /toggleGroup\(g\.key\)/);
   assert.match(page, /const b = g\.latest;/);
   assert.match(page, /handleAddMore\(b\)/);
+});
+
+test("ยกเลิกทั้งล็อต: ปิดเฉพาะใบที่ยังไม่เคยใช้ และกู้คืนเฉพาะใบที่ล็อตนี้ยกเลิกเอง", () => {
+  const body = sql.slice(sql.indexOf("function public.coupon_cancel_batch_v1"));
+  assert.match(body, /for update/i);
+  assert.match(body, /where batch_id = b\.id and cancelled_at is null and used_count = 0/);
+  assert.match(body, /where batch_id = b\.id and cancelled_at = b\.cancelled_at/);
+  // ยกเลิกทั้งล็อตเป็นงานหัวหน้าขึ้นไป: เช็ค role ต้องมาก่อนเรียกฟังก์ชันในบล็อตของ action นี้
+  const act = edge.slice(edge.indexOf('body.action === "coupon_cancel_batch"'));
+  const block = act.slice(0, act.indexOf('body.action === "coupon_counters"'));
+  assert.ok(block.includes("couponManageRoles.has(role)"), "ต้องจำกัด role");
+  assert.ok(block.indexOf("couponManageRoles.has(role)") < block.indexOf("coupon_cancel_batch_v1"), "เช็ค role ก่อนเรียกฟังก์ชัน");
 });

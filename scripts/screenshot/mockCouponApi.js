@@ -48,9 +48,23 @@ export async function generateCoupons(_t, b) {
   const now = new Date().toISOString();
   batches.unshift({ id: batchId, prefix, firstCode: `${prefix}-${pad(start)}`, lastCode: `${prefix}-${pad(end)}`, name: b.name.trim(), category: b.category || "", price: Number(b.price), totalUses: uses, expiryDate: b.expiryDate, quantity: qty, note: b.note || null, createdAt: now });
   for (let n = start; n <= end; n++) {
-    coupons.unshift({ id: uid(), code: `${prefix}-${pad(n)}`, name: b.name.trim(), category: b.category || "", price: Number(b.price), totalUses: uses, usedCount: 0, expiryDate: b.expiryDate, customerName: b.customerName, customerPhone: b.customerPhone, note: b.note, createdAt: now });
+    coupons.unshift({ id: uid(), batchId, code: `${prefix}-${pad(n)}`, name: b.name.trim(), category: b.category || "", price: Number(b.price), totalUses: uses, usedCount: 0, expiryDate: b.expiryDate, customerName: b.customerName, customerPhone: b.customerPhone, note: b.note, createdAt: now });
   }
   return { batchId, count: qty, price: Number(b.price), firstCode: `${prefix}-${pad(start)}`, lastCode: `${prefix}-${pad(end)}` };
+}
+export async function cancelCouponBatch(_t, batchId, cancel = true) {
+  const b = batches.find((x) => x.id === batchId) || fail("batch_not_found");
+  let changed = 0;
+  if (cancel) {
+    if (b.cancelledAt) fail("batch_already_cancelled");
+    for (const c of coupons) if (c.batchId === b.id && !c.cancelled && c.usedCount === 0) { c.cancelled = true; c.cancelledByBatch = b.id; changed++; }
+    b.cancelledAt = new Date().toISOString();
+  } else {
+    if (!b.cancelledAt) fail("batch_not_cancelled");
+    for (const c of coupons) if (c.cancelledByBatch === b.id) { c.cancelled = false; c.cancelledByBatch = null; changed++; }
+    b.cancelledAt = null;
+  }
+  return { changed, usedKept: coupons.filter((c) => c.batchId === b.id && c.usedCount > 0).length, cancelled: cancel };
 }
 export async function fetchCouponCounters() { return { ...counters }; }
 export async function lookupCoupon(_t, code) { const c = find(code); return c ? view(c) : null; }

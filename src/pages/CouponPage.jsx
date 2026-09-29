@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, Fragment } from "react";
 import { formatThaiDate } from "../utils/helpers";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
-import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters } from "../utils/couponApi";
+import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters, cancelCouponBatch } from "../utils/couponApi";
 import { serverErrorCode } from "../utils/sessionApi";
 
 // หมวดรหัส POS v6.2 — ต้องตรงกับ regex ใน coupon_generate_v1
@@ -28,6 +28,9 @@ const ERRORS = {
   invalid_branch: "ไม่พบสาขาที่เลือก",
   already_reverted: "รายการนี้ถูกย้อนไปแล้ว",
   invalid_quantity: "จำนวนใบต้อง 1–20,000 ต่อครั้ง",
+  batch_not_found: "ไม่พบล็อตนี้",
+  batch_already_cancelled: "ล็อตนี้ถูกยกเลิกไปแล้ว",
+  batch_not_cancelled: "ล็อตนี้ไม่ได้ถูกยกเลิกอยู่",
   invalid_start: "เลขที่ให้ออกต่อต้องอยู่ระหว่าง 0–9,999,999",
   invalid_expiry: "วันหมดอายุต้องไม่ใช่วันที่ผ่านมาแล้ว",
   invalid_price: "ราคาไม่ถูกต้อง",
@@ -79,6 +82,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   // เพิ่มจำนวนจากล็อตเดิม: จำนวนและวันหมดอายุที่กรอกในแต่ละแถว (คีย์ = id ล็อต)
   const [addQty, setAddQty] = useState({});
   const [addExpiry, setAddExpiry] = useState({});
+  const [batchTick, setBatchTick] = useState(0); // เพิ่มค่าเพื่อโหลดรายการล็อตใหม่หลังยกเลิก/กู้คืน
   const [openGroups, setOpenGroups] = useState(() => new Set()); // โปรที่กางดูช่วงรหัสของแต่ละล็อตอยู่
   const [batches, setBatches] = useState({ total: 0, batches: [] });
 
@@ -110,7 +114,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   useEffect(() => {
     if (tab !== "batches") return;
     listCouponBatches(token).then(setBatches).catch(async (e) => onToast?.("error", await explain(e)));
-  }, [tab, token, onToast, lastBatch]);
+  }, [tab, token, onToast, lastBatch, batchTick]);
 
   async function handleLookup(e) {
     e?.preventDefault();
@@ -195,6 +199,29 @@ export default function CouponPage({ branches, currentUser, onToast }) {
       setLastBatch(r.result); // ทำให้รายการล็อตและเลขล่าสุดโหลดใหม่
       setAddQty((prev) => ({ ...prev, [b.id]: "" }));
       onToast?.("success", `เพิ่มแล้ว ${r.result.count.toLocaleString()} ใบ: ${r.result.firstCode} – ${r.result.lastCode}`);
+    }
+  }
+
+  // ออกล็อตผิด → ยกเลิกทั้งล็อต: ปิดเฉพาะใบที่ยังไม่เคยถูกใช้ ใบที่ตัดไปแล้วไม่ถูกแตะ กู้คืนได้
+  async function handleCancelBatch(x, cancel) {
+    const range = `${x.firstCode} – ${x.lastCode}`;
+    const msg = cancel
+      ? `ยกเลิกทั้งล็อต ${range} (${x.quantity.toLocaleString()} ใบ) ?\nใบที่ยังไม่เคยถูกใช้จะตัดไม่ได้อีก ใบที่ถูกใช้ไปแล้วไม่ถูกแตะ\n(กู้คืนได้ภายหลัง)`
+      : `กู้คืนล็อต ${range} ?\nคืนเฉพาะใบที่ล็อตนี้ยกเลิกเอง ใบที่ถูกยกเลิกรายใบมาก่อนไม่ถูกกู้คืน`;
+    if (!window.confirm(msg)) return;
+    const r = await run(async () => {
+      try {
+        return await cancelCouponBatch(token, x.id, cancel);
+      } catch (err) {
+        onToast?.("error", await explain(err));
+        return null;
+      }
+    });
+    if (r.started && r.result) {
+      setBatchTick((n) => n + 1);
+      onToast?.("success", cancel
+        ? `ยกเลิกแล้ว ${r.result.changed.toLocaleString()} ใบ${r.result.usedKept ? ` (ใช้ไปแล้ว ${r.result.usedKept.toLocaleString()} ใบ คงเดิม)` : ""}`
+        : `กู้คืนแล้ว ${r.result.changed.toLocaleString()} ใบ`);
     }
   }
 
@@ -388,8 +415,18 @@ export default function CouponPage({ branches, currentUser, onToast }) {
                       <tr key={x.id} style={{ background: "var(--surface2)" }}>
                         <td />
                         <td colSpan={canManage ? 7 : 6} style={{ fontSize: 12 }}>
-                          <span style={{ fontFamily: "var(--mono)", fontWeight: 700 }}>{x.firstCode} – {x.lastCode}</span>
-                          {` · ${x.quantity.toLocaleString()} ใบ · หมดอายุ ${formatThaiDate(x.expiryDate)} · ออกเมื่อ ${new Date(x.createdAt).toLocaleDateString("th-TH")}`}
+                          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                            <span style={{ opacity: x.cancelledAt ? 0.55 : 1 }}>
+                              <span style={{ fontFamily: "var(--mono)", fontWeight: 700, textDecoration: x.cancelledAt ? "line-through" : "none" }}>{x.firstCode} – {x.lastCode}</span>
+                              {` · ${x.quantity.toLocaleString()} ใบ · หมดอายุ ${formatThaiDate(x.expiryDate)} · ออกเมื่อ ${new Date(x.createdAt).toLocaleDateString("th-TH")}`}
+                              {x.cancelledAt && <b style={{ color: "#dc2626" }}>{` · ยกเลิกทั้งล็อตเมื่อ ${new Date(x.cancelledAt).toLocaleDateString("th-TH")}`}</b>}
+                            </span>
+                            {canManage && (
+                              <button className="btn btn-sm btn-secondary" disabled={isSaving} onClick={() => handleCancelBatch(x, !x.cancelledAt)}>
+                                {x.cancelledAt ? "กู้คืนล็อต" : "ยกเลิกทั้งล็อต"}
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
