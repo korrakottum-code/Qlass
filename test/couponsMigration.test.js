@@ -15,7 +15,7 @@ test("ตารางคูปองเปิด RLS โดยไม่มี po
 
 test("ฟังก์ชัน coupon_*_v1 ทุกตัวถอนสิทธิ์จาก public/anon/authenticated", () => {
   const fns = [...sql.matchAll(/create or replace function public\.(coupon_\w+_v1)\(/gi)].map((m) => m[1]);
-  assert.equal(fns.length, 7);
+  assert.equal(fns.length, 8);
   for (const fn of fns) assert.match(sql, new RegExp(String.raw`revoke all on function[\s\S]*public\.${fn}\(`, "i"), fn);
 });
 
@@ -33,7 +33,9 @@ test("edge function: ออก/ยกเลิกเฉพาะ superadmin+head
 test("รหัสคูปอง = หมวด POS + เลขรัน 7 หลัก จองช่วงเลขด้วย upsert ตัวนับเดียว", () => {
   assert.match(sql, /create table if not exists public\.coupon_counters/i);
   assert.match(sql, /revoke all on table public\.coupon_counters from anon, authenticated;/i);
-  assert.match(sql, /on conflict \(prefix\) do update set last_no = k\.last_no \+ p_quantity/i);
+  // ตัวนับเดินหน้าอย่างเดียว: ต่อจาก "มากกว่า" ระหว่างเลขเดิมกับเลขที่ระบุ (กันออกเลขซ้ำกับของเก่า/ของที่ออกไปแล้ว)
+  assert.match(sql, /on conflict \(prefix\) do update set last_no = greatest\(k\.last_no, coalesce\(p_start_after, 0\)\) \+ p_quantity/i);
+  assert.match(sql, /p_quantity > 20000/);
   assert.match(sql, /lpad\(n::text, 7, '0'\)/);
   // ต้องรับทุกหมวดในคู่มือ POS v6.2 และปฏิเสธหมวดที่ไม่มี
   const m = sql.match(/v_prefix !~ '([^']+)'/);

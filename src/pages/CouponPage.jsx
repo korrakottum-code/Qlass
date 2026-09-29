@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { formatThaiDate } from "../utils/helpers";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
-import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons } from "../utils/couponApi";
+import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters } from "../utils/couponApi";
 import { serverErrorCode } from "../utils/sessionApi";
 
 // หมวดรหัส POS v6.2 — ต้องตรงกับ regex ใน coupon_generate_v1
@@ -27,7 +27,8 @@ const ERRORS = {
   coupon_expired: "คูปองนี้หมดอายุแล้ว",
   invalid_branch: "ไม่พบสาขาที่เลือก",
   already_reverted: "รายการนี้ถูกย้อนไปแล้ว",
-  invalid_quantity: "จำนวนใบต้อง 1–2,000",
+  invalid_quantity: "จำนวนใบต้อง 1–20,000 ต่อครั้ง",
+  invalid_start: "เลขที่ให้ออกต่อต้องอยู่ระหว่าง 0–9,999,999",
   invalid_expiry: "วันหมดอายุต้องไม่ใช่วันที่ผ่านมาแล้ว",
   invalid_price: "ราคาไม่ถูกต้อง",
   invalid_name: "กรุณาใส่ชื่อคูปอง/โปร",
@@ -72,8 +73,9 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   const PAGE_SIZE = 50;
 
   // ── ออกล็อต ──
-  const [gen, setGen] = useState({ name: "", category: "", price: "", quantity: 10, prefix: "D1", expiryDate: "", customerName: "", customerPhone: "", note: "" });
+  const [gen, setGen] = useState({ name: "", category: "", price: "", quantity: 10, startAfter: "", prefix: "D1", expiryDate: "", customerName: "", customerPhone: "", note: "" });
   const [lastBatch, setLastBatch] = useState(null);
+  const [counters, setCounters] = useState({});
   const [batches, setBatches] = useState({ total: 0, batches: [] });
 
   const token = getServerSessionToken();
@@ -94,6 +96,12 @@ export default function CouponPage({ branches, currentUser, onToast }) {
     const t = setTimeout(refreshList, 250); // หน่วงเล็กน้อยตอนพิมพ์ค้นหา
     return () => clearTimeout(t);
   }, [tab, refreshList]);
+
+  // เลขล่าสุดของแต่ละหมวด ใช้โชว์ตัวอย่างช่วงรหัสก่อนกดออกล็อต (โหลดใหม่ทุกครั้งที่เปิดแท็บ/ออกล็อตเสร็จ)
+  useEffect(() => {
+    if (tab !== "generate" || !canManage) return;
+    fetchCouponCounters(token).then(setCounters).catch(() => setCounters({}));
+  }, [tab, canManage, token, lastBatch]);
 
   useEffect(() => {
     if (tab !== "batches") return;
@@ -168,6 +176,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
           ...gen,
           price: Number(gen.price || 0),
           quantity: Number(gen.quantity),
+          startAfter: gen.startAfter === "" ? null : Number(gen.startAfter),
         });
       } catch (err) {
         onToast?.("error", await explain(err));
@@ -185,6 +194,11 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   }
 
   const tabs = [["redeem", "🎟️ ตัดคูปอง"], ["list", "📋 รายการ"], ["batches", "📦 ล็อต/ช่วงรหัส"], ...(canManage ? [["generate", "➕ ออกคูปอง"]] : [])];
+  // ตัวอย่างช่วงรหัสที่จะได้ (คำนวณแบบเดียวกับที่เซิร์ฟเวอร์ทำ: ต่อจากเลขล่าสุดของหมวด หรือเลขที่ระบุ ถ้ามากกว่า)
+  const pad7 = (n) => String(n).padStart(7, "0");
+  const lastNo = Math.max(counters[gen.prefix] || 0, gen.startAfter === "" ? 0 : Number(gen.startAfter) || 0);
+  const qtyNum = Number(gen.quantity) || 0;
+  const preview = qtyNum > 0 ? { first: `${gen.prefix}-${pad7(lastNo + 1)}`, last: `${gen.prefix}-${pad7(lastNo + qtyNum)}`, over: lastNo + qtyNum > 9999999 } : null;
   const totalPages = Math.max(1, Math.ceil(list.total / PAGE_SIZE));
 
   return (
@@ -318,8 +332,8 @@ export default function CouponPage({ branches, currentUser, onToast }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <input className="input" placeholder="หมวด (ถ้ามี)" value={gen.category} onChange={(e) => setGen({ ...gen, category: e.target.value })} />
             <input className="input" type="number" min="0" placeholder="ราคา" value={gen.price} onChange={(e) => setGen({ ...gen, price: e.target.value })} />
-            <label style={{ fontSize: 12 }}>จำนวนใบ (สูงสุด 2,000 ต่อครั้ง)
-              <input className="input" type="number" min="1" max="2000" value={gen.quantity} onChange={(e) => setGen({ ...gen, quantity: e.target.value })} required />
+            <label style={{ fontSize: 12 }}>จำนวนใบ (สูงสุด 20,000 ต่อครั้ง)
+              <input className="input" type="number" min="1" max="20000" value={gen.quantity} onChange={(e) => setGen({ ...gen, quantity: e.target.value })} required />
             </label>
             <label style={{ fontSize: 12 }}>วันหมดอายุ
               <input className="input" type="date" value={gen.expiryDate} onChange={(e) => setGen({ ...gen, expiryDate: e.target.value })} required />
@@ -329,10 +343,20 @@ export default function CouponPage({ branches, currentUser, onToast }) {
                 {POS_CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </label>
+            <label style={{ fontSize: 12 }}>ออกต่อจากเลขที่ (ถ้าเคยออกไว้ก่อนใช้ระบบนี้)
+              <input className="input" type="number" min="0" max="9999999" placeholder={counters[gen.prefix] ? `ล่าสุดในระบบ ${counters[gen.prefix]}` : "เช่น 1001"} value={gen.startAfter} onChange={(e) => setGen({ ...gen, startAfter: e.target.value })} />
+            </label>
             <input className="input" placeholder="ชื่อลูกค้า (ผูกทั้งล็อต ถ้ามี)" value={gen.customerName} onChange={(e) => setGen({ ...gen, customerName: e.target.value })} />
             <input className="input" placeholder="เบอร์ลูกค้า (ถ้ามี)" value={gen.customerPhone} onChange={(e) => setGen({ ...gen, customerPhone: e.target.value })} />
           </div>
           <input className="input" placeholder="หมายเหตุ" value={gen.note} onChange={(e) => setGen({ ...gen, note: e.target.value })} maxLength={200} />
+          {preview && (
+            <div style={{ fontSize: 13, padding: "8px 10px", borderRadius: 8, background: "var(--surface2)", color: preview.over ? "#dc2626" : "inherit" }}>
+              {counters[gen.prefix] || gen.startAfter !== "" ? `ต่อจาก ${gen.prefix}-${pad7(lastNo)} → ` : "เริ่มหมวดนี้ → "}
+              ล็อตนี้ได้ <b style={{ fontFamily: "var(--mono)" }}>{preview.first} – {preview.last}</b>
+              {preview.over && " (เกินเลขสูงสุด 9,999,999)"}
+            </div>
+          )}
           <button className="btn btn-primary" type="submit" disabled={isSaving}>{isSaving ? "กำลังออกคูปอง…" : "ออกคูปอง"}</button>
           {lastBatch && (
             <p style={{ fontSize: 13, margin: 0 }}>

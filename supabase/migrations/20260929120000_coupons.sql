@@ -122,7 +122,8 @@ create or replace function public.coupon_generate_v1(
   p_actor_staff_id uuid,
   p_name text, p_category text, p_price numeric, p_total_uses int,
   p_expiry_date date, p_quantity int, p_prefix text,
-  p_customer_name text default null, p_customer_phone text default null, p_note text default null
+  p_customer_name text default null, p_customer_phone text default null, p_note text default null,
+  p_start_after bigint default null
 ) returns jsonb
 language plpgsql
 security definer
@@ -134,7 +135,9 @@ declare
   v_end bigint;
   v_start bigint;
 begin
-  if p_quantity is null or p_quantity < 1 or p_quantity > 2000 then raise exception 'invalid_quantity'; end if;
+  if p_quantity is null or p_quantity < 1 or p_quantity > 20000 then raise exception 'invalid_quantity'; end if;
+  -- p_start_after = "เคยออกมาถึงเลขนี้แล้ว (เช่นออกไว้ก่อนใช้ระบบนี้)" ตัวนับจะข้ามไปต่อจากเลขนั้น แต่ไม่มีวันถอยหลัง
+  if p_start_after is not null and (p_start_after < 0 or p_start_after > 9999999) then raise exception 'invalid_start'; end if;
   if p_total_uses is null or p_total_uses < 1 or p_total_uses > 999 then raise exception 'invalid_uses'; end if;
   -- หมวดตามคู่มือรหัส POS v6.2: T1-T4,T99 / D1-D10,D99 / S1,S2 / O1-O4,O9
   if v_prefix !~ '^(T([1-4]|99)|D([1-9]|10|99)|S[12]|O[12349])$' then raise exception 'invalid_prefix'; end if;
@@ -142,8 +145,8 @@ begin
   if p_price is null or p_price < 0 then raise exception 'invalid_price'; end if;
   if p_name is null or length(btrim(p_name)) = 0 then raise exception 'invalid_name'; end if;
 
-  insert into public.coupon_counters as k (prefix, last_no) values (v_prefix, p_quantity)
-  on conflict (prefix) do update set last_no = k.last_no + p_quantity
+  insert into public.coupon_counters as k (prefix, last_no) values (v_prefix, coalesce(p_start_after, 0) + p_quantity)
+  on conflict (prefix) do update set last_no = greatest(k.last_no, coalesce(p_start_after, 0)) + p_quantity
   returning last_no into v_end;
   v_start := v_end - p_quantity + 1;
   if v_end > 9999999 then raise exception 'prefix_exhausted'; end if;
@@ -165,6 +168,17 @@ begin
                             'firstCode', v_prefix || '-' || lpad(v_start::text, 7, '0'),
                             'lastCode', v_prefix || '-' || lpad(v_end::text, 7, '0'));
 end;
+$$;
+
+-- เลขล่าสุดที่ออกไปแล้วของแต่ละหมวด (ใช้แสดงตัวอย่างช่วงรหัสก่อนกดออกล็อต)
+create or replace function public.coupon_counters_v1()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(jsonb_object_agg(prefix, last_no), '{}'::jsonb) from public.coupon_counters;
 $$;
 
 create or replace function public.coupon_lookup_v1(p_code text)
@@ -316,7 +330,8 @@ $$;
 
 revoke all on function public.coupon_status(public.coupons), public.coupon_json(public.coupons) from public, anon, authenticated;
 revoke all on function
-  public.coupon_generate_v1(uuid, text, text, numeric, int, date, int, text, text, text, text),
+  public.coupon_generate_v1(uuid, text, text, numeric, int, date, int, text, text, text, text, bigint),
+  public.coupon_counters_v1(),
   public.coupon_lookup_v1(text),
   public.coupon_redeem_v1(uuid, text, text, text),
   public.coupon_revert_v1(uuid, uuid),

@@ -33,12 +33,16 @@ const find = (code) => coupons.find((c) => c.code === String(code).trim().toUppe
 export async function generateCoupons(_t, b) {
   const prefix = String(b.prefix || "").trim().toUpperCase();
   const qty = Number(b.quantity), uses = 1; // 1 ใบ = 1 ครั้ง
-  if (!(qty >= 1 && qty <= 2000)) fail("invalid_quantity");
+  if (!(qty >= 1 && qty <= 20000)) fail("invalid_quantity");
+  const after = b.startAfter == null ? 0 : Number(b.startAfter);
+  if (!(after >= 0 && after <= 9999999)) fail("invalid_start");
   if (!POS.test(prefix)) fail("invalid_prefix");
   if (!b.expiryDate || b.expiryDate < today()) fail("invalid_expiry");
   if (!(Number(b.price) >= 0)) fail("invalid_price");
   if (!String(b.name || "").trim()) fail("invalid_name");
-  const start = (counters[prefix] || 0) + 1, end = (counters[prefix] || 0) + qty;
+  const base = Math.max(counters[prefix] || 0, after);
+  const start = base + 1, end = base + qty;
+  if (end > 9999999) fail("prefix_exhausted");
   counters[prefix] = end;
   const batchId = uid();
   const now = new Date().toISOString();
@@ -48,6 +52,7 @@ export async function generateCoupons(_t, b) {
   }
   return { batchId, count: qty, price: Number(b.price), firstCode: `${prefix}-${pad(start)}`, lastCode: `${prefix}-${pad(end)}` };
 }
+export async function fetchCouponCounters() { return { ...counters }; }
 export async function lookupCoupon(_t, code) { const c = find(code); return c ? view(c) : null; }
 export async function listCoupons(_t, { search = "", status: st = "all", limit = 50, offset = 0 } = {}) {
   const q = search.trim().toLowerCase();

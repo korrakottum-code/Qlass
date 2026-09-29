@@ -74,7 +74,7 @@ const couponUseRoles = new Set(["superadmin", "head_admin", "admin", "branch_man
 const couponErrors = new Set([
   "coupon_not_found", "coupon_cancelled", "coupon_used_up", "coupon_expired", "invalid_branch",
   "redemption_not_found", "already_reverted", "invalid_quantity", "invalid_uses", "invalid_prefix",
-  "invalid_expiry", "invalid_price", "invalid_name", "prefix_exhausted",
+  "invalid_expiry", "invalid_price", "invalid_name", "prefix_exhausted", "invalid_start",
 ]);
 function couponCode(value: unknown) {
   const code = String(value ?? "").trim().toUpperCase();
@@ -394,6 +394,13 @@ Deno.serve(async (req) => {
         return response({ coupon: data }, 200, origin);
       }
 
+      if (body.action === "coupon_counters") {
+        if (!couponManageRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        const { data, error } = await supabase.rpc("coupon_counters_v1");
+        if (error) return fail(error);
+        return response({ counters: data }, 200, origin);
+      }
+
       if (body.action === "coupon_generate") {
         if (!couponManageRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
         const g = body.batch;
@@ -409,6 +416,7 @@ Deno.serve(async (req) => {
           p_customer_name: text(g.customerName, 120) || null,
           p_customer_phone: text(g.customerPhone, 30) || null,
           p_note: text(g.note, 200) || null,
+          p_start_after: Number.isInteger(g.startAfter) ? g.startAfter : null,
         });
         if (error) return fail(error);
         return response(data, 200, origin);
