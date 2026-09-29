@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import { formatThaiDate } from "../utils/helpers";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
 import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters } from "../utils/couponApi";
@@ -79,6 +79,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   // เพิ่มจำนวนจากล็อตเดิม: จำนวนและวันหมดอายุที่กรอกในแต่ละแถว (คีย์ = id ล็อต)
   const [addQty, setAddQty] = useState({});
   const [addExpiry, setAddExpiry] = useState({});
+  const [openGroups, setOpenGroups] = useState(() => new Set()); // โปรที่กางดูช่วงรหัสของแต่ละล็อตอยู่
   const [batches, setBatches] = useState({ total: 0, batches: [] });
 
   const token = getServerSessionToken();
@@ -229,6 +230,20 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   const lastNo = Math.max(counters[gen.prefix] || 0, gen.startAfter === "" ? 0 : Number(gen.startAfter) || 0);
   const qtyNum = Number(gen.quantity) || 0;
   const preview = qtyNum > 0 ? { first: `${gen.prefix}-${pad7(lastNo + 1)}`, last: `${gen.prefix}-${pad7(lastNo + qtyNum)}`, over: lastNo + qtyNum > 9999999 } : null;
+  // หุบรวมเป็นโปรละหนึ่งแถว (หมวด+ชื่อ+ราคาเดียวกัน) กางออกดูช่วงรหัสของแต่ละล็อตได้
+  // รายการเรียงใหม่→เก่า จึงได้ล็อตแรกของแต่ละกลุ่มเป็นล็อตล่าสุด (ใช้เป็นต้นแบบตอนกด "เพิ่ม")
+  const groups = [];
+  {
+    const byKey = new Map();
+    for (const b of batches.batches) {
+      const key = `${b.prefix}|${b.name}|${b.price}|${b.category || ""}`;
+      let g = byKey.get(key);
+      if (!g) { g = { key, prefix: b.prefix, name: b.name, price: b.price, latest: b, batches: [], total: 0 }; byKey.set(key, g); groups.push(g); }
+      g.batches.push(b);
+      g.total += b.quantity;
+    }
+  }
+  const toggleGroup = (key) => setOpenGroups((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const totalPages = Math.max(1, Math.ceil(list.total / PAGE_SIZE));
 
   return (
@@ -338,28 +353,50 @@ export default function CouponPage({ branches, currentUser, onToast }) {
       {tab === "batches" && (
         <div className="table-scroll">
           <table className="data-table">
-            <thead><tr><th>ช่วงรหัส</th><th>ชื่อ</th><th>ราคา</th><th>จำนวนใบ</th><th>หมดอายุ</th><th>วันที่ออก</th>{canManage && <th>เพิ่มจำนวน (ออกต่อจากเลขล่าสุด)</th>}</tr></thead>
+            <thead>
+              <tr>
+                <th />
+                <th>โปร/คูปอง</th><th>หมวด</th><th>ราคา</th><th>จำนวนล็อต</th><th>จำนวนใบรวม</th><th>เลขล่าสุด</th>
+                {canManage && <th>เพิ่มจำนวน (ออกต่อจากเลขล่าสุด)</th>}
+              </tr>
+            </thead>
             <tbody>
-              {batches.batches.map((b) => (
-                <tr key={b.id}>
-                  <td style={{ fontFamily: "var(--mono)" }}>{b.firstCode} – {b.lastCode}</td>
-                  <td>{b.name}</td>
-                  <td>฿{Number(b.price).toLocaleString()}</td>
-                  <td>{b.quantity.toLocaleString()}</td>
-                  <td>{formatThaiDate(b.expiryDate)}</td>
-                  <td>{new Date(b.createdAt).toLocaleDateString("th-TH")}</td>
-                  {canManage && (
-                    <td>
-                      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap" }}>
-                        <input className="input" type="number" min="1" max="20000" placeholder="จำนวน" style={{ width: 90 }} value={addQty[b.id] ?? ""} onChange={(e) => setAddQty({ ...addQty, [b.id]: e.target.value })} />
-                        <input className="input" type="date" style={{ width: 140 }} value={addExpiry[b.id] ?? String(b.expiryDate).slice(0, 10)} onChange={(e) => setAddExpiry({ ...addExpiry, [b.id]: e.target.value })} title="วันหมดอายุของล็อตใหม่" />
-                        <button className="btn btn-sm btn-primary" disabled={isSaving || !addQty[b.id]} onClick={() => handleAddMore(b)}>เพิ่ม</button>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-              {batches.batches.length === 0 && <tr><td colSpan={canManage ? 7 : 6} style={{ textAlign: "center", color: "var(--text3)" }}>ยังไม่มีล็อต</td></tr>}
+              {groups.map((g) => {
+                const b = g.latest;
+                const open = openGroups.has(g.key);
+                return (
+                  <Fragment key={g.key}>
+                    <tr>
+                      <td><button className="btn btn-sm btn-secondary" aria-expanded={open} title={open ? "หุบ" : "กางดูช่วงรหัสของแต่ละล็อต"} onClick={() => toggleGroup(g.key)}>{open ? "▾" : "▸"}</button></td>
+                      <td><b>{g.name}</b></td>
+                      <td style={{ fontFamily: "var(--mono)" }}>{g.prefix}</td>
+                      <td>฿{Number(g.price).toLocaleString()}</td>
+                      <td>{g.batches.length}</td>
+                      <td>{g.total.toLocaleString()}</td>
+                      <td style={{ fontFamily: "var(--mono)" }}>{b.lastCode}</td>
+                      {canManage && (
+                        <td>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "nowrap" }}>
+                            <input className="input" type="number" min="1" max="20000" placeholder="จำนวน" style={{ width: 90 }} value={addQty[b.id] ?? ""} onChange={(e) => setAddQty({ ...addQty, [b.id]: e.target.value })} />
+                            <input className="input" type="date" style={{ width: 140 }} value={addExpiry[b.id] ?? String(b.expiryDate).slice(0, 10)} onChange={(e) => setAddExpiry({ ...addExpiry, [b.id]: e.target.value })} title="วันหมดอายุของล็อตใหม่" />
+                            <button className="btn btn-sm btn-primary" disabled={isSaving || !addQty[b.id]} onClick={() => handleAddMore(b)}>เพิ่ม</button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                    {open && g.batches.map((x) => (
+                      <tr key={x.id} style={{ background: "var(--surface2)" }}>
+                        <td />
+                        <td colSpan={canManage ? 7 : 6} style={{ fontSize: 12 }}>
+                          <span style={{ fontFamily: "var(--mono)", fontWeight: 700 }}>{x.firstCode} – {x.lastCode}</span>
+                          {` · ${x.quantity.toLocaleString()} ใบ · หมดอายุ ${formatThaiDate(x.expiryDate)} · ออกเมื่อ ${new Date(x.createdAt).toLocaleDateString("th-TH")}`}
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                );
+              })}
+              {groups.length === 0 && <tr><td colSpan={canManage ? 8 : 7} style={{ textAlign: "center", color: "var(--text3)" }}>ยังไม่มีล็อต</td></tr>}
             </tbody>
           </table>
         </div>

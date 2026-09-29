@@ -54,3 +54,11 @@ test("รายการล็อตส่งหมวดกลับมาด�
   const body = sql.slice(sql.indexOf("function public.coupon_batches_v1"));
   assert.match(body, /'category', b\.category/);
 });
+
+test("แท็บล็อตหุบรวมเป็นโปรละแถว กางดูช่วงรหัสได้ และปุ่มเพิ่มใช้ล็อตล่าสุดของโปรเป็นต้นแบบ", () => {
+  const page = readFileSync(new URL("../src/pages/CouponPage.jsx", import.meta.url), "utf8");
+  assert.match(page, /byKey/);
+  assert.match(page, /toggleGroup\(g\.key\)/);
+  assert.match(page, /const b = g\.latest;/);
+  assert.match(page, /handleAddMore\(b\)/);
+});
