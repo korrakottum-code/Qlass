@@ -135,13 +135,15 @@ test("หน้าคูปอง: กันผลโหลดเก่าทั
   assert.match(page, /!countersOk\) \{ onToast/);
 });
 
-test("รายการคูปองที่หลักแสนใบ: มีดัชนี trigram สำหรับค้น และกรองสถานะแบบเงื่อนไขตรง ๆ (ไม่เรียก coupon_status ทีละแถว)", () => {
+test("รายการคูปองที่หลักแสนใบ: มีดัชนี trigram (หา schema ของ pg_trgm เอง) และกรองสถานะด้วยเงื่อนไขตรง ๆ", () => {
+  // pg_trgm บนโปรเจกต์จริงอยู่ใน public — ห้ามเขียน extensions.gin_trgm_ops ตรง ๆ (จะ error ตอนลง migration)
+  assert.doesNotMatch(sql, /extensions\.gin_trgm_ops/);
+  assert.match(sql, /from pg_extension e join pg_namespace n on n\.oid = e\.extnamespace/);
   for (const col of ["code", "name", "customer_name", "customer_phone"]) {
-    assert.match(sql, new RegExp(`using gin \\(${col} extensions\\.gin_trgm_ops\\)`), col);
+    assert.match(sql, new RegExp(`using gin \\(${col} %I\\.gin_trgm_ops\\)`), col);
   }
   const body = sql.slice(sql.indexOf("function public.coupon_list_v1"), sql.indexOf("function public.coupon_batches_v1"));
   assert.doesNotMatch(body, /coupon_status\(c\)/, "ห้ามเรียก coupon_status ทีละแถวใน list");
-  // เงื่อนไขสถานะต้องตรงกับ coupon_status (ยกเลิก > ใช้แล้ว > หมดอายุ > ใช้ได้)
   assert.match(body, /p_status = 'used_up'\s+and c\.cancelled_at is null and c\.used_count >= c\.total_uses/);
   assert.match(body, /p_status = 'expired'\s+and c\.cancelled_at is null and c\.used_count < c\.total_uses and c\.expiry_date < v_today/);
   assert.match(body, /p_status = 'active'\s+and c\.cancelled_at is null and c\.used_count < c\.total_uses and c\.expiry_date >= v_today/);

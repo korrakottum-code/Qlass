@@ -1,11 +1,18 @@
--- คูปอง: ออกเป็นล็อต + ตัดใช้ที่สาขา (1 ใบใช้ได้หลายครั้งตาม total_uses)
+-- คูปอง: ออกเป็นล็อตตามหมวดรหัส POS (เช่น D1-0000001) + ตัดใช้ที่สาขา 1 ใบใช้ได้ 1 ครั้ง (คอลัมน์ total_uses คงไว้ที่ 1 เสมอ)
 --
 -- ความปลอดภัย: ตารางมีชื่อ/เบอร์ลูกค้า จึงปิดจากคีย์หน้าเว็บตั้งแต่วันแรก (RLS เปิด ไม่มี policy + ถอนสิทธิ์)
 -- ทุกการอ่าน/เขียนผ่าน Edge Function staff-session (ตรวจ role ฝั่งเซิร์ฟเวอร์) ซึ่งเรียกฟังก์ชันด้านล่างด้วย service_role
 -- ฟังก์ชันทั้งหมดถอนสิทธิ์จาก public/anon/authenticated ไม่ให้เรียกตรงจากเบราว์เซอร์
 --
--- ย้อนกลับ: drop function public.coupon_generate_v1, coupon_lookup_v1, coupon_redeem_v1, coupon_revert_v1,
---           coupon_cancel_v1, coupon_list_v1; drop table public.coupon_redemptions, public.coupons, public.coupon_counters, public.coupon_batches;
+-- ไม่แตะตารางเดิมใดเลย (อ่านอย่างเดียวจาก staff / branches) ย้อนกลับได้ด้วยการลบของใหม่ทั้งหมด:
+--   drop function public.coupon_generate_v1(uuid, text, text, numeric, int, date, int, text, text, text, text, bigint),
+--                 public.coupon_counters_v1(), public.coupon_lookup_v1(text), public.coupon_redeem_v1(uuid, text, text, text),
+--                 public.coupon_revert_v1(uuid, uuid), public.coupon_cancel_v1(text, boolean),
+--                 public.coupon_cancel_batch_v1(uuid, boolean), public.coupon_stats_v1(date, date),
+--                 public.coupon_list_v1(text, text, int, int), public.coupon_batches_v1(int, int),
+--                 public.coupon_json(public.coupons), public.coupon_status(public.coupons);
+--   drop table public.coupon_redemptions, public.coupons, public.coupon_counters, public.coupon_batches;
+--   (ดัชนี trigram ถูกลบไปพร้อมตาราง ส่วนขยาย pg_trgm ไม่ถูกแตะ)
 
 create table if not exists public.coupons (
   id            uuid primary key default gen_random_uuid(),
@@ -32,11 +39,23 @@ create index if not exists coupons_phone_idx   on public.coupons (customer_phone
 
 -- ค้นหาแบบ "มีข้อความนี้อยู่ตรงไหนก็ได้" (ILIKE '%x%') ที่หลักแสนใบ: ไม่มีดัชนี = ไล่ทุกแถว ~1.5-3 วินาทีต่อครั้ง (วัดที่ 300,000 ใบ)
 -- ดัชนี trigram ทำให้ค้นด้วยรหัสบางส่วน ชื่อโปร ชื่อลูกค้า เบอร์ ได้จากดัชนี
-create extension if not exists pg_trgm with schema extensions;
-create index if not exists coupons_code_trgm_idx  on public.coupons using gin (code extensions.gin_trgm_ops);
-create index if not exists coupons_name_trgm_idx  on public.coupons using gin (name extensions.gin_trgm_ops);
-create index if not exists coupons_cname_trgm_idx on public.coupons using gin (customer_name extensions.gin_trgm_ops) where customer_name is not null;
-create index if not exists coupons_phone_trgm_idx on public.coupons using gin (customer_phone extensions.gin_trgm_ops) where customer_phone is not null;
+--
+-- pg_trgm อาจติดตั้งไว้แล้วคนละ schema (โปรเจกต์จริงอยู่ใน public, โปรเจกต์ใหม่จะอยู่ใน extensions) จึงหา schema ตอนรัน
+-- แทนการเขียน extensions.gin_trgm_ops ตรง ๆ (เขียนตรง ๆ จะ error บนโปรเจกต์ที่ติดตั้งไว้ใน public)
+do $$
+declare
+  v_schema text;
+begin
+  create extension if not exists pg_trgm with schema extensions;
+  select n.nspname into v_schema
+    from pg_extension e join pg_namespace n on n.oid = e.extnamespace
+   where e.extname = 'pg_trgm';
+  execute format('create index if not exists coupons_code_trgm_idx  on public.coupons using gin (code %I.gin_trgm_ops)', v_schema);
+  execute format('create index if not exists coupons_name_trgm_idx  on public.coupons using gin (name %I.gin_trgm_ops)', v_schema);
+  execute format('create index if not exists coupons_cname_trgm_idx on public.coupons using gin (customer_name %I.gin_trgm_ops) where customer_name is not null', v_schema);
+  execute format('create index if not exists coupons_phone_trgm_idx on public.coupons using gin (customer_phone %I.gin_trgm_ops) where customer_phone is not null', v_schema);
+end
+$$;
 
 create table if not exists public.coupon_redemptions (
   id            uuid primary key default gen_random_uuid(),
