@@ -78,6 +78,11 @@ const couponErrors = new Set([
   "redemption_not_found", "already_reverted", "invalid_quantity", "invalid_uses", "invalid_prefix",
   "invalid_expiry", "invalid_price", "invalid_name", "prefix_exhausted", "invalid_start", "batch_not_found", "batch_already_cancelled", "batch_not_cancelled", "invalid_range",
 ]);
+function validDay(value: unknown): string | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const d = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value ? value : null;
+}
 function couponCode(value: unknown) {
   const code = String(value ?? "").trim().toUpperCase();
   return /^[A-Z0-9-]{4,40}$/.test(code) ? code : null;
@@ -321,6 +326,14 @@ Deno.serve(async (req) => {
       const role = String(current.user.role ?? "");
       const staffId = String(current.user.id);
 
+      // แคชเชีย/ผู้จัดการสาขาเห็นเบอร์ลูกค้าแค่ 4 ตัวท้าย (ชื่อยังเห็นเพื่อยืนยันตัวตนตอนตัด) — ส่วนแอดมินขึ้นไปเห็นเต็ม
+      const maskPhones = role === "branch_manager" || role === "cashier";
+      const maskCoupon = (c: Record<string, unknown> | null) => {
+        if (!c || !maskPhones || typeof c.customerPhone !== "string") return c;
+        const phone = c.customerPhone;
+        return { ...c, customerPhone: phone.length > 4 ? `${"•".repeat(phone.length - 4)}${phone.slice(-4)}` : phone };
+      };
+
       const fail = (error: { message?: string }) => {
         const code = String(error?.message ?? "");
         if (couponErrors.has(code)) return response({ error: code }, code === "coupon_not_found" || code === "redemption_not_found" || code === "batch_not_found" ? 404 : 409, origin);
@@ -333,7 +346,7 @@ Deno.serve(async (req) => {
         if (!code) return response({ error: "invalid_coupon_payload" }, 400, origin);
         const { data, error } = await supabase.rpc("coupon_lookup_v1", { p_code: code });
         if (error) return fail(error);
-        return response({ coupon: data }, 200, origin);
+        return response({ coupon: maskCoupon(data) }, 200, origin);
       }
 
       if (body.action === "coupon_batches") {
@@ -359,7 +372,7 @@ Deno.serve(async (req) => {
           p_offset: Number.isInteger(body.offset) ? body.offset : 0,
         });
         if (error) return fail(error);
-        return response(data, 200, origin);
+        return response(maskPhones ? { ...data, coupons: (data.coupons ?? []).map(maskCoupon) } : data, 200, origin);
       }
 
       if (body.action === "coupon_redeem") {
@@ -374,7 +387,7 @@ Deno.serve(async (req) => {
           p_note: typeof body.note === "string" ? body.note.slice(0, 200) : null,
         });
         if (error) return fail(error);
-        return response({ coupon: data }, 200, origin);
+        return response({ coupon: maskCoupon(data) }, 200, origin);
       }
 
       if (body.action === "coupon_revert") {
@@ -384,7 +397,7 @@ Deno.serve(async (req) => {
         }
         const { data, error } = await supabase.rpc("coupon_revert_v1", { p_actor_staff_id: staffId, p_redemption_id: body.redemptionId });
         if (error) return fail(error);
-        return response({ coupon: data }, 200, origin);
+        return response({ coupon: maskCoupon(data) }, 200, origin);
       }
 
       if (body.action === "coupon_cancel") {
@@ -393,7 +406,7 @@ Deno.serve(async (req) => {
         if (!code) return response({ error: "invalid_coupon_payload" }, 400, origin);
         const { data, error } = await supabase.rpc("coupon_cancel_v1", { p_code: code, p_cancel: body.cancel !== false });
         if (error) return fail(error);
-        return response({ coupon: data }, 200, origin);
+        return response({ coupon: maskCoupon(data) }, 200, origin);
       }
 
       if (body.action === "coupon_cancel_batch") {
@@ -408,8 +421,10 @@ Deno.serve(async (req) => {
 
       if (body.action === "coupon_stats") {
         if (!couponStatsRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
-        const day = (v: unknown) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
-        const { data, error } = await supabase.rpc("coupon_stats_v1", { p_from: day(body.from), p_to: day(body.to) });
+        const from = body.from == null ? null : validDay(body.from);
+        const to = body.to == null ? null : validDay(body.to);
+        if ((body.from != null && !from) || (body.to != null && !to)) return response({ error: "invalid_range" }, 400, origin);
+        const { data, error } = await supabase.rpc("coupon_stats_v1", { p_from: from, p_to: to });
         if (error) return fail(error);
         return response({ stats: data }, 200, origin);
       }
@@ -426,12 +441,14 @@ Deno.serve(async (req) => {
         const g = body.batch;
         if (!g || typeof g !== "object" || Array.isArray(g)) return response({ error: "invalid_coupon_payload" }, 400, origin);
         const text = (value: unknown, max: number) => String(value ?? "").trim().slice(0, max);
+        const expiryDate = validDay(text(g.expiryDate, 10));
+        if (!expiryDate) return response({ error: "invalid_expiry" }, 400, origin);
         const { data, error } = await supabase.rpc("coupon_generate_v1", {
           p_actor_staff_id: staffId,
           p_name: text(g.name, 120), p_category: text(g.category, 60),
           // คูปอง 1 ใบใช้ได้ 1 ครั้งเสมอ — ไม่รับค่าจากเบราว์เซอร์
           p_price: Number(g.price ?? 0), p_total_uses: 1,
-          p_expiry_date: text(g.expiryDate, 10), p_quantity: Number(g.quantity ?? 0),
+          p_expiry_date: expiryDate, p_quantity: Number(g.quantity ?? 0),
           p_prefix: text(g.prefix, 12),
           p_customer_name: text(g.customerName, 120) || null,
           p_customer_phone: text(g.customerPhone, 30) || null,

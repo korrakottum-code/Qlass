@@ -30,6 +30,14 @@ create index if not exists coupons_created_idx on public.coupons (created_at des
 create index if not exists coupons_batch_idx   on public.coupons (batch_id);
 create index if not exists coupons_phone_idx   on public.coupons (customer_phone) where customer_phone is not null;
 
+-- ค้นหาแบบ "มีข้อความนี้อยู่ตรงไหนก็ได้" (ILIKE '%x%') ที่หลักแสนใบ: ไม่มีดัชนี = ไล่ทุกแถว ~1.5-3 วินาทีต่อครั้ง (วัดที่ 300,000 ใบ)
+-- ดัชนี trigram ทำให้ค้นด้วยรหัสบางส่วน ชื่อโปร ชื่อลูกค้า เบอร์ ได้จากดัชนี
+create extension if not exists pg_trgm with schema extensions;
+create index if not exists coupons_code_trgm_idx  on public.coupons using gin (code extensions.gin_trgm_ops);
+create index if not exists coupons_name_trgm_idx  on public.coupons using gin (name extensions.gin_trgm_ops);
+create index if not exists coupons_cname_trgm_idx on public.coupons using gin (customer_name extensions.gin_trgm_ops) where customer_name is not null;
+create index if not exists coupons_phone_trgm_idx on public.coupons using gin (customer_phone extensions.gin_trgm_ops) where customer_phone is not null;
+
 create table if not exists public.coupon_redemptions (
   id            uuid primary key default gen_random_uuid(),
   coupon_id     uuid not null references public.coupons(id) on delete restrict,
@@ -274,7 +282,9 @@ begin
 end;
 $$;
 
--- รายการแบบแบ่งหน้า: ค้นจากรหัส/ชื่อลูกค้า/เบอร์/ชื่อโปร (ตัวกรองสถานะคำนวณจากวันหมดอายุตอนค้น)
+-- รายการแบบแบ่งหน้า: ค้นจากรหัส/ชื่อลูกค้า/เบอร์/ชื่อโปร
+-- ตัวกรองสถานะเขียนเป็นเงื่อนไขตรง ๆ (ไม่เรียก coupon_status ทีละแถว — ที่ 300,000 ใบช้า ~2.7 วินาที) ต้องตรงกับ coupon_status:
+--   ยกเลิก > ใช้แล้ว > หมดอายุ > ใช้ได้
 create or replace function public.coupon_list_v1(
   p_search text default null, p_status text default 'all', p_limit int default 50, p_offset int default 0
 ) returns jsonb
@@ -287,18 +297,27 @@ declare
   v_search text := nullif(btrim(coalesce(p_search, '')), '');
   v_limit int := least(greatest(coalesce(p_limit, 50), 1), 200);
   v_offset int := greatest(coalesce(p_offset, 0), 0);
+  v_today date := (now() at time zone 'Asia/Bangkok')::date;
   v_total int;
   v_rows jsonb;
 begin
   select count(*) into v_total from public.coupons c
-   where (p_status = 'all' or public.coupon_status(c) = p_status)
+   where (p_status = 'all'
+          or (p_status = 'cancelled' and c.cancelled_at is not null)
+          or (p_status = 'used_up'   and c.cancelled_at is null and c.used_count >= c.total_uses)
+          or (p_status = 'expired'   and c.cancelled_at is null and c.used_count < c.total_uses and c.expiry_date < v_today)
+          or (p_status = 'active'    and c.cancelled_at is null and c.used_count < c.total_uses and c.expiry_date >= v_today))
      and (v_search is null
           or c.code ilike '%' || v_search || '%' or c.name ilike '%' || v_search || '%'
           or c.customer_name ilike '%' || v_search || '%' or c.customer_phone ilike '%' || v_search || '%');
 
   select coalesce(jsonb_agg(public.coupon_json(x) order by x.created_at desc, x.code), '[]'::jsonb) into v_rows
     from (select * from public.coupons c
-           where (p_status = 'all' or public.coupon_status(c) = p_status)
+           where (p_status = 'all'
+                  or (p_status = 'cancelled' and c.cancelled_at is not null)
+                  or (p_status = 'used_up'   and c.cancelled_at is null and c.used_count >= c.total_uses)
+                  or (p_status = 'expired'   and c.cancelled_at is null and c.used_count < c.total_uses and c.expiry_date < v_today)
+                  or (p_status = 'active'    and c.cancelled_at is null and c.used_count < c.total_uses and c.expiry_date >= v_today))
              and (v_search is null
                   or c.code ilike '%' || v_search || '%' or c.name ilike '%' || v_search || '%'
                   or c.customer_name ilike '%' || v_search || '%' or c.customer_phone ilike '%' || v_search || '%')

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { formatThaiDate } from "../utils/helpers";
 import { addDays as shiftDay } from "../utils/queueRanges"; // ย้ายวันที่ด้วยตัวช่วยของโปรเจกต์ (ห้ามตัดวันจาก toISOString)
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
@@ -152,14 +152,18 @@ function StatsView({ token, onToast }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // กดลูกศรเปลี่ยนเดือนรัว ๆ ผลของคำขอเก่าอาจกลับมาช้ากว่า → ยอมรับเฉพาะคำขอล่าสุด ไม่งั้นป้ายเดือนกับตัวเลขไม่ตรงกัน
+  const reqId = useRef(0);
   const load = useCallback(async () => {
+    const id = ++reqId.current;
     setLoading(true);
     try {
-      setData(await fetchCouponStats(token, { from: range.from || null, to: range.to || null }));
+      const d = await fetchCouponStats(token, { from: range.from || null, to: range.to || null });
+      if (id === reqId.current) setData(d);
     } catch (e) {
-      onToast?.("error", await explain(e));
+      if (id === reqId.current) onToast?.("error", await explain(e));
     } finally {
-      setLoading(false);
+      if (id === reqId.current) setLoading(false);
     }
   }, [token, range, onToast]);
 
@@ -336,6 +340,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   const [gen, setGen] = useState({ name: "", category: "", price: "", quantity: 10, startAfter: "", prefix: "D1", expiryDate: "", customerName: "", customerPhone: "", note: "" });
   const [lastBatch, setLastBatch] = useState(null);
   const [counters, setCounters] = useState({});
+  const [countersOk, setCountersOk] = useState(false); // false = ยังไม่โหลด/โหลดพลาด/เก่าแล้ว → ห้ามโชว์ช่วงรหัสที่คาดเดา
   // เพิ่มจำนวนจากล็อตเดิม: จำนวนและวันหมดอายุที่กรอกในแต่ละแถว (คีย์ = id ล็อต)
   const [addQty, setAddQty] = useState({});
   const [addExpiry, setAddExpiry] = useState({});
@@ -346,14 +351,17 @@ export default function CouponPage({ branches, currentUser, onToast }) {
 
   const token = getServerSessionToken();
 
+  const listReq = useRef(0); // ยอมรับเฉพาะผลของคำขอล่าสุด
   const refreshList = useCallback(async () => {
+    const id = ++listReq.current;
     setLoading(true);
     try {
-      setList(await listCoupons(token, { search, status, limit: PAGE_SIZE, offset: page * PAGE_SIZE }));
+      const d = await listCoupons(token, { search, status, limit: PAGE_SIZE, offset: page * PAGE_SIZE });
+      if (id === listReq.current) setList(d);
     } catch (e) {
-      onToast?.("error", await explain(e));
+      if (id === listReq.current) onToast?.("error", await explain(e));
     } finally {
-      setLoading(false);
+      if (id === listReq.current) setLoading(false);
     }
   }, [token, search, status, page, onToast]);
 
@@ -365,13 +373,21 @@ export default function CouponPage({ branches, currentUser, onToast }) {
 
   // เลขล่าสุดของแต่ละหมวด ใช้โชว์ตัวอย่างช่วงรหัสก่อนกดออกล็อต (โหลดใหม่ทุกครั้งที่เปิดแท็บ/ออกล็อตเสร็จ)
   useEffect(() => {
-    if ((tab !== "generate" && tab !== "batches") || !canManage) return;
-    fetchCouponCounters(token).then(setCounters).catch(() => setCounters({}));
+    if ((tab !== "generate" && tab !== "batches") || !canManage) return undefined;
+    let alive = true;
+    fetchCouponCounters(token)
+      .then((c) => { if (alive) { setCounters(c); setCountersOk(true); } })
+      .catch(() => { if (alive) setCountersOk(false); });
+    return () => { alive = false; };
   }, [tab, canManage, token, lastBatch]);
 
   useEffect(() => {
-    if (tab !== "batches") return;
-    listCouponBatches(token).then(setBatches).catch(async (e) => onToast?.("error", await explain(e)));
+    if (tab !== "batches") return undefined;
+    let alive = true;
+    listCouponBatches(token)
+      .then((d) => { if (alive) setBatches(d); })
+      .catch(async (e) => { if (alive) onToast?.("error", await explain(e)); });
+    return () => { alive = false; };
   }, [tab, token, onToast, lastBatch, batchTick]);
 
   async function handleLookup(e) {
@@ -384,6 +400,16 @@ export default function CouponPage({ branches, currentUser, onToast }) {
       onToast?.("error", await explain(err));
     }
   }
+
+  // ทุกการกระทำที่แก้ข้อมูล: กันกดซ้ำ (useSubmissionLock) + แปลง error เป็นข้อความไทย + คืน null เมื่อพลาด
+  const call = (fn) => run(async () => {
+    try {
+      return await fn();
+    } catch (err) {
+      onToast?.("error", await explain(err));
+      return null;
+    }
+  });
 
   const last3 = (code) => String(code).slice(-3);
   const askDigits = (cfg) => setPending({ ...cfg, id: Date.now() });
@@ -405,14 +431,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
 
   async function doRedeem() {
     if (!found || !branchId) return;
-    const r = await run(async () => {
-      try {
-        return await redeemCoupon(token, { code: found.code, branchId, note });
-      } catch (err) {
-        onToast?.("error", await explain(err));
-        return null;
-      }
-    });
+    const r = await call(() => redeemCoupon(token, { code: found.code, branchId, note }));
     if (r.started && r.result) {
       setFound(r.result);
       setNote("");
@@ -422,14 +441,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
 
   async function handleRevert(redemptionId) {
     if (!window.confirm("ย้อนการตัดครั้งนี้? คูปองจะกลับมาใช้ได้อีกครั้ง")) return;
-    const r = await run(async () => {
-      try {
-        return await revertCouponRedemption(token, redemptionId);
-      } catch (err) {
-        onToast?.("error", await explain(err));
-        return null;
-      }
-    });
+    const r = await call(() => revertCouponRedemption(token, redemptionId));
     if (r.started && r.result) {
       setFound(r.result);
       onToast?.("success", "ย้อนการตัดแล้ว");
@@ -446,14 +458,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   }
 
   async function doCancel(c, cancel) {
-    const r = await run(async () => {
-      try {
-        return await cancelCoupon(token, c.code, cancel);
-      } catch (err) {
-        onToast?.("error", await explain(err));
-        return null;
-      }
-    });
+    const r = await call(() => cancelCoupon(token, c.code, cancel));
     if (r.started && r.result) {
       setFound(r.result);
       onToast?.("success", cancel ? "ยกเลิกคูปองแล้ว" : "กู้คืนคูปองแล้ว");
@@ -465,22 +470,17 @@ export default function CouponPage({ branches, currentUser, onToast }) {
     const qty = Number(addQty[b.id]);
     const expiry = addExpiry[b.id] || String(b.expiryDate).slice(0, 10);
     if (!(qty >= 1 && qty <= 20000)) { onToast?.("error", ERRORS.invalid_quantity); return; }
+    if (!countersOk) { onToast?.("error", "ยังโหลดเลขล่าสุดของหมวดไม่เสร็จ ลองอีกครั้งในสักครู่"); return; }
     const last = counters[b.prefix] || 0;
     const range = `${b.prefix}-${String(last + 1).padStart(7, "0")} – ${b.prefix}-${String(last + qty).padStart(7, "0")}`;
     if (!window.confirm(`เพิ่ม ${qty.toLocaleString()} ใบ\n${b.name} · ฿${Number(b.price).toLocaleString()} · หมดอายุ ${formatThaiDate(expiry)}\nรหัสที่จะได้: ${range}\n\nยืนยันออกคูปอง?`)) return;
-    const r = await run(async () => {
-      try {
-        return await generateCoupons(token, {
+    const r = await call(() => generateCoupons(token, {
           name: b.name, category: b.category || "", price: Number(b.price), prefix: b.prefix,
           quantity: qty, expiryDate: expiry, note: b.note || "",
-        });
-      } catch (err) {
-        onToast?.("error", await explain(err));
-        return null;
-      }
-    });
+        }));
     if (r.started && r.result) {
       setLastBatch(r.result); // ทำให้รายการล็อตและเลขล่าสุดโหลดใหม่
+      setCountersOk(false);
       setAddQty((prev) => ({ ...prev, [b.id]: "" }));
       onToast?.("success", `เพิ่มแล้ว ${r.result.count.toLocaleString()} ใบ: ${r.result.firstCode} – ${r.result.lastCode}`);
     }
@@ -501,14 +501,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   }
 
   async function doCancelBatch(x, cancel) {
-    const r = await run(async () => {
-      try {
-        return await cancelCouponBatch(token, x.id, cancel);
-      } catch (err) {
-        onToast?.("error", await explain(err));
-        return null;
-      }
-    });
+    const r = await call(() => cancelCouponBatch(token, x.id, cancel));
     if (r.started && r.result) {
       setBatchTick((n) => n + 1);
       onToast?.("success", cancel
@@ -519,21 +512,15 @@ export default function CouponPage({ branches, currentUser, onToast }) {
 
   async function handleGenerate(e) {
     e.preventDefault();
-    const r = await run(async () => {
-      try {
-        return await generateCoupons(token, {
+    const r = await call(() => generateCoupons(token, {
           ...gen,
           price: Number(gen.price || 0),
           quantity: Number(gen.quantity),
           startAfter: gen.startAfter === "" ? null : Number(gen.startAfter),
-        });
-      } catch (err) {
-        onToast?.("error", await explain(err));
-        return null;
-      }
-    });
+        }));
     if (r.started && r.result) {
       setLastBatch(r.result);
+      setCountersOk(false);
       setGen((g) => ({ ...g, startAfter: "" })); // ใช้ครั้งเดียว: ตัวนับเดินต่อเองแล้ว
       onToast?.("success", `ออกคูปอง ${r.result.count} ใบแล้ว`);
     }
@@ -548,7 +535,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   const pad7 = (n) => String(n).padStart(7, "0");
   const lastNo = Math.max(counters[gen.prefix] || 0, gen.startAfter === "" ? 0 : Number(gen.startAfter) || 0);
   const qtyNum = Number(gen.quantity) || 0;
-  const preview = qtyNum > 0 ? { first: `${gen.prefix}-${pad7(lastNo + 1)}`, last: `${gen.prefix}-${pad7(lastNo + qtyNum)}`, over: lastNo + qtyNum > 9999999 } : null;
+  const preview = countersOk && qtyNum > 0 ? { first: `${gen.prefix}-${pad7(lastNo + 1)}`, last: `${gen.prefix}-${pad7(lastNo + qtyNum)}`, over: lastNo + qtyNum > 9999999 } : null;
   // หุบรวมเป็นโปรละหนึ่งแถว (หมวด+ชื่อ+ราคาเดียวกัน) กางออกดูช่วงรหัสของแต่ละล็อตได้
   // รายการเรียงใหม่→เก่า จึงได้ล็อตแรกของแต่ละกลุ่มเป็นล็อตล่าสุด (ใช้เป็นต้นแบบตอนกด "เพิ่ม")
   const groups = [];
@@ -681,6 +668,9 @@ export default function CouponPage({ branches, currentUser, onToast }) {
         <div style={{ display: "grid", gap: 10 }}>
           {canManage && <p style={{ fontSize: 12, color: "var(--text3)", margin: 0 }}>ออกล็อตผิดกาง (▸) โปรแล้วกด “ยกเลิกทั้งล็อต” = ปิดทุกใบที่ยังไม่เคยถูกใช้ (ใบที่ตัดไปแล้วไม่ถูกแตะ) กู้คืนได้ · ต้องพิมพ์เลข 3 ตัวท้ายของรหัสสุดท้ายในล็อตเพื่อยืนยัน</p>}
           {/* การ์ดต่อโปรแทนตาราง: ไหลตามความกว้างจอ ไม่ต้องเลื่อนซ้ายขวา */}
+          {batches.total > batches.batches.length && (
+            <p style={{ fontSize: 12, color: "#b45309", margin: 0 }}>แสดง {batches.batches.length.toLocaleString()} ล็อตล่าสุดจากทั้งหมด {batches.total.toLocaleString()} ล็อต โปรที่เก่ากว่านั้นอาจไม่แสดง และยอดรวมต่อโปรอาจน้อยกว่าจริง (ดูยอดจริงที่แท็บสถิติ)</p>
+          )}
           {groups.map((g) => {
             const b = g.latest;
             const open = openGroups.has(g.key);
@@ -699,7 +689,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
                     <input className="input" type="number" min="1" max="20000" placeholder="เพิ่มกี่ใบ" style={{ width: 100 }} value={addQty[b.id] ?? ""} onChange={(e) => setAddQty({ ...addQty, [b.id]: e.target.value })} />
                     <input className="input" type="date" style={{ width: 150 }} value={addExpiry[b.id] ?? String(b.expiryDate).slice(0, 10)} onChange={(e) => setAddExpiry({ ...addExpiry, [b.id]: e.target.value })} title="วันหมดอายุของล็อตใหม่" />
-                    <button className="btn btn-sm btn-primary" disabled={isSaving || !addQty[b.id]} onClick={() => handleAddMore(b)}>เพิ่ม</button>
+                    <button className="btn btn-sm btn-primary" disabled={isSaving || !addQty[b.id] || !countersOk} onClick={() => handleAddMore(b)}>เพิ่ม</button>
                     <span style={{ fontSize: 11, color: "var(--text3)" }}>ออกต่อจากเลขล่าสุด</span>
                   </div>
                 )}

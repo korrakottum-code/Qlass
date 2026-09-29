@@ -116,3 +116,33 @@ test("สถิติ: มีลูกศรเปลี่ยนเดือน
   const code = page.split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n");
   assert.doesNotMatch(code, /toISOString/);
 });
+
+test("edge function: วันที่ผิดรูปแบบ/ไม่มีจริงตอบ 400 (ไม่ใช่ 500) และเบอร์ลูกค้าถูกปิดบังสำหรับแคชเชีย/ผู้จัดการสาขา", () => {
+  assert.match(edge, /function validDay\(/);
+  assert.match(edge, /return response\(\{ error: "invalid_expiry" \}, 400, origin\)/);
+  assert.match(edge, /const maskPhones = role === "branch_manager" \|\| role === "cashier";/);
+  // ทุกทางที่ส่งคูปองกลับไปหน้าเว็บ (lookup/redeem/revert/cancel/list) ต้องผ่านตัวปิดบัง
+  assert.ok((edge.match(/coupon: maskCoupon\(data\)/g) || []).length >= 4);
+  assert.match(edge, /coupons: \(data\.coupons \?\? \[\]\)\.map\(maskCoupon\)/);
+});
+
+test("หน้าคูปอง: กันผลโหลดเก่าทับผลใหม่ และไม่โชว์ช่วงรหัสที่คาดเดาเมื่อยังไม่รู้เลขล่าสุด", () => {
+  const page = readFileSync(new URL("../src/pages/CouponPage.jsx", import.meta.url), "utf8");
+  assert.match(page, /id === reqId\.current/);
+  assert.match(page, /id === listReq\.current/);
+  assert.match(page, /if \(alive\)/);
+  assert.match(page, /const preview = countersOk &&/);
+  assert.match(page, /!countersOk\) \{ onToast/);
+});
+
+test("รายการคูปองที่หลักแสนใบ: มีดัชนี trigram สำหรับค้น และกรองสถานะแบบเงื่อนไขตรง ๆ (ไม่เรียก coupon_status ทีละแถว)", () => {
+  for (const col of ["code", "name", "customer_name", "customer_phone"]) {
+    assert.match(sql, new RegExp(`using gin \\(${col} extensions\\.gin_trgm_ops\\)`), col);
+  }
+  const body = sql.slice(sql.indexOf("function public.coupon_list_v1"), sql.indexOf("function public.coupon_batches_v1"));
+  assert.doesNotMatch(body, /coupon_status\(c\)/, "ห้ามเรียก coupon_status ทีละแถวใน list");
+  // เงื่อนไขสถานะต้องตรงกับ coupon_status (ยกเลิก > ใช้แล้ว > หมดอายุ > ใช้ได้)
+  assert.match(body, /p_status = 'used_up'\s+and c\.cancelled_at is null and c\.used_count >= c\.total_uses/);
+  assert.match(body, /p_status = 'expired'\s+and c\.cancelled_at is null and c\.used_count < c\.total_uses and c\.expiry_date < v_today/);
+  assert.match(body, /p_status = 'active'\s+and c\.cancelled_at is null and c\.used_count < c\.total_uses and c\.expiry_date >= v_today/);
+});
