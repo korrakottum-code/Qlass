@@ -70,11 +70,13 @@ const branchManagementRoles = new Set(["superadmin"]);
 // คูปอง: ออกล็อต/ยกเลิกได้เฉพาะระดับหัวหน้าขึ้นไป, ตัดใช้ได้ทุกบทบาทที่ลงคิว (CEO ดูอย่างเดียว ไม่มีเมนู)
 const couponManageRoles = new Set(["superadmin", "head_admin"]);
 const couponRevertRoles = new Set(["superadmin", "head_admin", "admin", "branch_manager"]);
+// สถิติ: เฉพาะแอดมิน/หัวหน้าแอดมิน/ผู้ดูแลระบบ (ผู้จัดการสาขา แคชเชีย CEO ไม่เห็น)
+const couponStatsRoles = new Set(["superadmin", "head_admin", "admin"]);
 const couponUseRoles = new Set(["superadmin", "head_admin", "admin", "branch_manager", "cashier"]);
 const couponErrors = new Set([
   "coupon_not_found", "coupon_cancelled", "coupon_used_up", "coupon_expired", "invalid_branch",
   "redemption_not_found", "already_reverted", "invalid_quantity", "invalid_uses", "invalid_prefix",
-  "invalid_expiry", "invalid_price", "invalid_name", "prefix_exhausted", "invalid_start", "batch_not_found", "batch_already_cancelled", "batch_not_cancelled",
+  "invalid_expiry", "invalid_price", "invalid_name", "prefix_exhausted", "invalid_start", "batch_not_found", "batch_already_cancelled", "batch_not_cancelled", "invalid_range",
 ]);
 function couponCode(value: unknown) {
   const code = String(value ?? "").trim().toUpperCase();
@@ -402,6 +404,14 @@ Deno.serve(async (req) => {
         const { data, error } = await supabase.rpc("coupon_cancel_batch_v1", { p_batch_id: body.batchId, p_cancel: body.cancel !== false });
         if (error) return fail(error);
         return response(data, 200, origin);
+      }
+
+      if (body.action === "coupon_stats") {
+        if (!couponStatsRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        const day = (v: unknown) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+        const { data, error } = await supabase.rpc("coupon_stats_v1", { p_from: day(body.from), p_to: day(body.to) });
+        if (error) return fail(error);
+        return response({ stats: data }, 200, origin);
       }
 
       if (body.action === "coupon_counters") {

@@ -365,6 +365,97 @@ begin
 end;
 $$;
 
+-- สถิติคูปอง: รวมตัวเลขในฐานข้อมูล ส่งเฉพาะผลสรุป (ไม่ดึงคูปองหลักแสนใบลงเครื่อง)
+-- สถานะจัดกลุ่มแบบเดียวกับ coupon_status: ยกเลิก > ใช้แล้ว > หมดอายุ > ใช้ได้ (ทุกใบอยู่ในกลุ่มเดียวเท่านั้น รวมแล้วเท่ากับที่ออก)
+-- ส่วน "ตัดในช่วงวัน" (สาขา/รายวัน) นับจากประวัติการตัดที่ไม่ถูกย้อน ตามวันเวลาไทย
+create or replace function public.coupon_stats_v1(p_from date default null, p_to date default null)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_today date := (now() at time zone 'Asia/Bangkok')::date;
+  v_from date := coalesce(p_from, (now() at time zone 'Asia/Bangkok')::date - 29);
+  v_to date := coalesce(p_to, (now() at time zone 'Asia/Bangkok')::date);
+  v_ts_from timestamptz;
+  v_ts_to timestamptz;
+  v_totals jsonb;
+  v_products jsonb;
+  v_branches jsonb;
+  v_days jsonb;
+  v_expiring jsonb;
+begin
+  if v_to < v_from or v_to - v_from > 365 then raise exception 'invalid_range'; end if;
+  v_ts_from := v_from::timestamp at time zone 'Asia/Bangkok';
+  v_ts_to := (v_to + 1)::timestamp at time zone 'Asia/Bangkok';
+
+  select jsonb_build_object(
+    'issued', count(*),
+    'issuedValue', coalesce(sum(price), 0),
+    'used', count(*) filter (where cancelled_at is null and used_count >= total_uses),
+    'usedValue', coalesce(sum(price) filter (where cancelled_at is null and used_count >= total_uses), 0),
+    'active', count(*) filter (where cancelled_at is null and used_count < total_uses and expiry_date >= v_today),
+    'activeValue', coalesce(sum(price) filter (where cancelled_at is null and used_count < total_uses and expiry_date >= v_today), 0),
+    'expired', count(*) filter (where cancelled_at is null and used_count < total_uses and expiry_date < v_today),
+    'expiredValue', coalesce(sum(price) filter (where cancelled_at is null and used_count < total_uses and expiry_date < v_today), 0),
+    'cancelled', count(*) filter (where cancelled_at is not null),
+    'expiringSoon', count(*) filter (where cancelled_at is null and used_count < total_uses and expiry_date between v_today and v_today + 30),
+    'expiringSoonValue', coalesce(sum(price) filter (where cancelled_at is null and used_count < total_uses and expiry_date between v_today and v_today + 30), 0)
+  ) into v_totals from public.coupons;
+
+  select coalesce(jsonb_agg(to_jsonb(p) order by p."issued" desc, p."name"), '[]'::jsonb) into v_products
+    from (
+      select split_part(code, '-', 1) as "prefix", name as "name", price as "price",
+             count(*)::int as "issued",
+             (count(*) filter (where cancelled_at is null and used_count >= total_uses))::int as "used",
+             (count(*) filter (where cancelled_at is null and used_count < total_uses and expiry_date >= v_today))::int as "active",
+             (count(*) filter (where cancelled_at is null and used_count < total_uses and expiry_date < v_today))::int as "expired",
+             (count(*) filter (where cancelled_at is not null))::int as "cancelled"
+        from public.coupons
+       group by 1, 2, 3
+       order by count(*) desc
+       limit 200
+    ) p;
+
+  select coalesce(jsonb_agg(to_jsonb(b) order by b."count" desc, b."branchName"), '[]'::jsonb) into v_branches
+    from (
+      select r.branch_name as "branchName", count(*)::int as "count", coalesce(sum(c.price), 0) as "value"
+        from public.coupon_redemptions r
+        join public.coupons c on c.id = r.coupon_id
+       where r.reverted_at is null and r.redeemed_at >= v_ts_from and r.redeemed_at < v_ts_to
+       group by r.branch_name
+    ) b;
+
+  select coalesce(jsonb_agg(jsonb_build_object('date', d.day, 'count', coalesce(x.n, 0), 'value', coalesce(x.v, 0)) order by d.day), '[]'::jsonb)
+    into v_days
+    from (select g::date as day from generate_series(v_from::timestamp, v_to::timestamp, interval '1 day') g) d
+    left join (
+      select (r.redeemed_at at time zone 'Asia/Bangkok')::date as day, count(*)::int as n, sum(c.price) as v
+        from public.coupon_redemptions r
+        join public.coupons c on c.id = r.coupon_id
+       where r.reverted_at is null and r.redeemed_at >= v_ts_from and r.redeemed_at < v_ts_to
+       group by 1
+    ) x on x.day = d.day;
+
+  -- ใช้ได้อยู่แต่ใกล้หมดอายุ (ภายใน 30 วัน) เรียงจากใกล้สุด
+  select coalesce(jsonb_agg(to_jsonb(e) order by e."expiryDate", e."name"), '[]'::jsonb) into v_expiring
+    from (
+      select split_part(code, '-', 1) as "prefix", name as "name", price as "price",
+             expiry_date as "expiryDate", count(*)::int as "count"
+        from public.coupons
+       where cancelled_at is null and used_count < total_uses and expiry_date between v_today and v_today + 30
+       group by 1, 2, 3, 4
+       order by expiry_date, name
+       limit 50
+    ) e;
+
+  return jsonb_build_object('from', v_from, 'to', v_to, 'today', v_today, 'totals', v_totals,
+                            'products', v_products, 'branches', v_branches, 'days', v_days, 'expiring', v_expiring);
+end;
+$$;
+
 revoke all on function public.coupon_status(public.coupons), public.coupon_json(public.coupons) from public, anon, authenticated;
 revoke all on function
   public.coupon_generate_v1(uuid, text, text, numeric, int, date, int, text, text, text, text, bigint),
@@ -374,6 +465,7 @@ revoke all on function
   public.coupon_revert_v1(uuid, uuid),
   public.coupon_cancel_v1(text, boolean),
   public.coupon_cancel_batch_v1(uuid, boolean),
+  public.coupon_stats_v1(date, date),
   public.coupon_list_v1(text, text, int, int),
   public.coupon_batches_v1(int, int)
   from public, anon, authenticated;

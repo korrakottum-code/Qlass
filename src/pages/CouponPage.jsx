@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { formatThaiDate } from "../utils/helpers";
+import { addDays as shiftDay } from "../utils/queueRanges"; // ย้ายวันที่ด้วยตัวช่วยของโปรเจกต์ (ห้ามตัดวันจาก toISOString)
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
-import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters, cancelCouponBatch } from "../utils/couponApi";
+import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters, cancelCouponBatch, fetchCouponStats } from "../utils/couponApi";
 import { serverErrorCode } from "../utils/sessionApi";
 import Modal, { ModalHeader, ModalBody } from "../components/Modal";
 
@@ -32,6 +33,7 @@ const ERRORS = {
   batch_not_found: "ไม่พบล็อตนี้",
   batch_already_cancelled: "ล็อตนี้ถูกยกเลิกไปแล้ว",
   batch_not_cancelled: "ล็อตนี้ไม่ได้ถูกยกเลิกอยู่",
+  invalid_range: "ช่วงวันที่ไม่ถูกต้อง (ต้องไม่เกิน 366 วัน และวันเริ่มต้องไม่หลังวันสิ้นสุด)",
   invalid_start: "เลขที่ให้ออกต่อต้องอยู่ระหว่าง 0–9,999,999",
   invalid_expiry: "วันหมดอายุต้องไม่ใช่วันที่ผ่านมาแล้ว",
   invalid_price: "ราคาไม่ถูกต้อง",
@@ -85,11 +87,201 @@ function DigitConfirm({ pending, busy, onClose, onConfirm }) {
   );
 }
 
+// ─── สถิติ ───
+// สีสถานะใช้ชุดเดียวกับป้ายสถานะในหน้า (ใช้ได้/ใช้แล้ว/หมดอายุ/ยกเลิก) และมีข้อความกำกับเสมอ ไม่พึ่งสีอย่างเดียว
+const STAT_COLORS = { used: STATUS.used_up.color, active: STATUS.active.color, expired: STATUS.expired.color, cancelled: STATUS.cancelled.color };
+const baht = (v) => `฿${Number(v || 0).toLocaleString()}`;
+const num = (v) => Number(v || 0).toLocaleString();
+
+function Tile({ label, value, sub }) {
+  return (
+    <div className="card" style={{ padding: "10px 12px", minWidth: 0 }}>
+      <div style={{ fontSize: 12, color: "var(--text3)" }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: "var(--text3)" }}>{sub}</div>}
+    </div>
+  );
+}
+
+// แท่งซ้อนสัดส่วนสถานะ: ช่องว่าง 2px คั่นแต่ละส่วน + legend เป็นข้อความพร้อมตัวเลข
+function StatusBar({ item }) {
+  const parts = [
+    { key: "used", label: "ใช้แล้ว", value: item.used },
+    { key: "active", label: "ใช้ได้", value: item.active },
+    { key: "expired", label: "หมดอายุ", value: item.expired },
+    { key: "cancelled", label: "ยกเลิก", value: item.cancelled },
+  ];
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 2, height: 10 }} role="img" aria-label={parts.map((p) => `${p.label} ${num(p.value)}`).join(" · ")}>
+        {parts.filter((p) => p.value > 0).map((p) => (
+          <div key={p.key} title={`${p.label}: ${num(p.value)}`} style={{ flex: p.value, minWidth: 3, background: STAT_COLORS[p.key], borderRadius: 3 }} />
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 12, marginTop: 4 }}>
+        {parts.map((p) => (
+          <span key={p.key} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2, background: STAT_COLORS[p.key] }} />
+            {p.label} {num(p.value)}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StatsView({ token, onToast }) {
+  const [range, setRange] = useState({ from: "", to: "" });
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setData(await fetchCouponStats(token, { from: range.from || null, to: range.to || null }));
+    } catch (e) {
+      onToast?.("error", await explain(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [token, range, onToast]);
+
+  useEffect(() => {
+    const t = setTimeout(load, 0);
+    return () => clearTimeout(t);
+  }, [load]);
+
+  const preset = (days) => data && setRange({ from: shiftDay(data.today, -(days - 1)), to: data.today });
+  const monthStart = () => data && setRange({ from: `${data.today.slice(0, 8)}01`, to: data.today });
+
+  const t = data?.totals;
+  const pct = t && t.issued ? Math.round((t.used / t.issued) * 100) : 0;
+  const maxBranch = Math.max(1, ...(data?.branches || []).map((b) => b.count));
+  const maxDay = Math.max(1, ...(data?.days || []).map((d) => d.count));
+  const rangeTotal = (data?.days || []).reduce((a, d) => a + d.count, 0);
+  const rangeValue = (data?.days || []).reduce((a, d) => a + Number(d.value), 0);
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <label style={{ fontSize: 12 }}>ตั้งแต่
+          <input className="input" type="date" value={range.from || data?.from || ""} onChange={(e) => setRange({ ...range, from: e.target.value })} />
+        </label>
+        <label style={{ fontSize: 12 }}>ถึง
+          <input className="input" type="date" value={range.to || data?.to || ""} onChange={(e) => setRange({ ...range, to: e.target.value })} />
+        </label>
+        <button className="btn btn-sm btn-secondary" onClick={() => preset(7)} disabled={!data}>7 วัน</button>
+        <button className="btn btn-sm btn-secondary" onClick={() => preset(30)} disabled={!data}>30 วัน</button>
+        <button className="btn btn-sm btn-secondary" onClick={monthStart} disabled={!data}>เดือนนี้</button>
+        {loading && <span style={{ fontSize: 12, color: "var(--text3)" }}>กำลังโหลด…</span>}
+      </div>
+
+      {!data ? <div style={{ color: "var(--text3)" }}>{loading ? "กำลังโหลด…" : "ยังไม่มีข้อมูล"}</div> : (
+        <>
+          <section>
+            <h3 style={{ fontSize: 14, margin: "0 0 8px" }}>ภาพรวมทั้งหมด (ทุกล็อต ไม่ผูกกับช่วงวันที่)</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
+              <Tile label="ออกทั้งหมด" value={`${num(t.issued)} ใบ`} sub={baht(t.issuedValue)} />
+              <Tile label="ใช้แล้ว" value={`${num(t.used)} ใบ`} sub={`${pct}% ของที่ออก · ${baht(t.usedValue)}`} />
+              <Tile label="ยังใช้ได้ (สต็อกคงเหลือ)" value={`${num(t.active)} ใบ`} sub={baht(t.activeValue)} />
+              <Tile label="ใกล้หมดอายุ (30 วัน)" value={`${num(t.expiringSoon)} ใบ`} sub={baht(t.expiringSoonValue)} />
+              <Tile label="หมดอายุโดยไม่ถูกใช้" value={`${num(t.expired)} ใบ`} sub={baht(t.expiredValue)} />
+              <Tile label="ยกเลิก" value={`${num(t.cancelled)} ใบ`} />
+            </div>
+            <div className="card" style={{ padding: 12, marginTop: 8 }}>
+              <StatusBar item={t} />
+            </div>
+          </section>
+
+          <section>
+            <h3 style={{ fontSize: 14, margin: "0 0 8px" }}>ตัดในช่วง {formatThaiDate(data.from)} – {formatThaiDate(data.to)}: {num(rangeTotal)} ใบ · {baht(rangeValue)}</h3>
+            <div className="card" style={{ padding: 12, display: "grid", gap: 14 }}>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 4 }}>รายวัน (ใบที่ตัด)</div>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 90 }} role="img" aria-label={`ตัดรวม ${num(rangeTotal)} ใบ สูงสุด ${num(maxDay)} ใบต่อวัน`}>
+                  {data.days.map((d) => (
+                    <div key={d.date} title={`${formatThaiDate(d.date)}: ${num(d.count)} ใบ · ${baht(d.value)}`}
+                      style={{ flex: 1, minWidth: 2, height: `${d.count > 0 ? Math.max((d.count / maxDay) * 100, 4) : 0}%`, background: "var(--accent)", borderRadius: "3px 3px 0 0" }} />
+                  ))}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text3)", marginTop: 2, gap: 8, flexWrap: "wrap" }}>
+                  <span>{formatThaiDate(data.days[0]?.date)}</span>
+                  <span>สูงสุด {num(maxDay)} ใบ/วัน</span>
+                  <span>{formatThaiDate(data.days[data.days.length - 1]?.date)}</span>
+                </div>
+                <details style={{ marginTop: 6, fontSize: 12 }}>
+                  <summary style={{ cursor: "pointer" }}>ดูเป็นตัวเลขรายวัน</summary>
+                  <div style={{ display: "grid", gap: 2, marginTop: 4 }}>
+                    {data.days.filter((d) => d.count > 0).map((d) => <div key={d.date}>{formatThaiDate(d.date)} · {num(d.count)} ใบ · {baht(d.value)}</div>)}
+                    {rangeTotal === 0 && <div style={{ color: "var(--text3)" }}>ไม่มีการตัดในช่วงนี้</div>}
+                  </div>
+                </details>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 6 }}>ตามสาขา</div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {data.branches.map((b) => (
+                    <div key={b.branchName} title={`${b.branchName}: ${num(b.count)} ใบ · ${baht(b.value)}`}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13 }}>
+                        <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{b.branchName}</span>
+                        <span style={{ whiteSpace: "nowrap" }}>{num(b.count)} ใบ · {baht(b.value)}</span>
+                      </div>
+                      <div style={{ height: 8, background: "var(--surface2)", borderRadius: 4 }}>
+                        <div style={{ width: `${(b.count / maxBranch) * 100}%`, height: 8, background: "var(--accent)", borderRadius: 4 }} />
+                      </div>
+                    </div>
+                  ))}
+                  {data.branches.length === 0 && <div style={{ fontSize: 13, color: "var(--text3)" }}>ไม่มีการตัดในช่วงนี้</div>}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h3 style={{ fontSize: 14, margin: "0 0 8px" }}>สต็อกต่อโปร (ออก / ใช้แล้ว / ใช้ได้ / หมดอายุ / ยกเลิก)</h3>
+            <div style={{ display: "grid", gap: 8 }}>
+              {data.products.map((p) => (
+                <div key={`${p.prefix}|${p.name}|${p.price}`} className="card" style={{ padding: 12, display: "grid", gap: 6 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <strong style={{ overflowWrap: "anywhere" }}>{p.name}</strong>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: 12, padding: "1px 6px", borderRadius: 6, background: "var(--surface2)" }}>{p.prefix}</span>
+                    <span style={{ fontWeight: 700 }}>{baht(p.price)}</span>
+                    <span style={{ fontSize: 12, color: "var(--text3)" }}>ออก {num(p.issued)} ใบ</span>
+                  </div>
+                  <StatusBar item={p} />
+                </div>
+              ))}
+              {data.products.length === 0 && <div style={{ fontSize: 13, color: "var(--text3)" }}>ยังไม่มีคูปอง</div>}
+            </div>
+          </section>
+
+          <section>
+            <h3 style={{ fontSize: 14, margin: "0 0 8px" }}>ใกล้หมดอายุภายใน 30 วัน (ยังไม่ถูกใช้)</h3>
+            <div style={{ display: "grid", gap: 6 }}>
+              {data.expiring.map((e) => {
+                const left = Math.round((new Date(`${e.expiryDate}T00:00:00Z`) - new Date(`${data.today}T00:00:00Z`)) / 86400000);
+                return (
+                  <div key={`${e.prefix}|${e.name}|${e.price}|${e.expiryDate}`} className="card" style={{ padding: "8px 12px", display: "flex", gap: 8, justifyContent: "space-between", flexWrap: "wrap", fontSize: 13 }}>
+                    <span style={{ minWidth: 0, overflowWrap: "anywhere" }}><b>{e.name}</b> <span style={{ fontFamily: "var(--mono)", fontSize: 12 }}>{e.prefix}</span> · {baht(e.price)}</span>
+                    <span>{num(e.count)} ใบ · หมดอายุ {formatThaiDate(e.expiryDate)} ({left <= 0 ? "วันนี้" : `อีก ${left} วัน`})</span>
+                  </div>
+                );
+              })}
+              {data.expiring.length === 0 && <div style={{ fontSize: 13, color: "var(--text3)" }}>ไม่มีคูปองที่ใกล้หมดอายุ</div>}
+            </div>
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ทั้งหน้านี้ไม่เก็บอะไรใน state ของ App.jsx — ค้นเป็นรายใบ/แบ่งหน้าจากเซิร์ฟเวอร์เท่านั้น
 export default function CouponPage({ branches, currentUser, onToast }) {
   const role = currentUser?.role;
   const canManage = ["superadmin", "head_admin"].includes(role);
   const canRevert = ["superadmin", "head_admin", "admin", "branch_manager"].includes(role);
+  const canStats = ["superadmin", "head_admin", "admin"].includes(role);
   const branchScoped = role === "branch_manager" || role === "cashier";
 
   const [tab, setTab] = useState("redeem");
@@ -320,7 +512,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
     return <div className="card" style={{ padding: 24 }}>ระบบคูปองต้องเปิดโหมดเซสชันฝั่งเซิร์ฟเวอร์ (VITE_USE_SERVER_SESSION=true)</div>;
   }
 
-  const tabs = [["redeem", "🎟️ ตัดคูปอง"], ["list", "📋 รายการ"], ["batches", "📦 ล็อต/ช่วงรหัส"], ...(canManage ? [["generate", "➕ ออกคูปอง"]] : [])];
+  const tabs = [["redeem", "🎟️ ตัดคูปอง"], ["list", "📋 รายการ"], ["batches", "📦 ล็อต/ช่วงรหัส"], ...(canStats ? [["stats", "📊 สถิติ"]] : []), ...(canManage ? [["generate", "➕ ออกคูปอง"]] : [])];
   // ตัวอย่างช่วงรหัสที่จะได้ (คำนวณแบบเดียวกับที่เซิร์ฟเวอร์ทำ: ต่อจากเลขล่าสุดของหมวด หรือเลขที่ระบุ ถ้ามากกว่า)
   const pad7 = (n) => String(n).padStart(7, "0");
   const lastNo = Math.max(counters[gen.prefix] || 0, gen.startAfter === "" ? 0 : Number(gen.startAfter) || 0);
@@ -451,6 +643,8 @@ export default function CouponPage({ branches, currentUser, onToast }) {
           </div>
         </div>
       )}
+
+      {tab === "stats" && canStats && <StatsView token={token} onToast={onToast} />}
 
       {tab === "batches" && (
         <div style={{ display: "grid", gap: 10 }}>

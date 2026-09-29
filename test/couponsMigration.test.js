@@ -15,7 +15,7 @@ test("ตารางคูปองเปิด RLS โดยไม่มี po
 
 test("ฟังก์ชัน coupon_*_v1 ทุกตัวถอนสิทธิ์จาก public/anon/authenticated", () => {
   const fns = [...sql.matchAll(/create or replace function public\.(coupon_\w+_v1)\(/gi)].map((m) => m[1]);
-  assert.equal(fns.length, 9);
+  assert.equal(fns.length, 10);
   for (const fn of fns) assert.match(sql, new RegExp(String.raw`revoke all on function[\s\S]*public\.${fn}\(`, "i"), fn);
 });
 
@@ -91,4 +91,17 @@ test("หน้าคูปองไม่ใช้ตารางกว้า�
   assert.doesNotMatch(page, /<table/);
   assert.doesNotMatch(page, /table-scroll/);
   assert.doesNotMatch(page, /overflowX:\s*"auto"/);
+});
+
+test("สถิติคูปอง: เฉพาะ superadmin/head_admin/admin และฟังก์ชันปิดจากคีย์หน้าเว็บ", () => {
+  assert.match(edge, /couponStatsRoles = new Set\(\["superadmin", "head_admin", "admin"\]\)/);
+  const act = edge.slice(edge.indexOf('body.action === "coupon_stats"'));
+  const block = act.slice(0, act.indexOf('body.action === "coupon_counters"'));
+  assert.ok(block.indexOf("couponStatsRoles.has(role)") >= 0 && block.indexOf("couponStatsRoles.has(role)") < block.indexOf("coupon_stats_v1"));
+  // อยู่ในรายการ revoke เดียวกับฟังก์ชันอื่น (รายการเดียวจบด้วย from public, anon, authenticated)
+  const revokeBlock = sql.slice(sql.indexOf("revoke all on function\n  public.coupon_generate_v1"));
+  assert.ok(revokeBlock.includes("public.coupon_stats_v1(date, date)"));
+  assert.match(revokeBlock.trim(), /from public, anon, authenticated;$/);
+  // ผลรวมสถานะครบทุกใบ: 4 กลุ่ม (ใช้แล้ว/ใช้ได้/หมดอายุ/ยกเลิก) นับแบบไม่ซ้ำกัน
+  assert.match(sql, /'cancelled', count\(\*\) filter \(where cancelled_at is not null\)/);
 });

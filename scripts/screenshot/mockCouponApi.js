@@ -66,6 +66,48 @@ export async function cancelCouponBatch(_t, batchId, cancel = true) {
   }
   return { changed, usedKept: coupons.filter((c) => c.batchId === b.id && c.usedCount > 0).length, cancelled: cancel };
 }
+export async function fetchCouponStats(_t, { from = null, to = null } = {}) {
+  const t = today();
+  const shift = (d, n) => new Date(new Date(`${d}T00:00:00Z`).getTime() + n * 86400000).toISOString().slice(0, 10);
+  const f = from || shift(t, -29), e = to || t;
+  if (e < f || (new Date(e) - new Date(f)) / 86400000 > 365) fail("invalid_range");
+  const st = (c) => status(c);
+  const sum = (arr) => arr.reduce((a, c) => a + c.price, 0);
+  const by = (k) => coupons.filter((c) => st(c) === k);
+  const soon = coupons.filter((c) => st(c) === "active" && c.expiryDate <= shift(t, 30));
+  const totals = {
+    issued: coupons.length, issuedValue: sum(coupons),
+    used: by("used_up").length, usedValue: sum(by("used_up")),
+    active: by("active").length, activeValue: sum(by("active")),
+    expired: by("expired").length, expiredValue: sum(by("expired")),
+    cancelled: by("cancelled").length,
+    expiringSoon: soon.length, expiringSoonValue: sum(soon),
+  };
+  const pk = new Map();
+  for (const c of coupons) {
+    const prefix = c.code.split("-")[0], key = `${prefix}|${c.name}|${c.price}`;
+    const g = pk.get(key) || { prefix, name: c.name, price: c.price, issued: 0, used: 0, active: 0, expired: 0, cancelled: 0 };
+    g.issued++; const k = st(c); g[k === "used_up" ? "used" : k]++; pk.set(key, g);
+  }
+  const inRange = redemptions.filter((r) => !r.revertedAt && r.redeemedAt.slice(0, 10) >= f && r.redeemedAt.slice(0, 10) <= e);
+  const price = (r) => coupons.find((c) => c.id === r.couponId)?.price || 0;
+  const bm = new Map();
+  for (const r of inRange) { const g = bm.get(r.branchName) || { branchName: r.branchName, count: 0, value: 0 }; g.count++; g.value += price(r); bm.set(r.branchName, g); }
+  const days = [];
+  for (let d = f; d <= e; d = shift(d, 1)) {
+    const rs = inRange.filter((r) => r.redeemedAt.slice(0, 10) === d);
+    days.push({ date: d, count: rs.length, value: rs.reduce((a, r) => a + price(r), 0) });
+  }
+  const ex = new Map();
+  for (const c of soon) { const prefix = c.code.split("-")[0], key = `${prefix}|${c.name}|${c.price}|${c.expiryDate}`; const g = ex.get(key) || { prefix, name: c.name, price: c.price, expiryDate: c.expiryDate, count: 0 }; g.count++; ex.set(key, g); }
+  return {
+    from: f, to: e, today: t, totals,
+    products: [...pk.values()].sort((a, b) => b.issued - a.issued),
+    branches: [...bm.values()].sort((a, b) => b.count - a.count),
+    days,
+    expiring: [...ex.values()].sort((a, b) => a.expiryDate.localeCompare(b.expiryDate)),
+  };
+}
 export async function fetchCouponCounters() { return { ...counters }; }
 export async function lookupCoupon(_t, code) { const c = find(code); return c ? view(c) : null; }
 export async function listCoupons(_t, { search = "", status: st = "all", limit = 50, offset = 0 } = {}) {
