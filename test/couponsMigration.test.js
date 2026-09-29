@@ -85,3 +85,10 @@ test("ตัด/ยกเลิกรายใบ/ยกเลิกทั้ง
   // ตัวที่ทำจริง (do*) ต้องถูกเรียกผ่านหน้าต่างยืนยันเท่านั้น ไม่ผูกกับปุ่มโดยตรง
   assert.doesNotMatch(page, /onClick=\{doRedeem\}|onClick=\{\(\) => doCancel\(|onClick=\{\(\) => doCancelBatch\(/);
 });
+
+test("หน้าคูปองไม่ใช้ตารางกว้างที่ต้องเลื่อนซ้ายขวา (รายการ/ล็อตเป็นการ์ดที่ไหลตามความกว้างจอ)", () => {
+  const page = readFileSync(new URL("../src/pages/CouponPage.jsx", import.meta.url), "utf8");
+  assert.doesNotMatch(page, /<table/);
+  assert.doesNotMatch(page, /table-scroll/);
+  assert.doesNotMatch(page, /overflowX:\s*"auto"/);
+});

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, Fragment } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { formatThaiDate } from "../utils/helpers";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
 import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters, cancelCouponBatch } from "../utils/couponApi";
@@ -417,30 +417,32 @@ export default function CouponPage({ branches, currentUser, onToast }) {
       {tab === "list" && (
         <div>
           <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-            <input className="input" style={{ minWidth: 240 }} placeholder="ค้นหา รหัส / ชื่อโปร / ลูกค้า / เบอร์" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} />
+            <input className="input" style={{ flex: "1 1 220px", minWidth: 0 }} placeholder="ค้นหา รหัส / ชื่อโปร / ลูกค้า / เบอร์" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} />
             <select className="input" value={status} onChange={(e) => { setStatus(e.target.value); setPage(0); }}>
               <option value="all">ทุกสถานะ</option>
               {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
             <span style={{ alignSelf: "center", fontSize: 12, color: "var(--text3)" }}>{loading ? "กำลังโหลด…" : `${list.total.toLocaleString()} ใบ`}</span>
           </div>
-          <div className="table-scroll" style={{ overflowX: "auto" }}>
-            <table className="data-table">
-              <thead><tr><th>รหัส</th><th>ชื่อ</th><th>หมดอายุ</th><th>ลูกค้า</th><th>สถานะ</th><th /></tr></thead>
-              <tbody>
-                {list.coupons.map((c) => (
-                  <tr key={c.id}>
-                    <td style={{ fontFamily: "var(--mono)" }}>{c.code}</td>
-                    <td>{c.name}</td>
-                    <td>{formatThaiDate(c.expiryDate)}</td>
-                    <td>{c.customerName || "—"} {c.customerPhone || ""}</td>
-                    <td><StatusBadge status={c.status} /></td>
-                    <td><button className="btn btn-sm btn-secondary" onClick={() => { setCode(c.code); setFound(c); setTab("redeem"); }}>เปิด</button></td>
-                  </tr>
-                ))}
-                {!loading && list.coupons.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text3)" }}>ไม่พบคูปอง</td></tr>}
-              </tbody>
-            </table>
+          {/* การ์ดต่อคูปองแทนตาราง: ไหลตามความกว้างจอ ไม่ต้องเลื่อนซ้ายขวาที่ขนาดไหนเลย */}
+          <div style={{ display: "grid", gap: 8 }}>
+            {list.coupons.map((c) => (
+              <div key={c.id} className="card" style={{ padding: "10px 12px", display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+                <div style={{ minWidth: 0, flex: "1 1 200px" }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ fontFamily: "var(--mono)", fontWeight: 700 }}>{c.code}</span>
+                    <StatusBadge status={c.status} />
+                  </div>
+                  <div style={{ fontSize: 13, overflowWrap: "anywhere" }}>{c.name}</div>
+                  <div style={{ fontSize: 12, color: "var(--text3)" }}>
+                    หมดอายุ {formatThaiDate(c.expiryDate)}
+                    {(c.customerName || c.customerPhone) && ` · ${c.customerName || ""} ${c.customerPhone || ""}`}
+                  </div>
+                </div>
+                <button className="btn btn-sm btn-secondary" onClick={() => { setCode(c.code); setFound(c); setTab("redeem"); }}>เปิด</button>
+              </div>
+            ))}
+            {!loading && list.coupons.length === 0 && <div style={{ textAlign: "center", color: "var(--text3)", padding: 16 }}>ไม่พบคูปอง</div>}
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 12, alignItems: "center" }}>
             <button className="btn btn-sm btn-secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>‹</button>
@@ -451,64 +453,55 @@ export default function CouponPage({ branches, currentUser, onToast }) {
       )}
 
       {tab === "batches" && (
-        <div className="table-scroll" style={{ overflowX: "auto" }}>
-          {canManage && <p style={{ fontSize: 12, color: "var(--text3)", margin: "0 0 8px" }}>ออกล็อตผิดกางโปรแล้วกด “ยกเลิกทั้งล็อต” = ปิดทุกใบที่ยังไม่เคยถูกใช้ (ใบที่ตัดไปแล้วไม่ถูกแตะ) กู้คืนได้ · ต้องพิมพ์เลข 3 ตัวท้ายของรหัสสุดท้ายในล็อตเพื่อยืนยัน</p>}
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th />
-                <th>โปร/คูปอง</th><th>หมวด</th><th>ราคา</th><th style={{ whiteSpace: "nowrap" }}>ล็อต · ใบรวม</th><th>เลขล่าสุด</th>
-                {canManage && <th>เพิ่มจำนวน (ออกต่อจากเลขล่าสุด)</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {groups.map((g) => {
-                const b = g.latest;
-                const open = openGroups.has(g.key);
-                return (
-                  <Fragment key={g.key}>
-                    <tr>
-                      <td><button className="btn btn-sm btn-secondary" aria-expanded={open} title={open ? "หุบ" : "กางดูช่วงรหัสของแต่ละล็อต"} onClick={() => toggleGroup(g.key)}>{open ? "▾" : "▸"}</button></td>
-                      <td><b>{g.name}</b></td>
-                      <td style={{ fontFamily: "var(--mono)" }}>{g.prefix}</td>
-                      <td>฿{Number(g.price).toLocaleString()}</td>
-                      <td style={{ whiteSpace: "nowrap" }}>{g.batches.length} ล็อต · {g.total.toLocaleString()} ใบ</td>
-                      <td style={{ fontFamily: "var(--mono)", whiteSpace: "nowrap" }}>{b.lastCode}</td>
-                      {canManage && (
-                        <td style={{ minWidth: 190 }}>
-                          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                            <input className="input" type="number" min="1" max="20000" placeholder="จำนวน" style={{ width: 90 }} value={addQty[b.id] ?? ""} onChange={(e) => setAddQty({ ...addQty, [b.id]: e.target.value })} />
-                            <input className="input" type="date" style={{ width: 140 }} value={addExpiry[b.id] ?? String(b.expiryDate).slice(0, 10)} onChange={(e) => setAddExpiry({ ...addExpiry, [b.id]: e.target.value })} title="วันหมดอายุของล็อตใหม่" />
-                            <button className="btn btn-sm btn-primary" disabled={isSaving || !addQty[b.id]} onClick={() => handleAddMore(b)}>เพิ่ม</button>
+        <div style={{ display: "grid", gap: 10 }}>
+          {canManage && <p style={{ fontSize: 12, color: "var(--text3)", margin: 0 }}>ออกล็อตผิดกาง (▸) โปรแล้วกด “ยกเลิกทั้งล็อต” = ปิดทุกใบที่ยังไม่เคยถูกใช้ (ใบที่ตัดไปแล้วไม่ถูกแตะ) กู้คืนได้ · ต้องพิมพ์เลข 3 ตัวท้ายของรหัสสุดท้ายในล็อตเพื่อยืนยัน</p>}
+          {/* การ์ดต่อโปรแทนตาราง: ไหลตามความกว้างจอ ไม่ต้องเลื่อนซ้ายขวา */}
+          {groups.map((g) => {
+            const b = g.latest;
+            const open = openGroups.has(g.key);
+            return (
+              <div key={g.key} className="card" style={{ padding: 12 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <button className="btn btn-sm btn-secondary" aria-expanded={open} title={open ? "หุบ" : "กางดูช่วงรหัสของแต่ละล็อต"} onClick={() => toggleGroup(g.key)}>{open ? "▾" : "▸"}</button>
+                  <strong style={{ overflowWrap: "anywhere" }}>{g.name}</strong>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 12, padding: "1px 6px", borderRadius: 6, background: "var(--surface2)" }}>{g.prefix}</span>
+                  <span style={{ fontWeight: 700 }}>฿{Number(g.price).toLocaleString()}</span>
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 4 }}>
+                  {g.batches.length} ล็อต · {g.total.toLocaleString()} ใบ · เลขล่าสุด <span style={{ fontFamily: "var(--mono)" }}>{b.lastCode}</span>
+                </div>
+                {canManage && (
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+                    <input className="input" type="number" min="1" max="20000" placeholder="เพิ่มกี่ใบ" style={{ width: 100 }} value={addQty[b.id] ?? ""} onChange={(e) => setAddQty({ ...addQty, [b.id]: e.target.value })} />
+                    <input className="input" type="date" style={{ width: 150 }} value={addExpiry[b.id] ?? String(b.expiryDate).slice(0, 10)} onChange={(e) => setAddExpiry({ ...addExpiry, [b.id]: e.target.value })} title="วันหมดอายุของล็อตใหม่" />
+                    <button className="btn btn-sm btn-primary" disabled={isSaving || !addQty[b.id]} onClick={() => handleAddMore(b)}>เพิ่ม</button>
+                    <span style={{ fontSize: 11, color: "var(--text3)" }}>ออกต่อจากเลขล่าสุด</span>
+                  </div>
+                )}
+                {open && (
+                  <div style={{ marginTop: 10, borderTop: "1px solid var(--border)" }}>
+                    {g.batches.map((x) => (
+                      <div key={x.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--border)", fontSize: 12, display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+                        <div style={{ minWidth: 0, flex: "1 1 220px", opacity: x.cancelledAt ? 0.55 : 1 }}>
+                          <div style={{ fontFamily: "var(--mono)", fontWeight: 700, textDecoration: x.cancelledAt ? "line-through" : "none", overflowWrap: "anywhere" }}>{x.firstCode} – {x.lastCode}</div>
+                          <div style={{ color: "var(--text3)" }}>
+                            {`${x.quantity.toLocaleString()} ใบ · หมดอายุ ${formatThaiDate(x.expiryDate)} · ออกเมื่อ ${new Date(x.createdAt).toLocaleDateString("th-TH")}`}
+                            {x.cancelledAt && <b style={{ color: "#dc2626" }}>{` · ยกเลิกทั้งล็อตเมื่อ ${new Date(x.cancelledAt).toLocaleDateString("th-TH")}`}</b>}
                           </div>
-                        </td>
-                      )}
-                    </tr>
-                    {open && g.batches.map((x) => (
-                      <tr key={x.id} style={{ background: "var(--surface2)" }}>
-                        <td />
-                        <td colSpan={canManage ? 6 : 5} style={{ fontSize: 12 }}>
-                          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", position: "sticky", left: 0, maxWidth: "calc(100vw - 72px)" }}>
-                            <span style={{ opacity: x.cancelledAt ? 0.55 : 1 }}>
-                              <span style={{ fontFamily: "var(--mono)", fontWeight: 700, textDecoration: x.cancelledAt ? "line-through" : "none" }}>{x.firstCode} – {x.lastCode}</span>
-                              {` · ${x.quantity.toLocaleString()} ใบ · หมดอายุ ${formatThaiDate(x.expiryDate)} · ออกเมื่อ ${new Date(x.createdAt).toLocaleDateString("th-TH")}`}
-                              {x.cancelledAt && <b style={{ color: "#dc2626" }}>{` · ยกเลิกทั้งล็อตเมื่อ ${new Date(x.cancelledAt).toLocaleDateString("th-TH")}`}</b>}
-                            </span>
-                            {canManage && (
-                              <button className="btn btn-sm btn-secondary" disabled={isSaving} onClick={() => handleCancelBatch(x, !x.cancelledAt)}>
-                                {x.cancelledAt ? "กู้คืนล็อต" : "ยกเลิกทั้งล็อต"}
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
+                        </div>
+                        {canManage && (
+                          <button className="btn btn-sm btn-secondary" disabled={isSaving} onClick={() => handleCancelBatch(x, !x.cancelledAt)}>
+                            {x.cancelledAt ? "กู้คืนล็อต" : "ยกเลิกทั้งล็อต"}
+                          </button>
+                        )}
+                      </div>
                     ))}
-                  </Fragment>
-                );
-              })}
-              {groups.length === 0 && <tr><td colSpan={canManage ? 7 : 6} style={{ textAlign: "center", color: "var(--text3)" }}>ยังไม่มีล็อต</td></tr>}
-            </tbody>
-          </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {groups.length === 0 && <div style={{ textAlign: "center", color: "var(--text3)", padding: 16 }}>ยังไม่มีล็อต</div>}
         </div>
       )}
 
