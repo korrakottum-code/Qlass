@@ -42,3 +42,8 @@ test("รหัสคูปอง = หมวด POS + เลขรัน 7 ห�
   for (const ok of ["T1", "T4", "T99", "D1", "D10", "D99", "S1", "S2", "O1", "O4", "O9"]) assert.ok(re.test(ok), ok);
   for (const bad of ["T5", "D0", "D11", "S3", "O5", "X1", "", "d1 "]) assert.ok(!re.test(bad), bad);
 });
+
+test("คูปอง 1 ใบใช้ได้ 1 ครั้ง: edge function บังคับ total_uses = 1 ไม่รับค่าจากเบราว์เซอร์", () => {
+  assert.match(edge, /p_total_uses: 1,/);
+  assert.doesNotMatch(edge, /p_total_uses: Number\(/);
+});

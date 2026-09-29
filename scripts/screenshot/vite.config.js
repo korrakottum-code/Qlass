@@ -15,7 +15,9 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: /^(.*\/)?utils\/supabaseService(\.js)?$/, replacement: path.join(here, "mockSupabaseService.js") },
-      { find: /^(.*\/)?utils\/supabaseClient(\.js)?$/, replacement: path.join(here, "mockSupabaseClient.js") },
+      // ไม่ผูกกับ "utils/" เพราะ sessionAuth.js import แบบ "./supabaseClient" — ถ้าหลุดไปตัวจริงจะพัง/ต่อ Supabase จริง
+      { find: /^(.*\/)?supabaseClient(\.js)?$/, replacement: path.join(here, "mockSupabaseClient.js") },
+      { find: /^(.*\/)?utils\/couponApi(\.js)?$/, replacement: path.join(here, "mockCouponApi.js") },
     ],
   },
 });

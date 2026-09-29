@@ -402,7 +402,8 @@ Deno.serve(async (req) => {
         const { data, error } = await supabase.rpc("coupon_generate_v1", {
           p_actor_staff_id: staffId,
           p_name: text(g.name, 120), p_category: text(g.category, 60),
-          p_price: Number(g.price ?? 0), p_total_uses: Number(g.totalUses ?? 1),
+          // คูปอง 1 ใบใช้ได้ 1 ครั้งเสมอ — ไม่รับค่าจากเบราว์เซอร์
+          p_price: Number(g.price ?? 0), p_total_uses: 1,
           p_expiry_date: text(g.expiryDate, 10), p_quantity: Number(g.quantity ?? 0),
           p_prefix: text(g.prefix, 12),
           p_customer_name: text(g.customerName, 120) || null,

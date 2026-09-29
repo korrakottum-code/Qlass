@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { formatThaiDate } from "../utils/helpers";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
-import { getServerSessionToken, useServerSession, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons } from "../utils/sessionAuth";
+import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons } from "../utils/couponApi";
 import { serverErrorCode } from "../utils/sessionApi";
 
 // หมวดรหัส POS v6.2 — ต้องตรงกับ regex ใน coupon_generate_v1
@@ -15,7 +15,7 @@ const POS_CATEGORIES = [
 
 const STATUS = {
   active:    { label: "ใช้ได้",     color: "#059669" },
-  used_up:   { label: "ใช้ครบแล้ว", color: "#6b7280" },
+  used_up:   { label: "ใช้แล้ว",     color: "#6b7280" },
   expired:   { label: "หมดอายุ",    color: "#d97706" },
   cancelled: { label: "ยกเลิก",     color: "#dc2626" },
 };
@@ -23,12 +23,11 @@ const STATUS = {
 const ERRORS = {
   coupon_not_found: "ไม่พบรหัสคูปองนี้",
   coupon_cancelled: "คูปองนี้ถูกยกเลิกแล้ว",
-  coupon_used_up: "คูปองนี้ใช้ครบจำนวนครั้งแล้ว",
+  coupon_used_up: "คูปองนี้ถูกใช้แล้ว",
   coupon_expired: "คูปองนี้หมดอายุแล้ว",
   invalid_branch: "ไม่พบสาขาที่เลือก",
   already_reverted: "รายการนี้ถูกย้อนไปแล้ว",
   invalid_quantity: "จำนวนใบต้อง 1–2,000",
-  invalid_uses: "จำนวนครั้งต่อใบต้อง 1–999",
   invalid_expiry: "วันหมดอายุต้องไม่ใช่วันที่ผ่านมาแล้ว",
   invalid_price: "ราคาไม่ถูกต้อง",
   invalid_name: "กรุณาใส่ชื่อคูปอง/โปร",
@@ -73,7 +72,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   const PAGE_SIZE = 50;
 
   // ── ออกล็อต ──
-  const [gen, setGen] = useState({ name: "", category: "", price: "", totalUses: 1, quantity: 10, prefix: "D1", expiryDate: "", customerName: "", customerPhone: "", note: "" });
+  const [gen, setGen] = useState({ name: "", category: "", price: "", quantity: 10, prefix: "D1", expiryDate: "", customerName: "", customerPhone: "", note: "" });
   const [lastBatch, setLastBatch] = useState(null);
   const [batches, setBatches] = useState({ total: 0, batches: [] });
 
@@ -125,12 +124,12 @@ export default function CouponPage({ branches, currentUser, onToast }) {
     if (r.started && r.result) {
       setFound(r.result);
       setNote("");
-      onToast?.("success", `ตัดคูปองแล้ว — เหลือ ${r.result.remaining}/${r.result.totalUses} ครั้ง`);
+      onToast?.("success", "ตัดคูปองแล้ว");
     }
   }
 
   async function handleRevert(redemptionId) {
-    if (!window.confirm("ย้อนการตัดครั้งนี้? สิทธิ์จะกลับคืนคูปอง 1 ครั้ง")) return;
+    if (!window.confirm("ย้อนการตัดครั้งนี้? คูปองจะกลับมาใช้ได้อีกครั้ง")) return;
     const r = await run(async () => {
       try {
         return await revertCouponRedemption(token, redemptionId);
@@ -168,7 +167,6 @@ export default function CouponPage({ branches, currentUser, onToast }) {
         return await generateCoupons(token, {
           ...gen,
           price: Number(gen.price || 0),
-          totalUses: Number(gen.totalUses),
           quantity: Number(gen.quantity),
         });
       } catch (err) {
@@ -182,7 +180,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
     }
   }
 
-  if (!useServerSession) {
+  if (!couponsAvailable) {
     return <div className="card" style={{ padding: 24 }}>ระบบคูปองต้องเปิดโหมดเซสชันฝั่งเซิร์ฟเวอร์ (VITE_USE_SERVER_SESSION=true)</div>;
   }
 
@@ -215,7 +213,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
               </div>
               <div style={{ fontFamily: "var(--mono)", fontSize: 13 }}>{found.code}</div>
               <div style={{ fontSize: 13, color: "var(--text3)" }}>
-                เหลือ <b>{found.remaining}</b> / {found.totalUses} ครั้ง · หมดอายุ {formatThaiDate(found.expiryDate)}
+                {found.status === "used_up" ? "ใช้แล้ว" : "ยังไม่ได้ใช้"} · หมดอายุ {formatThaiDate(found.expiryDate)}
                 {found.price > 0 && ` · ฿${Number(found.price).toLocaleString()}`}
               </div>
               {(found.customerName || found.customerPhone) && (
@@ -231,7 +229,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
                     </select>
                   )}
                   <input className="input" placeholder="หมายเหตุ (ถ้ามี)" value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
-                  <button className="btn btn-primary" disabled={isSaving || !branchId} onClick={handleRedeem}>ตัดคูปอง 1 ครั้ง</button>
+                  <button className="btn btn-primary" disabled={isSaving || !branchId} onClick={handleRedeem}>ตัดคูปอง</button>
                 </>
               )}
 
@@ -267,22 +265,21 @@ export default function CouponPage({ branches, currentUser, onToast }) {
             </select>
             <span style={{ alignSelf: "center", fontSize: 12, color: "var(--text3)" }}>{loading ? "กำลังโหลด…" : `${list.total.toLocaleString()} ใบ`}</span>
           </div>
-          <div style={{ overflowX: "auto" }}>
-            <table className="table">
-              <thead><tr><th>รหัส</th><th>ชื่อ</th><th>เหลือ/ทั้งหมด</th><th>หมดอายุ</th><th>ลูกค้า</th><th>สถานะ</th><th /></tr></thead>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr><th>รหัส</th><th>ชื่อ</th><th>หมดอายุ</th><th>ลูกค้า</th><th>สถานะ</th><th /></tr></thead>
               <tbody>
                 {list.coupons.map((c) => (
                   <tr key={c.id}>
                     <td style={{ fontFamily: "var(--mono)" }}>{c.code}</td>
                     <td>{c.name}</td>
-                    <td>{c.remaining}/{c.totalUses}</td>
                     <td>{formatThaiDate(c.expiryDate)}</td>
                     <td>{c.customerName || "—"} {c.customerPhone || ""}</td>
                     <td><StatusBadge status={c.status} /></td>
                     <td><button className="btn btn-sm btn-secondary" onClick={() => { setCode(c.code); setFound(c); setTab("redeem"); }}>เปิด</button></td>
                   </tr>
                 ))}
-                {!loading && list.coupons.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text3)" }}>ไม่พบคูปอง</td></tr>}
+                {!loading && list.coupons.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text3)" }}>ไม่พบคูปอง</td></tr>}
               </tbody>
             </table>
           </div>
@@ -295,22 +292,21 @@ export default function CouponPage({ branches, currentUser, onToast }) {
       )}
 
       {tab === "batches" && (
-        <div style={{ overflowX: "auto" }}>
-          <table className="table">
-            <thead><tr><th>ช่วงรหัส</th><th>ชื่อ</th><th>ราคา</th><th>ครั้ง/ใบ</th><th>จำนวนใบ</th><th>หมดอายุ</th><th>วันที่ออก</th></tr></thead>
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead><tr><th>ช่วงรหัส</th><th>ชื่อ</th><th>ราคา</th><th>จำนวนใบ</th><th>หมดอายุ</th><th>วันที่ออก</th></tr></thead>
             <tbody>
               {batches.batches.map((b) => (
                 <tr key={b.id}>
                   <td style={{ fontFamily: "var(--mono)" }}>{b.firstCode} – {b.lastCode}</td>
                   <td>{b.name}</td>
                   <td>฿{Number(b.price).toLocaleString()}</td>
-                  <td>{b.totalUses}</td>
                   <td>{b.quantity.toLocaleString()}</td>
                   <td>{formatThaiDate(b.expiryDate)}</td>
                   <td>{new Date(b.createdAt).toLocaleDateString("th-TH")}</td>
                 </tr>
               ))}
-              {batches.batches.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text3)" }}>ยังไม่มีล็อต</td></tr>}
+              {batches.batches.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text3)" }}>ยังไม่มีล็อต</td></tr>}
             </tbody>
           </table>
         </div>
@@ -322,9 +318,6 @@ export default function CouponPage({ branches, currentUser, onToast }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <input className="input" placeholder="หมวด (ถ้ามี)" value={gen.category} onChange={(e) => setGen({ ...gen, category: e.target.value })} />
             <input className="input" type="number" min="0" placeholder="ราคา" value={gen.price} onChange={(e) => setGen({ ...gen, price: e.target.value })} />
-            <label style={{ fontSize: 12 }}>ใช้ได้กี่ครั้งต่อใบ
-              <input className="input" type="number" min="1" max="999" value={gen.totalUses} onChange={(e) => setGen({ ...gen, totalUses: e.target.value })} required />
-            </label>
             <label style={{ fontSize: 12 }}>จำนวนใบ (สูงสุด 2,000 ต่อครั้ง)
               <input className="input" type="number" min="1" max="2000" value={gen.quantity} onChange={(e) => setGen({ ...gen, quantity: e.target.value })} required />
             </label>

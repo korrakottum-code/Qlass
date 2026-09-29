@@ -9,6 +9,7 @@ const PAGE_TITLES = {
   timeline: "🗓️ Timeline คิว",
   export: "📥 Export ข้อมูล",
   tickets: "🎫 แจ้งปัญหาระบบ",
+  coupons: "🎟️ คูปอง",
   "activity-log": "🔍 ประวัติการลบ",
   branches: "🏢 จัดการสาขา",
   procedures: "💉 จัดการหัตถการ",
