@@ -67,6 +67,20 @@ const staffManagementRoles = new Set(["superadmin", "head_admin"]);
 // ไม่ใช่เชื่อว่าเบราว์เซอร์ซ่อนเมนูให้แล้วจะไม่มีใครยิงตรงเข้ามา
 const branchManagementRoles = new Set(["superadmin"]);
 
+// คูปอง: ออกล็อต/ยกเลิกได้เฉพาะระดับหัวหน้าขึ้นไป, ตัดใช้ได้ทุกบทบาทที่ลงคิว (CEO ดูอย่างเดียว ไม่มีเมนู)
+const couponManageRoles = new Set(["superadmin", "head_admin"]);
+const couponRevertRoles = new Set(["superadmin", "head_admin", "admin", "branch_manager"]);
+const couponUseRoles = new Set(["superadmin", "head_admin", "admin", "branch_manager", "cashier"]);
+const couponErrors = new Set([
+  "coupon_not_found", "coupon_cancelled", "coupon_used_up", "coupon_expired", "invalid_branch",
+  "redemption_not_found", "already_reverted", "invalid_quantity", "invalid_uses", "invalid_prefix",
+  "invalid_expiry", "invalid_price", "invalid_name", "prefix_exhausted",
+]);
+function couponCode(value: unknown) {
+  const code = String(value ?? "").trim().toUpperCase();
+  return /^[A-Z0-9-]{4,40}$/.test(code) ? code : null;
+}
+
 function branchName(value: unknown) {
   const name = String(value ?? "").trim();
   return name.length >= 1 && name.length <= 80 ? name : null;
@@ -297,6 +311,109 @@ Deno.serve(async (req) => {
         throw error;
       }
       return response({ ok: true }, 200, origin);
+    }
+
+    if (typeof body?.action === "string" && body.action.startsWith("coupon_")) {
+      const current = await findSession(body.token);
+      if (!current) return response({ error: "invalid_session" }, 401, origin);
+      const role = String(current.user.role ?? "");
+      const staffId = String(current.user.id);
+
+      const fail = (error: { message?: string }) => {
+        const code = String(error?.message ?? "");
+        if (couponErrors.has(code)) return response({ error: code }, code === "coupon_not_found" || code === "redemption_not_found" ? 404 : 409, origin);
+        throw error;
+      };
+
+      if (body.action === "coupon_lookup") {
+        if (!couponUseRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        const code = couponCode(body.code);
+        if (!code) return response({ error: "invalid_coupon_payload" }, 400, origin);
+        const { data, error } = await supabase.rpc("coupon_lookup_v1", { p_code: code });
+        if (error) return fail(error);
+        return response({ coupon: data }, 200, origin);
+      }
+
+      if (body.action === "coupon_batches") {
+        if (!couponUseRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        const { data, error } = await supabase.rpc("coupon_batches_v1", {
+          p_limit: Number.isInteger(body.limit) ? body.limit : 100,
+          p_offset: Number.isInteger(body.offset) ? body.offset : 0,
+        });
+        if (error) return fail(error);
+        return response(data, 200, origin);
+      }
+
+      if (body.action === "coupon_list") {
+        if (!couponUseRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        const status = String(body.status ?? "all");
+        if (!["all", "active", "used_up", "expired", "cancelled"].includes(status)) {
+          return response({ error: "invalid_coupon_payload" }, 400, origin);
+        }
+        const { data, error } = await supabase.rpc("coupon_list_v1", {
+          p_search: typeof body.search === "string" ? body.search.slice(0, 80) : null,
+          p_status: status,
+          p_limit: Number.isInteger(body.limit) ? body.limit : 50,
+          p_offset: Number.isInteger(body.offset) ? body.offset : 0,
+        });
+        if (error) return fail(error);
+        return response(data, 200, origin);
+      }
+
+      if (body.action === "coupon_redeem") {
+        if (!couponUseRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        const code = couponCode(body.code);
+        // แคชเชีย/ผู้จัดการสาขาตัดได้เฉพาะสาขาตัวเอง — บังคับฝั่งเซิร์ฟเวอร์ ไม่เชื่อสาขาที่เบราว์เซอร์ส่งมา
+        const branchScoped = role === "branch_manager" || role === "cashier";
+        const branchId = branchScoped ? String(current.user.branchId ?? "") : String(body.branchId ?? "");
+        if (!code || !branchId) return response({ error: "invalid_coupon_payload" }, 400, origin);
+        const { data, error } = await supabase.rpc("coupon_redeem_v1", {
+          p_actor_staff_id: staffId, p_code: code, p_branch_id: branchId,
+          p_note: typeof body.note === "string" ? body.note.slice(0, 200) : null,
+        });
+        if (error) return fail(error);
+        return response({ coupon: data }, 200, origin);
+      }
+
+      if (body.action === "coupon_revert") {
+        if (!couponRevertRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        if (typeof body.redemptionId !== "string" || !/^[0-9a-f-]{36}$/i.test(body.redemptionId)) {
+          return response({ error: "invalid_coupon_payload" }, 400, origin);
+        }
+        const { data, error } = await supabase.rpc("coupon_revert_v1", { p_actor_staff_id: staffId, p_redemption_id: body.redemptionId });
+        if (error) return fail(error);
+        return response({ coupon: data }, 200, origin);
+      }
+
+      if (body.action === "coupon_cancel") {
+        if (!couponManageRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        const code = couponCode(body.code);
+        if (!code) return response({ error: "invalid_coupon_payload" }, 400, origin);
+        const { data, error } = await supabase.rpc("coupon_cancel_v1", { p_code: code, p_cancel: body.cancel !== false });
+        if (error) return fail(error);
+        return response({ coupon: data }, 200, origin);
+      }
+
+      if (body.action === "coupon_generate") {
+        if (!couponManageRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        const g = body.batch;
+        if (!g || typeof g !== "object" || Array.isArray(g)) return response({ error: "invalid_coupon_payload" }, 400, origin);
+        const text = (value: unknown, max: number) => String(value ?? "").trim().slice(0, max);
+        const { data, error } = await supabase.rpc("coupon_generate_v1", {
+          p_actor_staff_id: staffId,
+          p_name: text(g.name, 120), p_category: text(g.category, 60),
+          p_price: Number(g.price ?? 0), p_total_uses: Number(g.totalUses ?? 1),
+          p_expiry_date: text(g.expiryDate, 10), p_quantity: Number(g.quantity ?? 0),
+          p_prefix: text(g.prefix, 12),
+          p_customer_name: text(g.customerName, 120) || null,
+          p_customer_phone: text(g.customerPhone, 30) || null,
+          p_note: text(g.note, 200) || null,
+        });
+        if (error) return fail(error);
+        return response(data, 200, origin);
+      }
+
+      return response({ error: "invalid_coupon_payload" }, 400, origin);
     }
 
     if (body?.action === "session") {
