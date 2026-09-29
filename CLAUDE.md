@@ -86,6 +86,8 @@ Must be set in `.env` (or Vercel/Netlify dashboard):
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
+Optional: `VITE_ENABLE_COUPONS` — the coupon menu/route/manual section are hidden unless this is `true` (set it only after the coupon migration is applied and `staff-session` with the `coupon_*` actions is deployed; needs a rebuild). The demo mode force-enables it.
+
 Optional: `VITE_QUEUE_REFRESH_SECONDS` — interval of the periodic queue delta refresh in `App.jsx` (safety net for Realtime events that arrive 1–2 min late; see `createPeriodicRefreshController` in `src/utils/realtimeCatchUp.js`). Default 30, minimum 15, `0` = off (kill switch; needs a redeploy).
 
 Supabase Edge Function secrets (`supabase secrets set`):

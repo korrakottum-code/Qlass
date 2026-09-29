@@ -11,6 +11,7 @@ const root = path.resolve(here, "../..");
 export default defineConfig({
   root,
   plugins: [react()],
+  define: { "import.meta.env.VITE_ENABLE_COUPONS": JSON.stringify("true") }, // เดโม/ถ่ายรูปคู่มือ ต้องเห็นเมนูคูปอง
   envDir: here, // อ่านเฉพาะ .env ในโฟลเดอร์นี้ ไม่แตะ .env จริงของโปรเจกต์
   resolve: {
     alias: [

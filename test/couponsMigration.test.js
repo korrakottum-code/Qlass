@@ -2,9 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+// ปลายบรรทัดต่างกันตามระบบ (Windows checkout = CRLF, CI บน Linux = LF) แปลงเป็น LF ก่อน
+// เทสต์ที่ใช้ regex ข้ามบรรทัดจะได้ไม่เปราะ
+const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8").split(String.fromCharCode(13, 10)).join(String.fromCharCode(10));
+
 // คูปองมีชื่อ/เบอร์ลูกค้า จึงต้องปิดจากคีย์หน้าเว็บตั้งแต่วันแรก และทุกทางเข้าต้องผ่าน staff-session
-const sql = readFileSync(new URL("../supabase/migrations/20260929120000_coupons.sql", import.meta.url), "utf8").replace(/^\s*--.*$/gm, "");
-const edge = readFileSync(new URL("../supabase/functions/staff-session/index.ts", import.meta.url), "utf8");
+const sql = read("../supabase/migrations/20260929120000_coupons.sql").replace(/^\s*--.*$/gm, "");
+const edge = read("../supabase/functions/staff-session/index.ts");
 
 test("ตารางคูปองเปิด RLS โดยไม่มี policy และถอนสิทธิ์จากคีย์หน้าเว็บ", () => {
   assert.match(sql, /alter table public\.coupons enable row level security;/i);
@@ -56,7 +60,7 @@ test("รายการล็อตส่งหมวดกลับมาด�
 });
 
 test("แท็บล็อตหุบรวมเป็นโปรละแถว กางดูช่วงรหัสได้ และปุ่มเพิ่มใช้ล็อตล่าสุดของโปรเป็นต้นแบบ", () => {
-  const page = readFileSync(new URL("../src/pages/CouponPage.jsx", import.meta.url), "utf8");
+  const page = read("../src/pages/CouponPage.jsx");
   assert.match(page, /byKey/);
   assert.match(page, /toggleGroup\(g\.key\)/);
   assert.match(page, /const b = g\.latest;/);
@@ -76,7 +80,7 @@ test("ยกเลิกทั้งล็อต: ปิดเฉพาะใบ
 });
 
 test("ตัด/ยกเลิกรายใบ/ยกเลิกทั้งล็อต ต้องพิมพ์เลข 3 ตัวท้ายยืนยัน (ไม่ใช้ confirm ธรรมดา)", () => {
-  const page = readFileSync(new URL("../src/pages/CouponPage.jsx", import.meta.url), "utf8");
+  const page = read("../src/pages/CouponPage.jsx");
   assert.match(page, /const ok = value === pending\.expect;/);
   assert.match(page, /disabled=\{!ok \|\| busy\}/);
   assert.match(page, /expect: last3\(found\.code\)/);          // ตัด
@@ -87,7 +91,7 @@ test("ตัด/ยกเลิกรายใบ/ยกเลิกทั้ง
 });
 
 test("หน้าคูปองไม่ใช้ตารางกว้างที่ต้องเลื่อนซ้ายขวา (รายการ/ล็อตเป็นการ์ดที่ไหลตามความกว้างจอ)", () => {
-  const page = readFileSync(new URL("../src/pages/CouponPage.jsx", import.meta.url), "utf8");
+  const page = read("../src/pages/CouponPage.jsx");
   assert.doesNotMatch(page, /<table/);
   assert.doesNotMatch(page, /table-scroll/);
   assert.doesNotMatch(page, /overflowX:\s*"auto"/);
@@ -107,7 +111,7 @@ test("สถิติคูปอง: เฉพาะ superadmin/head_admin/admi
 });
 
 test("สถิติ: มีลูกศรเปลี่ยนเดือนและปุ่มเดือนที่แล้ว โดยไม่ใช้ toISOString คำนวณวันที่", () => {
-  const page = readFileSync(new URL("../src/pages/CouponPage.jsx", import.meta.url), "utf8");
+  const page = read("../src/pages/CouponPage.jsx");
   assert.match(page, /aria-label="เดือนก่อนหน้า"/);
   assert.match(page, /aria-label="เดือนถัดไป"/);
   assert.match(page, /เดือนที่แล้ว/);
@@ -127,7 +131,7 @@ test("edge function: วันที่ผิดรูปแบบ/ไม่ม�
 });
 
 test("หน้าคูปอง: กันผลโหลดเก่าทับผลใหม่ และไม่โชว์ช่วงรหัสที่คาดเดาเมื่อยังไม่รู้เลขล่าสุด", () => {
-  const page = readFileSync(new URL("../src/pages/CouponPage.jsx", import.meta.url), "utf8");
+  const page = read("../src/pages/CouponPage.jsx");
   assert.match(page, /id === reqId\.current/);
   assert.match(page, /id === listReq\.current/);
   assert.match(page, /if \(alive\)/);
@@ -147,4 +151,12 @@ test("รายการคูปองที่หลักแสนใบ: ม
   assert.match(body, /p_status = 'used_up'\s+and c\.cancelled_at is null and c\.used_count >= c\.total_uses/);
   assert.match(body, /p_status = 'expired'\s+and c\.cancelled_at is null and c\.used_count < c\.total_uses and c\.expiry_date < v_today/);
   assert.match(body, /p_status = 'active'\s+and c\.cancelled_at is null and c\.used_count < c\.total_uses and c\.expiry_date >= v_today/);
+});
+
+test("เมนูคูปองซ่อนไว้ก่อนเปิดใช้: ไม่มี coupons ใน pages ของบทบาทใดเมื่อไม่ได้ตั้ง VITE_ENABLE_COUPONS", async () => {
+  const { ROLES, COUPONS_ENABLED, NAV_ITEMS } = await import("../src/utils/constants.js");
+  assert.equal(COUPONS_ENABLED, false);
+  for (const role of ROLES) assert.ok(!role.pages.includes("coupons"), role.value);
+  // รายการเมนูยังมีอยู่ (ซ่อนด้วยสิทธิ์ ไม่ได้ลบทิ้ง) เพื่อให้เปิดใช้ได้ด้วยสวิตช์อย่างเดียว
+  assert.ok(NAV_ITEMS.some((item) => item.id === "coupons"));
 });

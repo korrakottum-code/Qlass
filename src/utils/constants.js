@@ -131,7 +131,7 @@ export const NAV_ITEMS = [
 
 // ─── ROLES & PERMISSIONS ───
 // ลำดับในอาร์เรย์นี้ = ระดับสิทธิ์ (บนสุดสูงสุด) — helpers.roleAtLeast อาศัยลำดับนี้ ห้ามสลับ
-export const ROLES = [
+const ROLE_DEFS = [
   {
     value: "ceo",
     label: "CEO",
@@ -181,6 +181,16 @@ export const ROLES = [
     pages: ["booking","queue-table","waiting-queue","timeline","summary","export","tickets","coupons","manual"],
   },
 ];
+
+// เมนูคูปองซ่อนไว้จนกว่าจะเปิดใช้จริง (ตารางในฐานข้อมูล + staff-session เวอร์ชันที่รู้จัก coupon_* พร้อมแล้ว)
+// เปิดด้วย VITE_ENABLE_COUPONS=true (ต้อง build/deploy ใหม่) — ปิดอยู่: ไม่มีเมนู เข้าหน้าไม่ได้ และหัวข้อในคู่มือซ่อนตาม
+// (เมนู/เส้นทาง/คู่มือทั้งหมดอ่านจาก pages ของบทบาทนี้ จึงซ่อนที่จุดเดียว)
+// บทบาท+หน้าที่เปิดได้ "เมื่อเปิดสวิตช์คูปองแล้ว" (ให้เทสต์คู่มือตรวจกับตัวนี้ ไม่ใช่ตัวที่กรองแล้ว)
+export const ALL_ROLES = ROLE_DEFS;
+export const COUPONS_ENABLED = import.meta.env?.VITE_ENABLE_COUPONS === "true";
+export const ROLES = ROLE_DEFS.map((role) => (
+  COUPONS_ENABLED ? role : { ...role, pages: role.pages.filter((page) => page !== "coupons") }
+));
 
 // ─── INITIAL STAFF ───
 export const initStaff = [
