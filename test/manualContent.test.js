@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import test from "node:test";
-import { NAV_ITEMS, ROLES } from "../src/utils/constants.js";
+import { NAV_ITEMS, ROLES, ALL_ROLES } from "../src/utils/constants.js";
 import { MANUAL_SECTIONS, MANUAL_META } from "../src/manual/manualContent.js";
 import { QUIZ_META, QUIZ_QUESTIONS } from "../src/manual/testContent.js";
 
@@ -29,7 +29,8 @@ test("section ทุกอันมี id ไม่ซ้ำ, pageId ถูก�
       // roles ที่ระบุต้องเข้าเมนูนั้นได้จริง
       if (s.pageId) {
         for (const r of s.roles) {
-          const role = ROLES.find((x) => x.value === r);
+          // ตรวจกับบทบาทแบบไม่กรองสวิตช์ (เมนูคูปองซ่อนไว้จนกว่าจะเปิด แต่คู่มือเขียนไว้ล่วงหน้าตามสิทธิ์จริงเมื่อเปิด)
+          const role = ALL_ROLES.find((x) => x.value === r);
           assert.ok(role.pages.includes(s.pageId), `${s.id}: ${r} เข้าเมนู ${s.pageId} ไม่ได้ตาม ROLES`);
         }
       }

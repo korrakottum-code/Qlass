@@ -10,8 +10,9 @@
 --                 public.coupon_revert_v1(uuid, uuid), public.coupon_cancel_v1(text, boolean),
 --                 public.coupon_cancel_batch_v1(uuid, boolean), public.coupon_stats_v1(date, date),
 --                 public.coupon_list_v1(text, text, int, int), public.coupon_batches_v1(int, int),
+--                 public.coupon_categories_v1(), public.coupon_category_save_v1(text, text, boolean, boolean),
 --                 public.coupon_json(public.coupons), public.coupon_status(public.coupons);
---   drop table public.coupon_redemptions, public.coupons, public.coupon_counters, public.coupon_batches;
+--   drop table public.coupon_redemptions, public.coupons, public.coupon_counters, public.coupon_batches, public.coupon_categories;
 --   (ดัชนี trigram ถูกลบไปพร้อมตาราง ส่วนขยาย pg_trgm ไม่ถูกแตะ)
 
 create table if not exists public.coupons (
@@ -143,6 +144,45 @@ create index if not exists coupon_batches_created_idx on public.coupon_batches (
 alter table public.coupon_batches enable row level security;
 revoke all on table public.coupon_batches from anon, authenticated;
 
+-- หมวดรหัส POS ที่ออกคูปองได้ (จัดการเองได้ในหน้าคูปอง: เพิ่ม / แก้ชื่อที่แสดง / ปิด-เปิด)
+-- ตัวรหัสหมวดเปลี่ยนไม่ได้และไม่ลบ เพราะคูปองที่ออกไปแล้วกับ POS ใช้รหัสนี้ — ต้องการเลิกใช้ให้ "ปิด" (คูปองเดิมยังเห็นและใช้ได้)
+-- รูปแบบรหัส: ตัวอักษรใหญ่ 1-3 ตัว + ตัวเลข 1-3 หลัก (D1, D10, T99) ค่าเริ่มต้นตามคู่มือรหัส POS v6.2 (23 หมวด)
+create table if not exists public.coupon_categories (
+  prefix     text primary key check (prefix ~ '^[A-Z]{1,3}[0-9]{1,3}$'),
+  label      text not null check (length(btrim(label)) between 1 and 80),
+  active     boolean not null default true,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now()
+);
+alter table public.coupon_categories enable row level security;
+revoke all on table public.coupon_categories from anon, authenticated;
+
+insert into public.coupon_categories (prefix, label, sort_order) values
+  ('T1', 'เลเซอร์ขน Diode · IPL (พนักงานทำ)', 10),
+  ('T2', 'Pico (พนักงานทำ)', 20),
+  ('T3', 'ทรีตเมนต์หน้า · มาส์ก · กดสิว (พนักงานทำ)', 30),
+  ('T4', 'HIFU (พนักงานทำ)', 40),
+  ('T99', 'ของแถม · ฟรี (พนักงานทำ)', 50),
+  ('D1', 'Botox', 60),
+  ('D2', 'Pico (แพทย์ทำ)', 70),
+  ('D3', 'Meso หน้าใส', 80),
+  ('D4', 'เครื่องโดยแพทย์ HIFU · Oligio · Ulthera', 90),
+  ('D5', 'ปากกาลด นน. · ยาฉีด', 100),
+  ('D6', 'IV Drip · วิตามิน', 110),
+  ('D7', 'หัตถการทั่วไป ฉีดสิว · สลาย Filler · Subcision', 120),
+  ('D8', 'Meso Fat · สลายไขมัน', 130),
+  ('D9', 'Biostimulator Juvelook · Sculptra · Radiesse', 140),
+  ('D10', 'Filler', 150),
+  ('D99', 'ของแถม · ฟรี (แพทย์ทำ)', 160),
+  ('S1', 'เซตฉีด + เครื่อง', 170),
+  ('S2', 'โปรแคมเปญ · โปรประจำเดือน', 180),
+  ('O1', 'Gift Card · วงเงิน VIP', 190),
+  ('O2', 'ยาเม็ด · ยาทา', 200),
+  ('O3', 'สินค้าหน้าร้าน', 210),
+  ('O4', 'มัดจำ / Deposit', 220),
+  ('O9', 'อื่นๆ · Other Income', 230)
+on conflict (prefix) do nothing;
+
 -- ออกล็อต: รหัส = หมวด POS + "-" + เลขรัน 7 หลัก (รองรับหมวดละ 9,999,999 ใบ)
 -- จองช่วงเลขด้วย upsert แถวเดียว (ล็อกแถวนี้ทำให้ 2 คนออกล็อตหมวดเดียวกันพร้อมกันไม่ได้เลขซ้ำ)
 -- ถ้าขั้นไหนพัง ทรานแซกชันย้อนทั้งหมด ตัวนับไม่ข้ามเลข
@@ -162,13 +202,16 @@ declare
   v_batch uuid := gen_random_uuid();
   v_end bigint;
   v_start bigint;
+  v_cat_active boolean;
 begin
   if p_quantity is null or p_quantity < 1 or p_quantity > 20000 then raise exception 'invalid_quantity'; end if;
   -- p_start_after = "เคยออกมาถึงเลขนี้แล้ว (เช่นออกไว้ก่อนใช้ระบบนี้)" ตัวนับจะข้ามไปต่อจากเลขนั้น แต่ไม่มีวันถอยหลัง
   if p_start_after is not null and (p_start_after < 0 or p_start_after > 9999999) then raise exception 'invalid_start'; end if;
   if p_total_uses is null or p_total_uses < 1 or p_total_uses > 999 then raise exception 'invalid_uses'; end if;
-  -- หมวดตามคู่มือรหัส POS v6.2: T1-T4,T99 / D1-D10,D99 / S1,S2 / O1-O4,O9
-  if v_prefix !~ '^(T([1-4]|99)|D([1-9]|10|99)|S[12]|O[12349])$' then raise exception 'invalid_prefix'; end if;
+  -- หมวดต้องมีในตาราง coupon_categories และเปิดใช้งานอยู่
+  select active into v_cat_active from public.coupon_categories where prefix = v_prefix;
+  if not found then raise exception 'invalid_prefix'; end if;
+  if not v_cat_active then raise exception 'category_inactive'; end if;
   if p_expiry_date is null or p_expiry_date < (now() at time zone 'Asia/Bangkok')::date then raise exception 'invalid_expiry'; end if;
   if p_price is null or p_price < 0 then raise exception 'invalid_price'; end if;
   if p_name is null or length(btrim(p_name)) = 0 then raise exception 'invalid_name'; end if;
@@ -207,6 +250,55 @@ security definer
 set search_path = public
 as $$
   select coalesce(jsonb_object_agg(prefix, last_no), '{}'::jsonb) from public.coupon_counters;
+$$;
+
+-- รายการหมวดทั้งหมด (รวมที่ปิด) พร้อมเลขล่าสุดที่ออกไปแล้วของแต่ละหมวด
+create or replace function public.coupon_categories_v1()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'prefix', c.prefix, 'label', c.label, 'active', c.active, 'sortOrder', c.sort_order,
+           'issued', coalesce(k.last_no, 0)) order by c.sort_order, c.prefix), '[]'::jsonb)
+    from public.coupon_categories c
+    left join public.coupon_counters k on k.prefix = c.prefix;
+$$;
+
+-- เพิ่มหมวดใหม่ (p_create = true) หรือแก้ชื่อ/เปิด-ปิดหมวดเดิม (p_create = false) — ตัวรหัสเปลี่ยนไม่ได้ ไม่มีการลบ
+-- คืนรายการหมวดล่าสุดทั้งหมด (ให้หน้าจออัปเดตทีเดียว)
+create or replace function public.coupon_category_save_v1(p_prefix text, p_label text, p_active boolean, p_create boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_prefix text := upper(btrim(coalesce(p_prefix, '')));
+  v_label text := btrim(coalesce(p_label, ''));
+  v_next int;
+begin
+  if v_prefix !~ '^[A-Z]{1,3}[0-9]{1,3}$' then raise exception 'invalid_category'; end if;
+  if length(v_label) < 1 or length(v_label) > 80 then raise exception 'invalid_category'; end if;
+
+  if p_create then
+    if exists (select 1 from public.coupon_categories where prefix = v_prefix) then raise exception 'category_exists'; end if;
+    select coalesce(max(sort_order), 0) + 10 into v_next from public.coupon_categories;
+    begin
+      insert into public.coupon_categories (prefix, label, active, sort_order)
+      values (v_prefix, v_label, coalesce(p_active, true), v_next);
+    exception when unique_violation then
+      raise exception 'category_exists';   -- 2 คนเพิ่มรหัสเดียวกันพร้อมกัน
+    end;
+  else
+    update public.coupon_categories set label = v_label, active = coalesce(p_active, active) where prefix = v_prefix;
+    if not found then raise exception 'category_not_found'; end if;
+  end if;
+
+  return public.coupon_categories_v1();
+end;
 $$;
 
 create or replace function public.coupon_lookup_v1(p_code text)
@@ -498,6 +590,8 @@ revoke all on function public.coupon_status(public.coupons), public.coupon_json(
 revoke all on function
   public.coupon_generate_v1(uuid, text, text, numeric, int, date, int, text, text, text, text, bigint),
   public.coupon_counters_v1(),
+  public.coupon_categories_v1(),
+  public.coupon_category_save_v1(text, text, boolean, boolean),
   public.coupon_lookup_v1(text),
   public.coupon_redeem_v1(uuid, text, text, text),
   public.coupon_revert_v1(uuid, uuid),

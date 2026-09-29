@@ -3,7 +3,32 @@
 export const couponsAvailable = true;
 export const getServerSessionToken = () => "demo";
 
-const POS = /^(T([1-4]|99)|D([1-9]|10|99)|S[12]|O[12349])$/;
+// หมวดรหัส POS เริ่มต้น (เหมือน seed ใน migration) แก้ไขได้ในหน้า "หมวดรหัส" ของเดโม
+const categories = [
+  ["T1", "เลเซอร์ขน Diode · IPL (พนักงานทำ)"],
+  ["T2", "Pico (พนักงานทำ)"],
+  ["T3", "ทรีตเมนต์หน้า · มาส์ก · กดสิว (พนักงานทำ)"],
+  ["T4", "HIFU (พนักงานทำ)"],
+  ["T99", "ของแถม · ฟรี (พนักงานทำ)"],
+  ["D1", "Botox"],
+  ["D2", "Pico (แพทย์ทำ)"],
+  ["D3", "Meso หน้าใส"],
+  ["D4", "เครื่องโดยแพทย์ HIFU · Oligio · Ulthera"],
+  ["D5", "ปากกาลด นน. · ยาฉีด"],
+  ["D6", "IV Drip · วิตามิน"],
+  ["D7", "หัตถการทั่วไป ฉีดสิว · สลาย Filler · Subcision"],
+  ["D8", "Meso Fat · สลายไขมัน"],
+  ["D9", "Biostimulator Juvelook · Sculptra · Radiesse"],
+  ["D10", "Filler"],
+  ["D99", "ของแถม · ฟรี (แพทย์ทำ)"],
+  ["S1", "เซตฉีด + เครื่อง"],
+  ["S2", "โปรแคมเปญ · โปรประจำเดือน"],
+  ["O1", "Gift Card · วงเงิน VIP"],
+  ["O2", "ยาเม็ด · ยาทา"],
+  ["O3", "สินค้าหน้าร้าน"],
+  ["O4", "มัดจำ / Deposit"],
+  ["O9", "อื่นๆ · Other Income"],
+].map(([prefix, label], i) => ({ prefix, label, active: true, sortOrder: (i + 1) * 10 }));
 const counters = {};
 const batches = [];
 const coupons = [];
@@ -36,7 +61,9 @@ export async function generateCoupons(_t, b) {
   if (!(qty >= 1 && qty <= 20000)) fail("invalid_quantity");
   const after = b.startAfter == null ? 0 : Number(b.startAfter);
   if (!(after >= 0 && after <= 9999999)) fail("invalid_start");
-  if (!POS.test(prefix)) fail("invalid_prefix");
+  const cat = categories.find((c) => c.prefix === prefix);
+  if (!cat) fail("invalid_prefix");
+  if (!cat.active) fail("category_inactive");
   if (!b.expiryDate || b.expiryDate < today()) fail("invalid_expiry");
   if (!(Number(b.price) >= 0)) fail("invalid_price");
   if (!String(b.name || "").trim()) fail("invalid_name");
@@ -107,6 +134,22 @@ export async function fetchCouponStats(_t, { from = null, to = null } = {}) {
     days,
     expiring: [...ex.values()].sort((a, b) => a.expiryDate.localeCompare(b.expiryDate)),
   };
+}
+const withIssued = () => categories.map((c) => ({ ...c, issued: counters[c.prefix] || 0 }));
+export async function fetchCouponCategories() { return withIssued(); }
+export async function saveCouponCategory(_t, { prefix, label, active, create }) {
+  const p = String(prefix || "").trim().toUpperCase(), l = String(label || "").trim();
+  if (!/^[A-Z]{1,3}[0-9]{1,3}$/.test(p) || l.length < 1 || l.length > 80) fail("invalid_category");
+  const found = categories.find((c) => c.prefix === p);
+  if (create) {
+    if (found) fail("category_exists");
+    categories.push({ prefix: p, label: l, active: active !== false, sortOrder: Math.max(0, ...categories.map((c) => c.sortOrder)) + 10 });
+  } else {
+    if (!found) fail("category_not_found");
+    found.label = l;
+    if (typeof active === "boolean") found.active = active;
+  }
+  return withIssued();
 }
 export async function fetchCouponCounters() { return { ...counters }; }
 export async function lookupCoupon(_t, code) { const c = find(code); return c ? view(c) : null; }

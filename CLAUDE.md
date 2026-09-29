@@ -70,7 +70,7 @@ Branch filtering is applied in `App.jsx` via `filterByUserBranch()`: admin-level
 
 ### Coupons (exception to "pages don't fetch")
 
-The coupon feature (`pages/CouponPage.jsx`, menu `coupons`) deliberately does **not** keep its data in `App.jsx` state: there can be 100 000+ coupons, so the page queries the server per lookup / per page (list 50 rows, batches, stats aggregated in SQL). All coupon tables (`coupons`, `coupon_redemptions`, `coupon_counters`, `coupon_batches`) are closed to the browser key (RLS on, no policy, privileges revoked); every read/write goes through `staff-session` `coupon_*` actions, which check the role server-side and call `coupon_*_v1` SQL functions (service_role only). The page talks to the server only through `src/utils/couponApi.js` (the demo mode `npm run manual:demo` swaps it for `scripts/screenshot/mockCouponApi.js`). Codes are `POS category + "-" + 7-digit running number` (e.g. `D1-0000001`), one counter per category that only moves forward. Roles: generate/cancel = superadmin, head_admin; redeem/lookup/list = + admin, branch_manager, cashier (branch roles are locked to their own branch and see customer phones masked); stats = superadmin, head_admin, admin.
+The coupon feature (`pages/CouponPage.jsx`, menu `coupons`) deliberately does **not** keep its data in `App.jsx` state: there can be 100 000+ coupons, so the page queries the server per lookup / per page (list 50 rows, batches, stats aggregated in SQL). All coupon tables (`coupons`, `coupon_redemptions`, `coupon_counters`, `coupon_batches`) are closed to the browser key (RLS on, no policy, privileges revoked); every read/write goes through `staff-session` `coupon_*` actions, which check the role server-side and call `coupon_*_v1` SQL functions (service_role only). The page talks to the server only through `src/utils/couponApi.js` (the demo mode `npm run manual:demo` swaps it for `scripts/screenshot/mockCouponApi.js`). Codes are `POS category + "-" + 7-digit running number` (e.g. `D1-0000001`), one counter per category that only moves forward. The allowed categories live in the `coupon_categories` table (seeded from POS guide v6.2, 23 rows; managed in the page: add / rename / deactivate — a prefix is never renamed or deleted because issued codes and the POS use it). Roles: generate/cancel = superadmin, head_admin; redeem/lookup/list = + admin, branch_manager, cashier (branch roles are locked to their own branch and see customer phones masked); stats = superadmin, head_admin, admin.
 
 ### Conflict detection
 
@@ -85,6 +85,8 @@ Before saving a queue, `App.jsx` fetches **fresh data from DB** (`fetchQueuesFor
 Must be set in `.env` (or Vercel/Netlify dashboard):
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
+
+Optional: `VITE_ENABLE_COUPONS` — the coupon menu/route/manual section are hidden unless this is `true` (set it only after the coupon migration is applied and `staff-session` with the `coupon_*` actions is deployed; needs a rebuild). The demo mode force-enables it.
 
 Optional: `VITE_QUEUE_REFRESH_SECONDS` — interval of the periodic queue delta refresh in `App.jsx` (safety net for Realtime events that arrive 1–2 min late; see `createPeriodicRefreshController` in `src/utils/realtimeCatchUp.js`). Default 30, minimum 15, `0` = off (kill switch; needs a redeploy).
 

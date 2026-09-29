@@ -83,6 +83,12 @@ export function createSessionApi(invoke) {
     cancelCouponBatch(token, batchId, cancel = true) {
       return callSessionFunction({ action: "coupon_cancel_batch", token, batchId, cancel });
     },
+    async fetchCouponCategories(token) {
+      return (await callSessionFunction({ action: "coupon_categories", token })).categories || [];
+    },
+    async saveCouponCategory(token, category) {
+      return (await callSessionFunction({ action: "coupon_category_save", token, category })).categories || [];
+    },
     async fetchCouponCounters(token) {
       return (await callSessionFunction({ action: "coupon_counters", token })).counters || {};
     },
