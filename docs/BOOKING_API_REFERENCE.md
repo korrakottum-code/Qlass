@@ -55,13 +55,13 @@
 
 ## 4. `POST /v1/availability/check` — เช็กคิวว่าง
 ```json
-{ "branch_code": "KK", "sku": "HIFU-100", "start_time": "2026-10-05T14:00:00+07:00" }
+{ "branch_code": "SK", "sku": "PM-049D58F87E", "start_time": "2026-10-20T14:00:00+07:00" }
 ```
 ว่าง → `200 { "available": true }`
 ไม่ว่าง → `200` พร้อมเหตุผลและเวลาทางเลือก (วันเดียวกัน ตาราง 30 นาที ไม่เกิน 3 ช่วง เรียงเวลา)
 ```json
 { "available": false, "reason": "SLOT_FULL",
-  "alternatives": ["2026-10-05T15:00:00+07:00", "2026-10-05T16:30:00+07:00"] }
+  "alternatives": ["2026-10-20T15:00:00+07:00", "2026-10-20T16:30:00+07:00"] }
 ```
 | `reason` | ความหมาย |
 |---|---|
@@ -74,11 +74,11 @@
 
 หมายเหตุ: คิวเริ่มได้ทุก 5 นาที ความยาวคิวขึ้นกับบริการ (ระบบคำนวณเอง) การเช็กว่า "ว่าง" หมายถึงมีห้องว่างตลอดช่วงของบริการนั้น
 
-## 5. `GET /v1/availability/slots?branch_code=KK&sku=HIFU-100&date=2026-10-05` — ช่องว่างทั้งวัน
+## 5. `GET /v1/availability/slots?branch_code=SK&sku=PM-049D58F87E&date=2026-10-20` — ช่องว่างทั้งวัน
 ```json
-{ "date": "2026-10-05",
-  "slots": [ { "start_time": "2026-10-05T11:30:00+07:00", "available": true },
-             { "start_time": "2026-10-05T12:00:00+07:00", "available": false } ] }
+{ "date": "2026-10-20",
+  "slots": [ { "start_time": "2026-10-20T11:30:00+07:00", "available": true },
+             { "start_time": "2026-10-20T12:00:00+07:00", "available": false } ] }
 ```
 ทุกช่อง 30 นาทีในช่วงเวลาทำการของสาขาวันนั้น (ช่องที่เกินกติกา 2 ชั่วโมง/60 วันจะเป็น `available: false`) ใช้ตอนลูกค้าถามกว้าง ๆ เช่น "พรุ่งนี้ว่างกี่โมง"
 
@@ -86,9 +86,9 @@
 ```json
 {
   "reference_id": "saifa_7f3a9c21",
-  "branch_code": "KK",
-  "sku": "HIFU-100",
-  "start_time": "2026-10-05T14:00:00+07:00",
+  "branch_code": "SK",
+  "sku": "PM-049D58F87E",
+  "start_time": "2026-10-20T14:00:00+07:00",
   "customer": { "name": "สมชาย ใจดี", "phone": "0812345678", "type": "new" },
   "note": "ลูกค้าใหม่ จองผ่านแชท Facebook"
 }
@@ -104,7 +104,7 @@
 **สำเร็จ — `201`**
 ```json
 { "success": true, "booking_id": "CC-20261005-0142", "status": "confirmed",
-  "branch_code": "KK", "sku": "HIFU-100", "start_time": "2026-10-05T14:00:00+07:00" }
+  "branch_code": "SK", "sku": "PM-049D58F87E", "start_time": "2026-10-20T14:00:00+07:00" }
 ```
 - `status: "confirmed"` = **ระบบจองห้อง/เวลาให้แล้วทันที** แอดมินเห็นในหน้าคิวของสาขา (ผู้บันทึกคือ "น้องคลาส Ai") ขั้นตอนโทรย้ำนัดตามปกติของคลินิกเป็นเรื่องภายในของเรา ไม่ต้องแจ้งลูกค้าว่ารอยืนยัน
 - เวลา `start_time` ที่ตอบกลับเป็น `+07:00` เสมอ; `booking_id` รูปแบบ `CC-<วันนัด>-<เลขรัน>` (sandbox: `SANDBOX-…`)
@@ -112,7 +112,7 @@
 **คิวไม่ว่าง — `409`**
 ```json
 { "success": false, "error_code": "SLOT_UNAVAILABLE", "message": "คิวเวลานี้ถูกจองไปแล้วหรือไม่ว่าง",
-  "alternatives": ["2026-10-05T15:00:00+07:00"] }
+  "alternatives": ["2026-10-20T15:00:00+07:00"] }
 ```
 
 ### การส่งซ้ำ (เน็ตหลุด / timeout)
@@ -146,7 +146,7 @@
 ```bash
 curl -X POST "$BASE/v1/availability/check" \
   -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-  -d '{"branch_code":"KK","sku":"HIFU-100","start_time":"2026-10-05T14:00:00+07:00"}'
+  -d '{"branch_code":"SK","sku":"PM-049D58F87E","start_time":"2026-10-20T14:00:00+07:00"}'
 ```
 
 ## 10. ที่จะแจ้งให้ทราบ
