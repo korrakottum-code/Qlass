@@ -76,7 +76,7 @@ const couponUseRoles = new Set(["superadmin", "head_admin", "admin", "branch_man
 const couponErrors = new Set([
   "coupon_not_found", "coupon_cancelled", "coupon_used_up", "coupon_expired", "invalid_branch",
   "redemption_not_found", "already_reverted", "invalid_quantity", "invalid_uses", "invalid_prefix",
-  "invalid_expiry", "invalid_price", "invalid_name", "prefix_exhausted", "invalid_start", "batch_not_found", "batch_already_cancelled", "batch_not_cancelled", "invalid_range",
+  "invalid_expiry", "invalid_price", "invalid_name", "prefix_exhausted", "invalid_start", "batch_not_found", "batch_already_cancelled", "batch_not_cancelled", "batch_has_used", "batch_not_latest", "invalid_range",
   "category_exists", "category_not_found", "category_inactive", "invalid_category",
 ]);
 function validDay(value: unknown): string | null {
@@ -416,6 +416,38 @@ Deno.serve(async (req) => {
           return response({ error: "invalid_coupon_payload" }, 400, origin);
         }
         const { data, error } = await supabase.rpc("coupon_cancel_batch_v1", { p_batch_id: body.batchId, p_cancel: body.cancel !== false });
+        if (error) return fail(error);
+        return response(data, 200, origin);
+      }
+
+      // แก้ข้อมูลทั้งล็อต (ล็อตที่ยังไม่มีใบไหนถูกใช้) รหัสไม่เปลี่ยน
+      if (body.action === "coupon_batch_update") {
+        if (!couponManageRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        if (typeof body.batchId !== "string" || !/^[0-9a-f-]{36}$/i.test(body.batchId)) {
+          return response({ error: "invalid_coupon_payload" }, 400, origin);
+        }
+        const g = body.batch;
+        if (!g || typeof g !== "object" || Array.isArray(g)) return response({ error: "invalid_coupon_payload" }, 400, origin);
+        const text = (value: unknown, max: number) => String(value ?? "").trim().slice(0, max);
+        const expiryDate = validDay(text(g.expiryDate, 10));
+        if (!expiryDate) return response({ error: "invalid_expiry" }, 400, origin);
+        const { data, error } = await supabase.rpc("coupon_batch_update_v1", {
+          p_actor_staff_id: staffId, p_batch_id: body.batchId,
+          p_name: text(g.name, 120), p_category: text(g.category, 60),
+          p_price: Number(g.price ?? -1), p_expiry_date: expiryDate,
+          p_note: text(g.note, 200) || null,
+        });
+        if (error) return fail(error);
+        return response(data, 200, origin);
+      }
+
+      // ลบล็อตท้ายสุดของหมวดที่ยังไม่เคยถูกใช้ แล้วเลขรันถอยกลับ (ถาวร)
+      if (body.action === "coupon_batch_delete") {
+        if (!couponManageRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        if (typeof body.batchId !== "string" || !/^[0-9a-f-]{36}$/i.test(body.batchId)) {
+          return response({ error: "invalid_coupon_payload" }, 400, origin);
+        }
+        const { data, error } = await supabase.rpc("coupon_batch_delete_v1", { p_actor_staff_id: staffId, p_batch_id: body.batchId });
         if (error) return fail(error);
         return response(data, 200, origin);
       }

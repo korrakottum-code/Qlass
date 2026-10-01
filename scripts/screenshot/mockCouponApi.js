@@ -93,6 +93,29 @@ export async function cancelCouponBatch(_t, batchId, cancel = true) {
   }
   return { changed, usedKept: coupons.filter((c) => c.batchId === b.id && c.usedCount > 0).length, cancelled: cancel };
 }
+export async function updateCouponBatch(_t, batchId, g) {
+  const b = batches.find((x) => x.id === batchId) || fail("batch_not_found");
+  const name = String(g.name || "").trim();
+  if (!name || name.length > 120) fail("invalid_name");
+  if (!(Number(g.price) >= 0)) fail("invalid_price");
+  if (!g.expiryDate || g.expiryDate < today()) fail("invalid_expiry");
+  if (coupons.some((c) => c.batchId === b.id && c.usedCount > 0)) fail("batch_has_used");
+  Object.assign(b, { name, category: g.category || "", price: Number(g.price), expiryDate: g.expiryDate, note: g.note || null });
+  let changed = 0;
+  for (const c of coupons) if (c.batchId === b.id) { Object.assign(c, { name, category: g.category || "", price: Number(g.price), expiryDate: g.expiryDate, note: g.note || null }); changed++; }
+  return { changed };
+}
+export async function deleteCouponBatch(_t, batchId) {
+  const b = batches.find((x) => x.id === batchId) || fail("batch_not_found");
+  const first = Number(b.firstCode.split("-")[1]), last = Number(b.lastCode.split("-")[1]);
+  if ((counters[b.prefix] || 0) !== last) fail("batch_not_latest");
+  if (coupons.some((c) => c.batchId === b.id && c.usedCount > 0)) fail("batch_has_used");
+  const before = coupons.length;
+  for (let i = coupons.length - 1; i >= 0; i--) if (coupons[i].batchId === b.id) coupons.splice(i, 1);
+  batches.splice(batches.indexOf(b), 1);
+  counters[b.prefix] = first - 1;
+  return { deleted: before - coupons.length, nextNo: first, nextCode: `${b.prefix}-${pad(first)}` };
+}
 export async function fetchCouponStats(_t, { from = null, to = null } = {}) {
   const t = today();
   const shift = (d, n) => new Date(new Date(`${d}T00:00:00Z`).getTime() + n * 86400000).toISOString().slice(0, 10);

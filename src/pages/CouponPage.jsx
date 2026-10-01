@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { formatThaiDate } from "../utils/helpers";
 import { addDays as shiftDay } from "../utils/queueRanges"; // ย้ายวันที่ด้วยตัวช่วยของโปรเจกต์ (ห้ามตัดวันจาก toISOString)
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
-import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters, cancelCouponBatch, fetchCouponStats, fetchCouponCategories, saveCouponCategory } from "../utils/couponApi";
+import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters, cancelCouponBatch, updateCouponBatch, deleteCouponBatch, fetchCouponStats, fetchCouponCategories, saveCouponCategory } from "../utils/couponApi";
 import { serverErrorCode } from "../utils/sessionApi";
 import Modal, { ModalHeader, ModalBody } from "../components/Modal";
 
@@ -24,6 +24,8 @@ const ERRORS = {
   batch_not_found: "ไม่พบล็อตนี้",
   batch_already_cancelled: "ล็อตนี้ถูกยกเลิกไปแล้ว",
   batch_not_cancelled: "ล็อตนี้ไม่ได้ถูกยกเลิกอยู่",
+  batch_has_used: "ล็อตนี้มีคูปองที่ถูกตัดใช้แล้ว (หรือเคยมีประวัติการตัด) จึงแก้/ลบทั้งล็อตไม่ได้",
+  batch_not_latest: "ลบได้เฉพาะล็อตท้ายสุดของหมวดนั้น (มีล็อตใหม่กว่าอยู่แล้ว) ถ้าผิดให้ใช้ “ยกเลิกทั้งล็อต” แทน",
   invalid_range: "ช่วงวันที่ไม่ถูกต้อง (ต้องไม่เกิน 366 วัน และวันเริ่มต้องไม่หลังวันสิ้นสุด)",
   invalid_start: "เลขที่ให้ออกต่อต้องอยู่ระหว่าง 0–9,999,999",
   invalid_expiry: "วันหมดอายุต้องไม่ใช่วันที่ผ่านมาแล้ว",
@@ -394,6 +396,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
   const [addQty, setAddQty] = useState({});
   const [addExpiry, setAddExpiry] = useState({});
   const [batchTick, setBatchTick] = useState(0); // เพิ่มค่าเพื่อโหลดรายการล็อตใหม่หลังยกเลิก/กู้คืน
+  const [editBatch, setEditBatch] = useState(null); // ฟอร์มแก้ข้อมูลล็อตที่เปิดอยู่ {id, name, category, price, expiryDate, note}
   const [pending, setPending] = useState(null); // การกระทำที่รอพิมพ์เลข 3 ตัวท้ายยืนยัน
   const [openGroups, setOpenGroups] = useState(() => new Set()); // โปรที่กางดูช่วงรหัสของแต่ละล็อตอยู่
   const [batches, setBatches] = useState({ total: 0, batches: [] });
@@ -565,6 +568,35 @@ export default function CouponPage({ branches, currentUser, onToast }) {
     }
   }
 
+  // แก้ข้อมูลทั้งล็อต (คีย์ผิด): รหัสไม่เปลี่ยน ทำได้เฉพาะล็อตที่ยังไม่มีใบไหนถูกใช้ (เซิร์ฟเวอร์เป็นคนตัดสิน)
+  async function saveBatchEdit() {
+    const e = editBatch;
+    if (!e || !e.name.trim()) { onToast?.("error", ERRORS.invalid_name); return; }
+    const r = await call(() => updateCouponBatch(token, e.id, { name: e.name.trim(), category: e.category, price: Number(e.price), expiryDate: e.expiryDate, note: e.note }));
+    if (r.started && r.result) {
+      setEditBatch(null);
+      setBatchTick((n) => n + 1);
+      onToast?.("success", `แก้ข้อมูลแล้ว ${r.result.changed.toLocaleString()} ใบ`);
+    }
+  }
+
+  // ลบล็อตที่ออกผิดทิ้งถาวร (ล็อตท้ายสุดของหมวด ที่ยังไม่เคยถูกใช้) เลขรันถอยกลับให้ออกใหม่ได้เลขเดิม
+  function handleDeleteBatch(x) {
+    askDigits({
+      title: "ยืนยันลบล็อตทิ้ง", code: x.lastCode, codeLabel: "รหัสสุดท้ายของล็อต", expect: last3(x.lastCode), label: "ลบล็อตทิ้ง", danger: true,
+      lines: [`${x.firstCode} – ${x.lastCode} (${x.quantity.toLocaleString()} ใบ)`, `ลบถาวร กู้คืนไม่ได้ เลขรันถอยกลับ ล็อตใหม่ในหมวดนี้จะเริ่มที่ ${x.firstCode} ใหม่ — ลบเฉพาะล็อตที่ยังไม่ได้แจก/ส่งรหัสให้ใคร`],
+      onConfirm: async () => {
+        const r = await call(() => deleteCouponBatch(token, x.id));
+        if (r.started && r.result) {
+          setEditBatch(null);
+          setBatchTick((n) => n + 1);
+          setCountersOk(false);
+          onToast?.("success", `ลบแล้ว ${r.result.deleted.toLocaleString()} ใบ · ล็อตถัดไปเริ่มที่ ${r.result.nextCode}`);
+        }
+      },
+    });
+  }
+
   // เพิ่ม/แก้ชื่อ/เปิด-ปิดหมวดรหัส: ตอบกลับเป็นรายการหมวดล่าสุด (เซิร์ฟเวอร์คือความจริง)
   async function saveCategory(category) {
     const r = await call(() => saveCouponCategory(token, category));
@@ -613,6 +645,15 @@ export default function CouponPage({ branches, currentUser, onToast }) {
       if (!g) { g = { key, prefix: b.prefix, name: b.name, price: b.price, latest: b, batches: [], total: 0 }; byKey.set(key, g); groups.push(g); }
       g.batches.push(b);
       g.total += b.quantity;
+    }
+  }
+  // ล็อตท้ายสุดของแต่ละหมวด (เลขรันมากสุด) = ล็อตเดียวที่ลบแล้วเลขถอยกลับได้
+  const latestOfPrefix = {};
+  {
+    const top = {};
+    for (const b of batches.batches) {
+      const n = Number(String(b.lastCode).split("-").pop());
+      if (!(b.prefix in top) || n > top[b.prefix]) { top[b.prefix] = n; latestOfPrefix[b.prefix] = b.id; }
     }
   }
   const toggleGroup = (key) => setOpenGroups((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
@@ -735,7 +776,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
 
       {tab === "batches" && (
         <div style={{ display: "grid", gap: 10 }}>
-          {canManage && <p style={{ fontSize: 12, color: "var(--text3)", margin: 0 }}>ออกล็อตผิดกาง (▸) โปรแล้วกด “ยกเลิกทั้งล็อต” = ปิดทุกใบที่ยังไม่เคยถูกใช้ (ใบที่ตัดไปแล้วไม่ถูกแตะ) กู้คืนได้ · ต้องพิมพ์เลข 3 ตัวท้ายของรหัสสุดท้ายในล็อตเพื่อยืนยัน</p>}
+          {canManage && <p style={{ fontSize: 12, color: "var(--text3)", margin: 0 }}>ออกล็อตผิดกาง (▸) โปรแล้วเลือก: “แก้ข้อมูล” (ชื่อ/หมวด/ราคา/วันหมดอายุ รหัสไม่เปลี่ยน) · “ยกเลิกทั้งล็อต” = ปิดทุกใบที่ยังไม่เคยถูกใช้ กู้คืนได้ · “ลบล็อต” = ลบทิ้งถาวรแล้วเลขรันถอยกลับ (เฉพาะล็อตท้ายสุดของหมวดที่ยังไม่มีใบถูกใช้) ยกเลิก/ลบต้องพิมพ์เลข 3 ตัวท้ายของรหัสสุดท้ายเพื่อยืนยัน</p>}
           {/* การ์ดต่อโปรแทนตาราง: ไหลตามความกว้างจอ ไม่ต้องเลื่อนซ้ายขวา */}
           {batches.total > batches.batches.length && (
             <p style={{ fontSize: 12, color: "#b45309", margin: 0 }}>แสดง {batches.batches.length.toLocaleString()} ล็อตล่าสุดจากทั้งหมด {batches.total.toLocaleString()} ล็อต โปรที่เก่ากว่านั้นอาจไม่แสดง และยอดรวมต่อโปรอาจน้อยกว่าจริง (ดูยอดจริงที่แท็บสถิติ)</p>
@@ -775,9 +816,31 @@ export default function CouponPage({ branches, currentUser, onToast }) {
                           </div>
                         </div>
                         {canManage && (
-                          <button className="btn btn-sm btn-secondary" disabled={isSaving} onClick={() => handleCancelBatch(x, !x.cancelledAt)}>
-                            {x.cancelledAt ? "กู้คืนล็อต" : "ยกเลิกทั้งล็อต"}
-                          </button>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <button className="btn btn-sm btn-secondary" disabled={isSaving} onClick={() => setEditBatch(editBatch?.id === x.id ? null : { id: x.id, name: x.name, category: x.category || "", price: String(x.price), expiryDate: String(x.expiryDate).slice(0, 10), note: x.note || "" })}>แก้ข้อมูล</button>
+                            <button className="btn btn-sm btn-secondary" disabled={isSaving} onClick={() => handleCancelBatch(x, !x.cancelledAt)}>
+                              {x.cancelledAt ? "กู้คืนล็อต" : "ยกเลิกทั้งล็อต"}
+                            </button>
+                            {latestOfPrefix[x.prefix] === x.id && (
+                              <button className="btn btn-sm btn-secondary" style={{ color: "#dc2626" }} disabled={isSaving} onClick={() => handleDeleteBatch(x)}>ลบล็อต</button>
+                            )}
+                          </div>
+                        )}
+                        {canManage && editBatch?.id === x.id && (
+                          <div style={{ flex: "1 1 100%", display: "grid", gap: 8, padding: 10, borderRadius: 8, background: "var(--surface2)" }}>
+                            <div style={{ fontSize: 12, color: "var(--text3)" }}>แก้ข้อมูลทั้งล็อต ({x.quantity.toLocaleString()} ใบ) รหัสไม่เปลี่ยน · ใช้ได้เฉพาะล็อตที่ยังไม่มีใบไหนถูกตัดใช้</div>
+                            <input className="input" placeholder="ชื่อคูปอง/โปร *" value={editBatch.name} maxLength={120} onChange={(e) => setEditBatch({ ...editBatch, name: e.target.value })} />
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <input className="input" placeholder="หมวด (ถ้ามี)" style={{ flex: "1 1 140px", minWidth: 0 }} value={editBatch.category} onChange={(e) => setEditBatch({ ...editBatch, category: e.target.value })} />
+                              <input className="input" type="number" min="0" placeholder="ราคา" style={{ flex: "1 1 110px", minWidth: 0 }} value={editBatch.price} onChange={(e) => setEditBatch({ ...editBatch, price: e.target.value })} />
+                              <input className="input" type="date" style={{ flex: "1 1 150px", minWidth: 0 }} value={editBatch.expiryDate} onChange={(e) => setEditBatch({ ...editBatch, expiryDate: e.target.value })} title="วันหมดอายุ" />
+                            </div>
+                            <input className="input" placeholder="หมายเหตุ" maxLength={200} value={editBatch.note} onChange={(e) => setEditBatch({ ...editBatch, note: e.target.value })} />
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button className="btn btn-sm btn-primary" disabled={isSaving} onClick={saveBatchEdit}>บันทึก</button>
+                              <button className="btn btn-sm btn-secondary" disabled={isSaving} onClick={() => setEditBatch(null)}>ปิด</button>
+                            </div>
+                          </div>
                         )}
                       </div>
                     ))}
