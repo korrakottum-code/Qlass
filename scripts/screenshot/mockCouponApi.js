@@ -116,6 +116,17 @@ export async function deleteCouponBatch(_t, batchId) {
   counters[b.prefix] = first - 1;
   return { deleted: before - coupons.length, nextNo: first, nextCode: `${b.prefix}-${pad(first)}` };
 }
+export async function fetchCouponAudit(_t, { action = null, limit = 50, offset = 0 } = {}) {
+  const now = Date.now();
+  const all = [
+    { at: new Date(now - 5 * 60000).toISOString(), action: "redeem", actor: "สมหญิง (แคชเชีย)", target: "D1-0000012", detail: { branchName: "Class บางแสน", name: "บุฟเฟต์ Botox กราม" } },
+    { at: new Date(now - 40 * 60000).toISOString(), action: "generate", actor: "ผู้ดูแลระบบ", target: "D1-0000501 – D1-0001000", detail: { count: 500, name: "บุฟเฟต์ botox ริ้วรอย", price: 1490 } },
+    { at: new Date(now - 3 * 3600000).toISOString(), action: "batch_cancel", actor: "ผู้ดูแลระบบ", target: "", detail: { firstCode: "T1-0000001", lastCode: "T1-0000500", name: "ขน 990", changed: 500, usedKept: 0 } },
+    { at: new Date(now - 26 * 3600000).toISOString(), action: "revert", actor: "แอดมินสาขา", target: "T1-0000001", detail: { branchName: "Class บางแสน" } },
+    { at: new Date(now - 27 * 3600000).toISOString(), action: "batch_delete", actor: "ผู้ดูแลระบบ", target: "T1-0000501 – T1-0000600", detail: { quantity: 100, deleted: 100, name: "ขน 990" } },
+  ].filter((e) => !action || e.action === action);
+  return { events: all.slice(offset, offset + limit), hasMore: all.length > offset + limit };
+}
 export async function fetchCouponStats(_t, { from = null, to = null } = {}) {
   const t = today();
   const shift = (d, n) => new Date(new Date(`${d}T00:00:00Z`).getTime() + n * 86400000).toISOString().slice(0, 10);
