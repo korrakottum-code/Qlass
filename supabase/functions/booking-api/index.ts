@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
  * Booking API สำหรับบอท Saifa AI (server-to-server)
  *
  *   GET  /v1/branches                        รหัสสาขาที่เปิดให้เรียกได้
+ *   GET  /v1/catalog                         รายการ SKU (โปรจาก Qlass) ที่เปิดให้จอง — โปรใหม่ขึ้นเอง
  *   POST /v1/availability/check              เช็กว่าคิวว่างไหม + เวลาทางเลือก
  *   GET  /v1/availability/slots?branch_code=&sku=&date=YYYY-MM-DD   ทุกช่อง 30 นาทีของวัน
  *   POST /v1/bookings                        จองคิวลง Qlass (คีย์ sandbox = dry-run ไม่เขียนจริง)
@@ -34,6 +35,7 @@ const configuredKeys: Array<{ kind: "production" | "sandbox"; key: string }> = [
 // จำกัดอัตรา (ต่อคีย์ ต่อนาที) นับจาก booking_api_log
 const RATE_LIMIT_PER_MINUTE: Record<string, number> = {
   "GET /v1/branches": 60,
+  "GET /v1/catalog": 60,
   "POST /v1/availability/check": 300,
   "GET /v1/availability/slots": 300,
   "POST /v1/bookings": 30,
@@ -170,6 +172,7 @@ Deno.serve(async (req) => {
 
   const known: Record<string, string[]> = {
     "/v1/branches": ["GET"],
+    "/v1/catalog": ["GET"],
     "/v1/availability/check": ["POST"],
     "/v1/availability/slots": ["GET"],
     "/v1/bookings": ["POST"],
@@ -227,6 +230,9 @@ Deno.serve(async (req) => {
     } else if (route === "/v1/branches") {
       const { data, error } = await supabase.rpc("booking_api_branches_v1");
       if (error) { status = 500; res = rpcError(error); } else res = respond({ branches: data });
+    } else if (route === "/v1/catalog") {
+      const { data, error } = await supabase.rpc("booking_api_catalog_v1");
+      if (error) { status = 500; res = rpcError(error); } else res = respond({ skus: data });
     } else if (route === "/v1/availability/check") {
       const body = await readJson(req);
       branchCode = cleanCode(body?.branch_code, 10);

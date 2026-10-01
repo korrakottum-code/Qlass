@@ -16,12 +16,13 @@
 --   drop function public.booking_api_evaluate_v1(text, text, timestamptz);
 --   drop function public.booking_api_resolve_v1(text, text);
 --   drop function public.booking_api_branches_v1();
+--   drop function public.booking_api_catalog_v1();
 --   drop function public.booking_api_free_rooms_v1(uuid, uuid, date, int, int);
 --   drop function public.booking_api_day_range_v1(uuid, uuid, date);
 --   drop function public.booking_api_room_status_v1(uuid, date, int, int);
 --   drop function public.booking_api_candidate_rooms_v1(uuid, uuid);
 --   drop table public.booking_api_log, public.booking_api_requests, public.booking_api_counters,
---              public.booking_api_config, public.booking_api_skus, public.booking_api_branches;
+--              public.booking_api_config, public.booking_api_sku_overrides, public.booking_api_skus, public.booking_api_branches;
 
 set local lock_timeout = '3s';
 
@@ -51,6 +52,16 @@ create table if not exists public.booking_api_skus (
 create table if not exists public.booking_api_config (
   key    text primary key,
   value  text not null
+);
+
+-- SKU อัตโนมัติจากโปรใน Qlass: ทุกโปรที่เปิดอยู่และราคา > 0 เป็น SKU `PM-` + รหัสโปร 10 ตัวแรก (คงที่ตลอด ไม่ต้องจับคู่มือ)
+-- โปรใหม่ที่เพิ่มในหน้าจัดการโปรจะขึ้นในแคตตาล็อกเองทันที; ตารางนี้ใช้ "ยกเว้น/เปิดเฉพาะราย" เท่านั้น:
+--   enabled = false → ซ่อนโปรนี้จากบอท (ทั้งที่ราคา > 0) · enabled = true → เปิดให้บอทจองแม้ราคา 0 (เช่น โปรปรึกษาฟรี)
+create table if not exists public.booking_api_sku_overrides (
+  sku         text primary key check (sku ~ '^PM-[0-9A-F]{10}$'),
+  enabled     boolean not null,
+  note        text,
+  created_at  timestamptz not null default now()
 );
 
 create table if not exists public.booking_api_counters (
@@ -84,12 +95,13 @@ create index if not exists booking_api_log_rate_idx on public.booking_api_log (k
 alter table public.booking_api_branches enable row level security;
 alter table public.booking_api_skus enable row level security;
 alter table public.booking_api_config enable row level security;
+alter table public.booking_api_sku_overrides enable row level security;
 alter table public.booking_api_counters enable row level security;
 alter table public.booking_api_requests enable row level security;
 alter table public.booking_api_log enable row level security;
-revoke all on table public.booking_api_branches, public.booking_api_skus, public.booking_api_config,
+revoke all on table public.booking_api_branches, public.booking_api_skus, public.booking_api_config, public.booking_api_sku_overrides,
   public.booking_api_counters, public.booking_api_requests, public.booking_api_log from anon, authenticated;
-grant all on table public.booking_api_branches, public.booking_api_skus, public.booking_api_config,
+grant all on table public.booking_api_branches, public.booking_api_skus, public.booking_api_config, public.booking_api_sku_overrides,
   public.booking_api_counters, public.booking_api_requests, public.booking_api_log to service_role;
 grant usage, select on sequence public.booking_api_log_id_seq to service_role;
 
@@ -253,8 +265,10 @@ as $$
             from public.booking_api_branches ba join public.branches b on b.id = ba.branch_id) x;
 $$;
 
--- แปลง (รหัสสาขา, SKU) เป็นสาขา/บริการ/โปร/ราคา/ความยาวคิว; สาขา Class Go ใช้คอลัมน์ go_*
--- raise INVALID_BRANCH / INVALID_SKU; procedure_id เป็น null = บริการนี้ไม่มีที่สาขานั้น
+-- แปลง (รหัสสาขา, SKU) เป็นสาขา/บริการ/โปร/ราคา/ความยาวคิว
+-- SKU มี 2 แบบ: (1) `PM-xxxxxxxxxx` อัตโนมัติจากโปร (ราคา > 0 หรือเปิดเฉพาะราย) (2) แถวใน booking_api_skus (ตัวทดสอบ/ชื่อพิเศษ)
+-- ขอบเขตสาขา: โปร/บริการของ Class Go (category = 'Class Go') ใช้ได้เฉพาะสาขา Class Go และกลับกัน — ผิดกลุ่ม = procedure_id เป็น null
+-- raise INVALID_BRANCH / INVALID_SKU; procedure_id เป็น null = บริการนี้ไม่มีที่สาขานั้น (SERVICE_NOT_AT_BRANCH)
 create or replace function public.booking_api_resolve_v1(p_branch_code text, p_sku text)
 returns table (branch_id uuid, branch_active boolean, procedure_id uuid, promo_id uuid, price numeric, dur int)
 language plpgsql
@@ -265,19 +279,44 @@ as $$
 declare
   v_ba public.booking_api_branches;
   v_bname text;
+  v_is_go_branch boolean;
+  v_code text := upper(btrim(coalesce(p_sku, '')));
   v_sku public.booking_api_skus;
   v_proc uuid;
   v_promo uuid;
   v_blocks int;
   v_promo_price numeric;
+  v_n int;
+  v_pr public.promos;
+  v_override boolean;
+  v_cat text;
 begin
   select * into v_ba from public.booking_api_branches where code = upper(btrim(coalesce(p_branch_code, '')));
   if not found then raise exception 'INVALID_BRANCH'; end if;
   select b.name into v_bname from public.branches b where b.id = v_ba.branch_id;
-  select * into v_sku from public.booking_api_skus where sku = upper(btrim(coalesce(p_sku, ''))) and active;
+  v_is_go_branch := v_bname like 'Class Go %';
+
+  if v_code ~ '^PM-[0-9A-F]{10}$' then
+    select count(*) into v_n from public.promos x where upper(left(replace(x.id::text, '-', ''), 10)) = substr(v_code, 4) and x.active;
+    if v_n <> 1 then raise exception 'INVALID_SKU'; end if;
+    select * into v_pr from public.promos x where upper(left(replace(x.id::text, '-', ''), 10)) = substr(v_code, 4) and x.active;
+    select o.enabled into v_override from public.booking_api_sku_overrides o where o.sku = v_code;
+    if not coalesce(v_override, coalesce(v_pr.price, 0) > 0) then raise exception 'INVALID_SKU'; end if;
+    select p.category, p.blocks into v_cat, v_blocks from public.procedures p where p.id = v_pr.procedure_id;
+    if not found then raise exception 'INVALID_SKU'; end if;
+    if (coalesce(v_cat, '') = 'Class Go') = v_is_go_branch then
+      v_proc := v_pr.procedure_id; v_promo := v_pr.id; v_promo_price := v_pr.price;
+    else
+      v_proc := null; v_promo := null; v_promo_price := null;
+    end if;
+    return query select v_ba.branch_id, v_ba.active, v_proc, v_promo, v_promo_price, v_blocks;
+    return;
+  end if;
+
+  select * into v_sku from public.booking_api_skus where sku = v_code and active;
   if not found then raise exception 'INVALID_SKU'; end if;
 
-  if v_bname like 'Class Go %' then
+  if v_is_go_branch then
     v_proc := v_sku.go_procedure_id; v_promo := v_sku.go_promo_id;
   else
     v_proc := v_sku.procedure_id; v_promo := v_sku.promo_id;
@@ -296,6 +335,36 @@ begin
   return query select v_ba.branch_id, v_ba.active, v_proc, v_promo,
                       coalesce(v_sku.price, v_promo_price), coalesce(v_sku.duration_blocks, v_blocks);
 end;
+$$;
+
+-- แคตตาล็อก SKU ที่เปิดให้บอทจอง (GET /v1/catalog): โปรที่เปิดอยู่ ราคา > 0 (หรือเปิดเฉพาะราย) ซ่อนเฉพาะรายตาม overrides
+-- โปรใหม่ที่เพิ่มใน Qlass ขึ้นที่นี่เองทันที; scope = class_go (ใช้ได้เฉพาะสาขา Class Go) | standard (สาขาอื่น)
+create or replace function public.booking_api_catalog_v1()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with p as (
+    select pr.id, pr.name, pr.price, pr.procedure_id, 'PM-' || upper(left(replace(pr.id::text, '-', ''), 10)) as sku
+      from public.promos pr
+     where pr.active
+  ),
+  uniq as (
+    -- รหัสสั้นซ้ำกับโปรอื่นที่เปิดอยู่ (โอกาสน้อยมาก) = กำกวม ไม่ออกรหัส (ฟังก์ชันจองก็ปฏิเสธรหัสแบบนี้)
+    select sku from p group by sku having count(*) = 1
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'sku', p.sku, 'name', btrim(p.name), 'price', p.price, 'service', pc.name, 'category', coalesce(pc.category, ''),
+           'duration_minutes', pc.blocks * 5, 'scope', case when pc.category = 'Class Go' then 'class_go' else 'standard' end)
+           order by coalesce(pc.category, ''), pc.name, p.price, btrim(p.name), p.sku), '[]'::jsonb)
+    from p
+    join uniq u on u.sku = p.sku
+    join public.procedures pc on pc.id = p.procedure_id
+    left join public.booking_api_sku_overrides o on o.sku = p.sku
+   where coalesce(pc.blocks, 0) > 0
+     and coalesce(o.enabled, coalesce(p.price, 0) > 0);
 $$;
 
 -- ประเมินคำขอ (ใช้ร่วมกันทั้งเช็กคิวและจองคิว): คืน available/reason/alternatives + ข้อมูลภายในที่การจองต้องใช้
@@ -474,7 +543,8 @@ begin
   if v_skucode like 'TEST-%' and not coalesce(p_dry_run, false) then raise exception 'INVALID_SKU'; end if;
   if length(v_name) < 1 or length(v_name) > 100 or v_type not in ('new', 'old') then raise exception 'INVALID_CUSTOMER'; end if;
   if v_digits ~ '^66[0-9]{9}$' then v_digits := '0' || substr(v_digits, 3); end if;
-  if v_digits !~ '^0[0-9]{8,9}$' then raise exception 'INVALID_CUSTOMER'; end if;
+  -- เบอร์ไทย: มือถือ 06/08/09 + 8 หลัก (รวม 10) หรือเบอร์บ้าน 02-07 + 7 หลัก (รวม 9)
+  if v_digits !~ '^(0[689][0-9]{8}|0[2-7][0-9]{7})$' then raise exception 'INVALID_CUSTOMER'; end if;
   v_phone := v_digits;
 
   v_hash := md5(concat_ws('|', v_code, v_skucode, coalesce(extract(epoch from p_start)::text, ''), v_name, v_phone, v_type, v_note));
@@ -564,6 +634,7 @@ revoke all on function
   public.booking_api_free_rooms_v1(uuid, uuid, date, int, int),
   public.booking_api_day_range_v1(uuid, uuid, date),
   public.booking_api_branches_v1(),
+  public.booking_api_catalog_v1(),
   public.booking_api_resolve_v1(text, text),
   public.booking_api_evaluate_v1(text, text, timestamptz),
   public.booking_api_check_v1(text, text, timestamptz),
@@ -576,6 +647,7 @@ grant execute on function
   public.booking_api_free_rooms_v1(uuid, uuid, date, int, int),
   public.booking_api_day_range_v1(uuid, uuid, date),
   public.booking_api_branches_v1(),
+  public.booking_api_catalog_v1(),
   public.booking_api_resolve_v1(text, text),
   public.booking_api_evaluate_v1(text, text, timestamptz),
   public.booking_api_check_v1(text, text, timestamptz),

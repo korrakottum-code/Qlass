@@ -22,10 +22,10 @@ const norm = (s) => s
 const nSql = norm(sql);
 const nOrig = norm(original);
 
-const TABLES = ["booking_api_branches", "booking_api_skus", "booking_api_config", "booking_api_counters", "booking_api_requests", "booking_api_log"];
+const TABLES = ["booking_api_branches", "booking_api_skus", "booking_api_sku_overrides", "booking_api_config", "booking_api_counters", "booking_api_requests", "booking_api_log"];
 const FUNCTIONS = [
   "booking_api_candidate_rooms_v1", "booking_api_room_status_v1", "booking_api_free_rooms_v1", "booking_api_day_range_v1",
-  "booking_api_branches_v1", "booking_api_resolve_v1", "booking_api_evaluate_v1", "booking_api_check_v1", "booking_api_slots_v1", "booking_api_create_v1",
+  "booking_api_branches_v1", "booking_api_catalog_v1", "booking_api_resolve_v1", "booking_api_evaluate_v1", "booking_api_check_v1", "booking_api_slots_v1", "booking_api_create_v1",
 ];
 
 test("Booking API: ตารางใหม่ปิดจากคีย์หน้าเว็บ (RLS เปิดไม่มี policy ถอนสิทธิ์) และไม่แตะตารางเดิม", () => {
@@ -41,7 +41,7 @@ test("Booking API: ตารางใหม่ปิดจากคีย์ห�
   assert.doesNotMatch(sql, /\bupdate public\.(queues|rooms|staff|branches)\b|\bdelete from\b/i);
 });
 
-test("Booking API: ฟังก์ชันทั้ง 10 ตัวถอนสิทธิ์จาก public/anon/authenticated และให้ service_role เท่านั้น", () => {
+test("Booking API: ฟังก์ชันทั้ง 11 ตัวถอนสิทธิ์จาก public/anon/authenticated และให้ service_role เท่านั้น", () => {
   const created = [...sql.matchAll(/create or replace function public\.(booking_api_\w+)\(/g)].map((m) => m[1]).sort();
   assert.deepEqual(created, [...FUNCTIONS].sort());
   const revoke = sql.slice(sql.indexOf("revoke all on function"), sql.indexOf("grant execute on function"));
@@ -158,3 +158,22 @@ test("Booking API: SKU ทดสอบ TEST-* ใช้ได้เฉพาะ 
   assert.ok(guard < body.indexOf("insert into public.queues"));
 });
 
+
+test("Booking API: SKU อัตโนมัติจากโปร (PM-…) ราคา > 0, ยกเว้นรายตัวได้, Class Go แยกกลุ่มสาขา และโปรใหม่ไม่ต้องจับคู่มือ", () => {
+  const resolve = sql.slice(sql.indexOf("function public.booking_api_resolve_v1"), sql.indexOf("function public.booking_api_catalog_v1"));
+  assert.match(resolve, /v_code ~ '\^PM-\[0-9A-F\]\{10\}\$'/);
+  assert.match(resolve, /coalesce\(v_override, coalesce\(v_pr\.price, 0\) > 0\)/);
+  assert.match(resolve, /\(coalesce\(v_cat, ''\) = 'Class Go'\) = v_is_go_branch/);
+  // ต้องเป็นโปรที่เปิดอยู่ และรหัสสั้นต้องไม่กำกวม (เจอ 1 โปรเท่านั้น)
+  assert.match(resolve, /if v_n <> 1 then raise exception 'INVALID_SKU'/);
+  const catalog = sql.slice(sql.indexOf("function public.booking_api_catalog_v1"), sql.indexOf("-- ประเมินคำขอ"));
+  assert.match(catalog, /where pr\.active/);
+  assert.match(catalog, /coalesce\(o\.enabled, coalesce\(p\.price, 0\) > 0\)/);
+  // รหัสสั้นที่ซ้ำกันไม่ออกรหัส (นับแบบกลุ่มเดียว ไม่เทียบทีละคู่)
+  assert.match(catalog, /group by sku having count\(\*\) = 1/);
+  // รหัสในแคตตาล็อกต้องสร้างด้วยสูตรเดียวกับที่ resolve ใช้ค้น
+  assert.match(catalog, /'PM-' \|\| upper\(left\(replace\(pr\.id::text, '-', ''\), 10\)\)/);
+  assert.match(resolve, /upper\(left\(replace\(x\.id::text, '-', ''\), 10\)\) = substr\(v_code, 4\)/);
+  // edge มี /v1/catalog อ่านอย่างเดียว
+  assert.match(edge, /"\/v1\/catalog": \["GET"\]/);
+});
