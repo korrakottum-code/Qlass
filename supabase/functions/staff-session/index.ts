@@ -341,6 +341,19 @@ Deno.serve(async (req) => {
         throw error;
       };
 
+      // บันทึกประวัติการทำรายการ (ใครทำอะไร) — เรียกหลังรายการหลักสำเร็จแล้วเท่านั้น และไม่เคยทำให้รายการหลักพัง:
+      // ถ้าเขียนบันทึกไม่ได้ แค่ log ลงคอนโซลของฟังก์ชัน (รายการหลักผ่านไปแล้ว)
+      const audit = async (action: string, target: string, detail: Record<string, unknown>) => {
+        try {
+          const { error } = await supabase.rpc("coupon_audit_write_v1", {
+            p_actor_staff_id: staffId, p_action: action, p_target: target, p_detail: detail,
+          });
+          if (error) console.error("coupon audit write failed", action, error.message);
+        } catch (err) {
+          console.error("coupon audit write failed", action, err instanceof Error ? err.message : err);
+        }
+      };
+
       if (body.action === "coupon_lookup") {
         if (!couponUseRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
         const code = couponCode(body.code);
@@ -407,6 +420,7 @@ Deno.serve(async (req) => {
         if (!code) return response({ error: "invalid_coupon_payload" }, 400, origin);
         const { data, error } = await supabase.rpc("coupon_cancel_v1", { p_code: code, p_cancel: body.cancel !== false });
         if (error) return fail(error);
+        await audit(body.cancel !== false ? "coupon_cancel" : "coupon_restore", code, { name: data?.name ?? null, price: data?.price ?? null });
         return response({ coupon: maskCoupon(data) }, 200, origin);
       }
 
@@ -417,6 +431,7 @@ Deno.serve(async (req) => {
         }
         const { data, error } = await supabase.rpc("coupon_cancel_batch_v1", { p_batch_id: body.batchId, p_cancel: body.cancel !== false });
         if (error) return fail(error);
+        await audit(body.cancel !== false ? "batch_cancel" : "batch_restore", "", { batchId: body.batchId, changed: data?.changed ?? null, usedKept: data?.usedKept ?? null });
         return response(data, 200, origin);
       }
 
@@ -452,6 +467,19 @@ Deno.serve(async (req) => {
         return response(data, 200, origin);
       }
 
+      // ประวัติการทำรายการ (อ่านอย่างเดียว): ระดับเดียวกับสถิติ
+      if (body.action === "coupon_audit") {
+        if (!couponStatsRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        const known = ["generate", "coupon_cancel", "coupon_restore", "batch_cancel", "batch_restore", "category_create", "category_update", "batch_update", "batch_delete", "redeem", "revert"];
+        const action = body.auditAction == null || body.auditAction === "" ? null : String(body.auditAction);
+        if (action !== null && !known.includes(action)) return response({ error: "invalid_coupon_payload" }, 400, origin);
+        const limit = Number.isInteger(body.limit) ? Math.min(Math.max(body.limit, 1), 200) : 50;
+        const offset = Number.isInteger(body.offset) ? Math.max(body.offset, 0) : 0;
+        const { data, error } = await supabase.rpc("coupon_audit_v1", { p_limit: limit, p_offset: offset, p_action: action });
+        if (error) return fail(error);
+        return response(data, 200, origin);
+      }
+
       if (body.action === "coupon_stats") {
         if (!couponStatsRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
         const from = body.from == null ? null : validDay(body.from);
@@ -481,6 +509,9 @@ Deno.serve(async (req) => {
           p_active: typeof c.active === "boolean" ? c.active : null, p_create: c.create === true,
         });
         if (error) return fail(error);
+        await audit(c.create === true ? "category_create" : "category_update", c.prefix.slice(0, 10).toUpperCase(), {
+          label: c.label.slice(0, 120), active: typeof c.active === "boolean" ? c.active : null,
+        });
         return response({ categories: data }, 200, origin);
       }
 
@@ -511,6 +542,9 @@ Deno.serve(async (req) => {
           p_start_after: Number.isInteger(g.startAfter) ? g.startAfter : null,
         });
         if (error) return fail(error);
+        await audit("generate", `${data?.firstCode ?? ""} – ${data?.lastCode ?? ""}`, {
+          batchId: data?.batchId ?? null, count: data?.count ?? null, name: text(g.name, 120), price: Number(g.price ?? 0), expiryDate,
+        });
         return response(data, 200, origin);
       }
 

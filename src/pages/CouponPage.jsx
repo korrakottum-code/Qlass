@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { formatThaiDate } from "../utils/helpers";
 import { addDays as shiftDay } from "../utils/queueRanges"; // ย้ายวันที่ด้วยตัวช่วยของโปรเจกต์ (ห้ามตัดวันจาก toISOString)
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
-import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters, cancelCouponBatch, updateCouponBatch, deleteCouponBatch, fetchCouponStats, fetchCouponCategories, saveCouponCategory } from "../utils/couponApi";
+import { getServerSessionToken, couponsAvailable, lookupCoupon, listCoupons, listCouponBatches, redeemCoupon, revertCouponRedemption, cancelCoupon, generateCoupons, fetchCouponCounters, cancelCouponBatch, updateCouponBatch, deleteCouponBatch, fetchCouponAudit, fetchCouponStats, fetchCouponCategories, saveCouponCategory } from "../utils/couponApi";
 import { serverErrorCode } from "../utils/sessionApi";
 import Modal, { ModalHeader, ModalBody } from "../components/Modal";
 
@@ -334,6 +334,79 @@ function CategoryRow({ c, onSave, busy }) {
   );
 }
 
+// ประวัติการทำรายการ: ใครทำอะไรเมื่อไร (ออก/ยกเลิก/กู้คืน/แก้/ลบล็อต, จัดการหมวด, ตัดใช้/ย้อน) เรียงใหม่→เก่า แบ่งหน้าที่เซิร์ฟเวอร์
+const AUDIT_LABELS = {
+  generate: "ออกล็อต", coupon_cancel: "ยกเลิกคูปอง", coupon_restore: "กู้คืนคูปอง", batch_cancel: "ยกเลิกทั้งล็อต", batch_restore: "กู้คืนล็อต",
+  batch_update: "แก้ข้อมูลล็อต", batch_delete: "ลบล็อต", category_create: "เพิ่มหมวดรหัส", category_update: "แก้หมวดรหัส", redeem: "ตัดคูปอง", revert: "ย้อนการตัด",
+};
+const AUDIT_TONE = { batch_delete: "#dc2626", batch_cancel: "#dc2626", coupon_cancel: "#dc2626", revert: "#d97706", batch_update: "#2563eb" };
+function auditSummary(e) {
+  const d = e.detail || {};
+  const range = d.firstCode ? `${d.firstCode} – ${d.lastCode}` : e.target;
+  switch (e.action) {
+    case "generate": return [e.target, `${num(d.count)} ใบ`, d.name, d.price != null ? baht(d.price) : null];
+    case "batch_cancel": case "batch_restore": return [range, d.name, d.changed != null ? `${num(d.changed)} ใบ` : null];
+    case "batch_update": return [range, d.after?.name && d.before?.name !== d.after.name ? `${d.before?.name} → ${d.after.name}` : d.after?.name,
+      d.after?.price != null && Number(d.before?.price) !== Number(d.after.price) ? `${baht(d.before?.price)} → ${baht(d.after.price)}` : null];
+    case "batch_delete": return [range, d.name, `${num(d.deleted)} ใบ`, d.cancelled ? "(ยกเลิกไว้แล้ว)" : null];
+    case "redeem": case "revert": return [e.target, d.name, d.branchName];
+    case "category_create": case "category_update": return [e.target, d.label, d.active === false ? "ปิดใช้งาน" : null];
+    default: return [e.target, d.name];
+  }
+}
+function AuditView({ token, onToast }) {
+  const [filter, setFilter] = useState("");
+  const [events, setEvents] = useState([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const reqId = useRef(0); // ยอมรับเฉพาะผลของคำขอล่าสุด (เปลี่ยนตัวกรองรัว ๆ)
+  const load = useCallback(async (offset) => {
+    const id = ++reqId.current;
+    setLoading(true);
+    try {
+      const d = await fetchCouponAudit(token, { action: filter || null, limit: 50, offset });
+      if (id !== reqId.current) return;
+      setEvents((prev) => (offset === 0 ? d.events : [...prev, ...d.events]));
+      setHasMore(!!d.hasMore);
+    } catch (e) {
+      if (id === reqId.current) onToast?.("error", await explain(e));
+    } finally {
+      if (id === reqId.current) setLoading(false);
+    }
+  }, [token, filter, onToast]);
+  useEffect(() => {
+    const t = setTimeout(() => load(0), 0);
+    return () => clearTimeout(t);
+  }, [load]);
+
+  return (
+    <div style={{ display: "grid", gap: 10 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <select className="input" style={{ width: 200, maxWidth: "100%" }} value={filter} onChange={(e) => { setEvents([]); setFilter(e.target.value); }} aria-label="กรองประเภทรายการ">
+          <option value="">ทุกประเภท</option>
+          {Object.entries(AUDIT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <button className="btn btn-sm btn-secondary" disabled={loading} onClick={() => load(0)}>{loading ? "กำลังโหลด…" : "รีเฟรช"}</button>
+        <span style={{ fontSize: 12, color: "var(--text3)" }}>ใครทำอะไรเมื่อไร (ใหม่ → เก่า)</span>
+      </div>
+      {events.map((e, i) => (
+        <div key={`${e.at}-${e.action}-${i}`} className="card" style={{ padding: "8px 12px" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+            <strong style={{ color: AUDIT_TONE[e.action] || "inherit" }}>{AUDIT_LABELS[e.action] || e.action}</strong>
+            <span style={{ fontSize: 12, color: "var(--text3)" }}>{new Date(e.at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}</span>
+            <span style={{ fontSize: 12, marginLeft: "auto" }}>โดย {e.actor || "—"}</span>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text3)", overflowWrap: "anywhere", marginTop: 2 }}>
+            {auditSummary(e).filter(Boolean).join(" · ")}
+          </div>
+        </div>
+      ))}
+      {!loading && events.length === 0 && <div style={{ textAlign: "center", color: "var(--text3)", padding: 16 }}>ยังไม่มีประวัติ</div>}
+      {hasMore && <button className="btn btn-secondary" disabled={loading} onClick={() => load(events.length)}>{loading ? "กำลังโหลด…" : "โหลดเพิ่ม"}</button>}
+    </div>
+  );
+}
+
 function CategoriesView({ categories, onSave, busy }) {
   const [prefix, setPrefix] = useState("");
   const [label, setLabel] = useState("");
@@ -628,7 +701,7 @@ export default function CouponPage({ branches, currentUser, onToast }) {
     return <div className="card" style={{ padding: 24 }}>ระบบคูปองต้องเปิดโหมดเซสชันฝั่งเซิร์ฟเวอร์ (VITE_USE_SERVER_SESSION=true)</div>;
   }
 
-  const tabs = [["redeem", "🎟️ ตัดคูปอง"], ["list", "📋 รายการ"], ["batches", "📦 ล็อต/ช่วงรหัส"], ...(canStats ? [["stats", "📊 สถิติ"]] : []), ...(canManage ? [["generate", "➕ ออกคูปอง"], ["categories", "🏷️ หมวดรหัส"]] : [])];
+  const tabs = [["redeem", "🎟️ ตัดคูปอง"], ["list", "📋 รายการ"], ["batches", "📦 ล็อต/ช่วงรหัส"], ...(canStats ? [["stats", "📊 สถิติ"], ["audit", "🧾 ประวัติ"]] : []), ...(canManage ? [["generate", "➕ ออกคูปอง"], ["categories", "🏷️ หมวดรหัส"]] : [])];
   // ตัวอย่างช่วงรหัสที่จะได้ (คำนวณแบบเดียวกับที่เซิร์ฟเวอร์ทำ: ต่อจากเลขล่าสุดของหมวด หรือเลขที่ระบุ ถ้ามากกว่า)
   const pad7 = (n) => String(n).padStart(7, "0");
   const lastNo = Math.max(counters[gen.prefix] || 0, gen.startAfter === "" ? 0 : Number(gen.startAfter) || 0);
@@ -771,6 +844,8 @@ export default function CouponPage({ branches, currentUser, onToast }) {
       )}
 
       {tab === "categories" && canManage && <CategoriesView categories={categories} onSave={saveCategory} busy={isSaving} />}
+
+      {tab === "audit" && canStats && <AuditView token={token} onToast={onToast} />}
 
       {tab === "stats" && canStats && <StatsView token={token} onToast={onToast} labelOf={labelOf} />}
 

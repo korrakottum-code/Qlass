@@ -260,3 +260,63 @@ test("ลบล็อต: เก็บสำเนาประวัติที
   assert.deepEqual([...order].sort((a, b) => a - b), order);
   assert.match(body, /'redemptions', v_history/);
 });
+
+// ── ประวัติการทำรายการ (migration 20260930150000) ──
+const auditSql = read("../supabase/migrations/20260930150000_coupon_audit_log.sql").replace(/^\s*--.*$/gm, "");
+
+test("ประวัติคูปอง: ตารางปิดจากคีย์หน้าเว็บ ฟังก์ชันเปิดให้ service_role เท่านั้น และไม่ drop/alter ของเดิม", () => {
+  assert.match(auditSql, /alter table public\.coupon_audit_log enable row level security;/i);
+  assert.match(auditSql, /revoke all on table public\.coupon_audit_log from anon, authenticated;/i);
+  assert.doesNotMatch(auditSql, /create policy|drop |alter table public\.(coupons|coupon_redemptions|coupon_batches|coupon_counters|coupon_categories)\b|truncate|delete from/i);
+  const fns = [...auditSql.matchAll(/create or replace function public\.(coupon_\w+_v1)\(/gi)].map((m) => m[1]).sort();
+  assert.deepEqual(fns, ["coupon_audit_v1", "coupon_audit_write_v1"]);
+  assert.match(auditSql, /revoke all on function[\s\S]*from public, anon, authenticated;/i);
+  assert.match(auditSql, /grant execute on function[\s\S]*to service_role;/i);
+});
+
+test("ประวัติคูปอง: อ่านรวม 4 แหล่ง แบ่งหน้าแบบจำกัดแหล่งละ offset+limit+1 และจำกัด limit ไม่เกิน 200", () => {
+  const body = auditSql.slice(auditSql.indexOf("function public.coupon_audit_v1"));
+  for (const src of ["from public.coupon_audit_log", "from public.coupon_batch_log", "from public.coupon_redemptions r join public.coupons c"]) {
+    assert.ok(body.includes(src), src);
+  }
+  assert.equal((body.match(/union all/g) || []).length, 3);
+  assert.equal((body.match(/limit v_take/g) || []).length, 4);
+  assert.match(body, /least\(greatest\(coalesce\(p_limit, 50\), 1\), 200\)/);
+});
+
+test("edge function: ทุกรายการที่แก้ข้อมูลคูปองเขียนประวัติหลังสำเร็จ และเขียนพลาดไม่ทำให้รายการหลักพัง", () => {
+  const helper = edge.slice(edge.indexOf("const audit = async"), edge.indexOf('if (body.action === "coupon_lookup")'));
+  assert.match(helper, /try \{/);
+  assert.match(helper, /catch \(err\)/);
+  assert.doesNotMatch(helper, /throw|return response/);
+  const cases = [
+    ['body.action === "coupon_cancel")', 'audit(body.cancel !== false ? "coupon_cancel"'],
+    ['body.action === "coupon_cancel_batch")', 'audit(body.cancel !== false ? "batch_cancel"'],
+    ['body.action === "coupon_category_save")', 'audit(c.create === true ? "category_create"'],
+    ['body.action === "coupon_generate")', 'audit("generate"'],
+  ];
+  for (const [start, call] of cases) {
+    const act = edge.slice(edge.indexOf(start));
+    const block = act.slice(0, act.indexOf("\n      }\n"));
+    assert.ok(block.includes(call), start);
+    // เขียนประวัติต้องมาหลังรายการหลักสำเร็จ (หลังเช็ค error) เท่านั้น
+    assert.ok(block.indexOf("if (error) return fail(error)") < block.indexOf("await audit("), start);
+  }
+});
+
+test("edge function: อ่านประวัติได้เฉพาะ superadmin/head_admin/admin และตัวกรองประเภทต้องอยู่ในรายการที่รู้จัก", () => {
+  const act = edge.slice(edge.indexOf('body.action === "coupon_audit")'));
+  const block = act.slice(0, act.indexOf("\n      }\n"));
+  assert.ok(block.indexOf("couponStatsRoles.has(role)") >= 0 && block.indexOf("couponStatsRoles.has(role)") < block.indexOf("supabase.rpc"));
+  assert.match(block, /known\.includes\(action\)/);
+  assert.match(block, /Math\.min\(Math\.max\(body\.limit, 1\), 200\)/);
+});
+
+test("หน้าคูปอง: แท็บประวัติเฉพาะผู้ที่ดูสถิติได้ และกันผลโหลดเก่าทับผลใหม่", () => {
+  const page = read("../src/pages/CouponPage.jsx");
+  assert.match(page, /canStats \? \[\["stats", "📊 สถิติ"\], \["audit", "🧾 ประวัติ"\]\]/);
+  assert.match(page, /tab === "audit" && canStats && <AuditView/);
+  const view = page.slice(page.indexOf("function AuditView"), page.indexOf("function CategoriesView"));
+  assert.match(view, /reqId\.current/);
+  assert.match(view, /if \(id !== reqId\.current\) return;/);
+});

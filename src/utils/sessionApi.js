@@ -77,6 +77,9 @@ export function createSessionApi(invoke) {
     async cancelCoupon(token, code, cancel = true) {
       return (await callSessionFunction({ action: "coupon_cancel", token, code, cancel })).coupon;
     },
+    fetchCouponAudit(token, { action = null, limit = 50, offset = 0 } = {}) {
+      return callSessionFunction({ action: "coupon_audit", token, auditAction: action, limit, offset });
+    },
     async fetchCouponStats(token, { from = null, to = null } = {}) {
       return (await callSessionFunction({ action: "coupon_stats", token, from, to })).stats;
     },
