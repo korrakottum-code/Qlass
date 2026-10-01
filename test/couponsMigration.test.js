@@ -187,3 +187,55 @@ test("จัดการหมวดรหัส: เฉพาะ superadmin/hea
   assert.match(page, /categories\.filter\(\(c\) => c\.active\)/);
   assert.match(page, /tab === "categories" && canManage/);
 });
+
+// ── แก้ข้อมูลล็อต / ลบล็อต (migration 20260930120000) ──
+const batchSql = read("../supabase/migrations/20260930120000_coupon_batch_edit_delete.sql").replace(/^\s*--.*$/gm, "");
+
+test("แก้/ลบล็อต: ฟังก์ชันและตารางบันทึกปิดจากคีย์หน้าเว็บ เปิดให้ service_role เท่านั้น", () => {
+  assert.match(batchSql, /alter table public\.coupon_batch_log enable row level security;/i);
+  assert.match(batchSql, /revoke all on table public\.coupon_batch_log from anon, authenticated;/i);
+  assert.doesNotMatch(batchSql, /create policy/i);
+  const fns = [...batchSql.matchAll(/create or replace function public\.(coupon_\w+_v1)\(/gi)].map((m) => m[1]);
+  assert.deepEqual(fns.sort(), ["coupon_batch_delete_v1", "coupon_batch_update_v1"]);
+  for (const fn of fns) assert.match(batchSql, new RegExp(String.raw`revoke all on function[\s\S]*public\.${fn}\([\s\S]*from public, anon, authenticated;`, "i"), fn);
+  assert.match(batchSql, /grant execute on function[\s\S]*to service_role;/i);
+});
+
+test("ลบล็อต: ต้องเป็นล็อตท้ายสุดของหมวด ไม่มีการใช้/ประวัติ ล็อกตัวนับก่อน และถอยตัวนับไปก่อนล็อตนั้น", () => {
+  const body = batchSql.slice(batchSql.indexOf("function public.coupon_batch_delete_v1"));
+  // ล็อกล็อต → ล็อกตัวนับ → ล็อกแถวคูปอง แล้วค่อยตรวจ/ลบ (ลำดับเดียวกับออกล็อตที่ล็อกตัวนับก่อนเสมอ ไม่เกิด deadlock)
+  const order = ["from public.coupon_batches where id = p_batch_id for update", "from public.coupon_counters where prefix = b.prefix for update", "from public.coupons where batch_id = b.id for update", "raise exception 'batch_has_used'", "delete from public.coupons", "update public.coupon_counters set last_no = b.first_no - 1"].map((s) => body.indexOf(s));
+  assert.ok(order.every((n) => n >= 0), "ต้องมีครบทุกขั้น: " + order.join(","));
+  assert.deepEqual([...order].sort((a, b) => a - b), order);
+  assert.match(body, /k\.last_no <> b\.last_no then raise exception 'batch_not_latest'/);
+  // ประวัติการตัด (แม้ย้อนแล้ว) ก็ห้ามลบ ไม่งั้นชน FK และประวัติหาย
+  assert.match(body, /coupon_redemptions r join public\.coupons c/);
+  assert.match(body, /insert into public\.coupon_batch_log/);
+});
+
+test("แก้ข้อมูลล็อต: ใบเดียวถูกใช้ = ปฏิเสธทั้งล็อต ตรวจค่าเหมือนตอนออกล็อต และไม่แตะรหัส/จำนวน/สถานะยกเลิก", () => {
+  const body = batchSql.slice(batchSql.indexOf("function public.coupon_batch_update_v1"), batchSql.indexOf("function public.coupon_batch_delete_v1"));
+  assert.ok(body.indexOf("for update") < body.indexOf("raise exception 'batch_has_used'"));
+  for (const code of ["invalid_name", "invalid_price", "invalid_expiry", "batch_not_found"]) assert.ok(body.includes(`'${code}'`), code);
+  const upd = body.match(/update public\.coupons\s+set ([^;]+?)\s+where batch_id/);
+  assert.ok(upd, "ต้องมี update คูปองทั้งล็อต");
+  for (const col of ["code", "used_count", "cancelled_at", "total_uses", "batch_id"]) assert.doesNotMatch(upd[1], new RegExp(`\b${col}\b`), col);
+});
+
+test("edge function: แก้/ลบล็อตเฉพาะ superadmin+head_admin และรหัสผิดพลาดตอบ 409 ไม่ใช่ 500", () => {
+  for (const action of ["coupon_batch_update", "coupon_batch_delete"]) {
+    const act = edge.slice(edge.indexOf(`body.action === "${action}"`));
+    const block = act.slice(0, act.indexOf("\n      }\n"));
+    assert.ok(block.indexOf("couponManageRoles.has(role)") >= 0 && block.indexOf("couponManageRoles.has(role)") < block.indexOf("supabase.rpc"), action);
+  }
+  assert.match(edge, /"batch_has_used", "batch_not_latest"/);
+});
+
+test("หน้าคูปอง: ปุ่มลบล็อตโชว์เฉพาะล็อตท้ายสุดของหมวด และลบต้องพิมพ์เลข 3 ตัวท้ายยืนยัน", () => {
+  const page = read("../src/pages/CouponPage.jsx");
+  assert.match(page, /latestOfPrefix\[x\.prefix\] === x\.id/);
+  const fn = page.slice(page.indexOf("function handleDeleteBatch"), page.indexOf("// เพิ่ม/แก้ชื่อ/เปิด-ปิดหมวดรหัส"));
+  assert.match(fn, /askDigits\(/);
+  assert.match(fn, /expect: last3\(x\.lastCode\)/);
+  assert.doesNotMatch(fn, /window\.confirm/);
+});
