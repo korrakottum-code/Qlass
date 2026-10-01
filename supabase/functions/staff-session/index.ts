@@ -67,6 +67,10 @@ const staffManagementRoles = new Set(["superadmin", "head_admin"]);
 // ไม่ใช่เชื่อว่าเบราว์เซอร์ซ่อนเมนูให้แล้วจะไม่มีใครยิงตรงเข้ามา
 const branchManagementRoles = new Set(["superadmin"]);
 
+// บัญชีบอท Saifa AI (พนักงาน role admin ที่ลงคิวผ่าน booking-api): แก้/ลบจากหน้าจัดการพนักงานไม่ได้ กันเผลอกด "ใช้งาน" ให้ไปโผล่
+// ในรายชื่อหน้าล็อกอิน หรือลบจนคิวที่บอทลงไม่มีชื่อผู้บันทึก — เปลี่ยนสถานะ/PIN ของบอททำที่ฐานข้อมูลโดยผู้ดูแลเท่านั้น
+const protectedStaffIds = new Set(["1f43d7fe-19a3-4a17-a5c7-f68a89087345"]);
+
 // คูปอง: ออกล็อต/ยกเลิกได้เฉพาะระดับหัวหน้าขึ้นไป, ตัดใช้ได้ทุกบทบาทที่ลงคิว (CEO ดูอย่างเดียว ไม่มีเมนู)
 const couponManageRoles = new Set(["superadmin", "head_admin"]);
 const couponRevertRoles = new Set(["superadmin", "head_admin", "admin", "branch_manager"]);
@@ -248,6 +252,7 @@ Deno.serve(async (req) => {
         if (typeof body.staffId !== "string" || body.staffId.length === 0) {
           return response({ error: "invalid_staff_payload" }, 400, origin);
         }
+        if (protectedStaffIds.has(body.staffId)) return response({ error: "protected_staff" }, 403, origin);
         const { data, error } = await supabase.from("staff").update(row).eq("id", body.staffId).select().single();
         if (error) throw error;
         return response({ staff: staffDetails(data, true) }, 200, origin);
@@ -270,6 +275,7 @@ Deno.serve(async (req) => {
       if (body.staffId === current.user.id) {
         return response({ error: "cannot_delete_self" }, 400, origin);
       }
+      if (protectedStaffIds.has(body.staffId)) return response({ error: "protected_staff" }, 403, origin);
       const { error } = await supabase.from("staff").delete().eq("id", body.staffId);
       if (error) throw error;
       return response({ ok: true }, 200, origin);
