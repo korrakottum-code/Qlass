@@ -239,3 +239,24 @@ test("หน้าคูปอง: ปุ่มลบล็อตโชว์เ
   assert.match(fn, /expect: last3\(x\.lastCode\)/);
   assert.doesNotMatch(fn, /window\.confirm/);
 });
+
+// ── แก้/ลบล็อตเมื่อประวัติทั้งหมดถูกย้อนแล้ว (migration 20260930140000) ──
+const revSql = read("../supabase/migrations/20260930140000_coupon_batch_reverted_history.sql").replace(/^\s*--.*$/gm, "");
+
+test("ลบ/แก้ล็อต: ประวัติที่ย้อนแล้วไม่ขวาง แต่ประวัติที่ยังใช้อยู่ขวาง และสิทธิ์ยังปิดจากคีย์หน้าเว็บ", () => {
+  const fns = [...revSql.matchAll(/create or replace function public\.(coupon_\w+_v1)\(/gi)].map((m) => m[1]).sort();
+  assert.deepEqual(fns, ["coupon_batch_delete_v1", "coupon_batch_update_v1"]);
+  assert.equal((revSql.match(/r\.reverted_at is null/g) || []).length, 2, "ทั้งสองฟังก์ชันต้องขวางเฉพาะประวัติที่ยังไม่ถูกย้อน");
+  assert.match(revSql, /used_count > 0/);
+  assert.match(revSql, /revoke all on function[\s\S]*from public, anon, authenticated;/i);
+  assert.match(revSql, /grant execute on function[\s\S]*to service_role;/i);
+  assert.doesNotMatch(revSql, /create policy|alter table|drop /i);
+});
+
+test("ลบล็อต: เก็บสำเนาประวัติที่ย้อนแล้วลงบันทึกก่อนลบ และลบแถวประวัติก่อนคูปอง (FK restrict)", () => {
+  const body = revSql.slice(revSql.indexOf("function public.coupon_batch_delete_v1"));
+  const order = ["raise exception 'batch_not_latest'", "raise exception 'batch_has_used'", "into v_history", "delete from public.coupon_redemptions", "delete from public.coupons where batch_id", "update public.coupon_counters set last_no = b.first_no - 1", "insert into public.coupon_batch_log"].map((s) => body.indexOf(s));
+  assert.ok(order.every((n) => n >= 0), order.join(","));
+  assert.deepEqual([...order].sort((a, b) => a - b), order);
+  assert.match(body, /'redemptions', v_history/);
+});
