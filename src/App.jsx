@@ -40,6 +40,7 @@ import { controlledRefreshEnabled, getControlledRefreshStatus, serverDiagnostics
 import { reconcileRealtimeQueue, reconcileRealtimeById, reconcileRealtimeRoomProcedure } from "./utils/realtimeQueueState";
 import { applyQueueCatchUp, createRealtimeCatchUpController, createPeriodicRefreshController } from "./utils/realtimeCatchUp";
 import { getBedSwitchState, buildBedSwitchClosure, listQueuesOnBed, isSamePlacement } from "./utils/bedSwitch";
+import { BACKDATE_MESSAGE, isPastPlacement } from "./utils/backdateRule";
 import { buildRescheduledQueue } from "./utils/rescheduleQueue";
 import { buildRoomProcedureIndex, isProcedureAllowedInRoom, shouldEnforceOnSave, procedureRoomBlockMessage } from "./utils/roomProcedures";
 import { buildProcedureAreaIndex } from "./utils/procedureAreas";
@@ -581,9 +582,10 @@ export default function App() {
       return;
     }
 
-    // ─── ตรวจสอบวันย้อนหลัง ───
-    if (!editingQueueId && form.date < getTodayStr()) {
-      showToast("error", "ไม่สามารถบันทึกคิวย้อนหลังได้");
+    // ─── ตรวจสอบวันย้อนหลัง (คิวใหม่ ทุกบทบาท) ───
+    // แก้คิวเดิมไม่ตรวจ (ไว้แก้ประวัติ) — กติกาเดียวกับ Timeline/วางข้อความ/เลื่อนนัด ดู backdateRule.js
+    if (!editingQueueId && isPastPlacement(form.date, form.timeBlock)) {
+      showToast("error", BACKDATE_MESSAGE);
       return;
     }
 
@@ -972,6 +974,11 @@ export default function App() {
         // เท่ากับคิวหายจากตารางทั้งใบ ต้องตรวจให้จบก่อนแตะอะไรสักอย่าง
         const orig = queues.find((q) => q.id === id);
         const rescheduledQueue = buildRescheduledQueue(orig, payload, getTodayStr());
+        if (rescheduledQueue && isPastPlacement(rescheduledQueue.date, rescheduledQueue.timeBlock)) {
+          showToast("error", "เลื่อนนัดไปวันที่ผ่านไปแล้วไม่ได้ — เลือกวันใหม่");
+          recordClientDiagnostic("write_outcome", { outcome: "rejected" });
+          return;
+        }
         if (!rescheduledQueue && (payload.date !== undefined || payload.timeBlock !== undefined)) {
           // เลื่อนไปช่องเดิมเป๊ะ ๆ = ไม่ได้เลื่อนจริง (ดู isSameRescheduleSlot) ปล่อยผ่านแล้ว
           // จะได้คู่แฝด "เลื่อนออก + เลื่อนมา" ที่ช่องเดียวกัน กินเตียงทั้งที่ไม่มีลูกค้า
@@ -1609,10 +1616,15 @@ export default function App() {
                   const VALID_TYPES = ["new", "old", "course"];
                   let created = 0;
                   let skippedNoType = 0;
+                  let skippedPast = 0;
                   for (const fields of allFields) {
                     if (!fields.name && !fields.phone) continue;
                     if (!VALID_TYPES.includes(fields.customerType)) {
                       skippedNoType++;
+                      continue;
+                    }
+                    if (isPastPlacement(fields.date || getTodayStr(), fields.timeBlock ?? null)) {
+                      skippedPast++;
                       continue;
                     }
                     try {
@@ -1638,12 +1650,15 @@ export default function App() {
                       console.error("Bulk booking error:", err);
                     }
                   }
+                  const pastNote = skippedPast > 0 ? ` — ข้าม ${skippedPast} คิวที่วันที่ผ่านไปแล้ว` : "";
                   if (created > 0 && skippedNoType > 0) {
-                    showToast("success", `สร้าง ${created} คิว — ข้าม ${skippedNoType} คิวที่ไม่รู้ประเภทลูกค้า กรุณาลงเองทีละคิว`);
+                    showToast("success", `สร้าง ${created} คิว — ข้าม ${skippedNoType} คิวที่ไม่รู้ประเภทลูกค้า กรุณาลงเองทีละคิว${pastNote}`);
                   } else if (created > 0) {
-                    showToast("success", `สร้าง ${created} คิวเรียบร้อย!`);
+                    showToast("success", `สร้าง ${created} คิวเรียบร้อย!${pastNote}`);
                   } else if (skippedNoType > 0) {
-                    showToast("error", `ไม่ได้สร้างสักคิว — ทั้ง ${skippedNoType} คิวไม่ได้ระบุประเภทลูกค้าในข้อความ (ลูกค้าใหม่ / เก่า / ใช้คอร์ส)`);
+                    showToast("error", `ไม่ได้สร้างสักคิว — ทั้ง ${skippedNoType} คิวไม่ได้ระบุประเภทลูกค้าในข้อความ (ลูกค้าใหม่ / เก่า / ใช้คอร์ส)${pastNote}`);
+                  } else if (skippedPast > 0) {
+                    showToast("error", `ไม่ได้สร้างสักคิว — ทั้ง ${skippedPast} คิวเป็นวันที่ผ่านไปแล้ว ลงย้อนหลังไม่ได้`);
                   }
                 }}
                 todayStats={todayStats}
@@ -1749,6 +1764,11 @@ export default function App() {
                 showToast={showToast}
                 onAbandonDraft={() => { timelineServerQueueRequestIdRef.current = null; }}
                 onSubmitBooking={async (bookingForm) => {
+                  // ห้ามลงย้อนหลัง — กติกาเดียวกับหน้าบันทึกคิว (Timeline สร้างคิวใหม่เสมอ)
+                  if (isPastPlacement(bookingForm.date, bookingForm.timeBlock)) {
+                    showToast("error", BACKDATE_MESSAGE);
+                    return false;
+                  }
                   // บัญชีผู้จัดการสาขาใช้ร่วมกันหลายคนหน้าร้าน — กันเผื่อ (ปุ่มฝั่ง UI
                   // ก็ disabled ไว้แล้ว) กติกาเดียวกับหน้าบันทึกคิว ดู handleBookingSubmit
                   if (requiresRecorderNote(currentUser, null) && !bookingForm.recordedNote?.trim()) {

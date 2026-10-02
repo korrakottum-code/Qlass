@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { CUSTOMER_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
+import { isPastPlacement } from "../utils/backdateRule";
 import { WORK_BLOCKS, blockToTime, formatRecorderLabel, formatThaiDate, getEmptyBookingForm, getTodayStr, isActiveQueueStatus, requiresRecorderNote } from "../utils/helpers";
 import { proceduresForRoom, isRoomConfigured, roomLockLabel } from "../utils/roomProcedures";
 import { areasForProcedure, durationFromAreas, keepValidAreaIds, areaNamesText } from "../utils/procedureAreas";
@@ -763,7 +764,8 @@ export default function BookingPage({
                     && b.block > form.timeBlock && b.block < form.timeBlock + activeDur;
                   const isOccupied = occupiedBlocks.has(b.block);
                   const isClosed = !availableBlocks.find((ab) => ab.block === b.block);
-                  const isDisabled = isOccupied || isClosed;
+                  const isPast = !isStart && isPastPlacement(form.date, b.block);
+                  const isDisabled = isOccupied || isClosed || isPast;
                   return (
                     <div
                       key={b.block}
@@ -773,14 +775,18 @@ export default function BookingPage({
                           ? {}
                           : isOccupied && !isStart
                           ? { background: "#e8c5bb", borderColor: "#c8957e", color: "var(--accent)", opacity: 0.7 }
-                          : isClosed
+                          : isClosed || isPast
                           ? { background: "var(--surface3)", borderColor: "var(--border2)", color: "var(--text3)" }
                           : {}
                       }
-                      title={isOccupied && !isStart ? "เวลานี้มีคิวแล้ว" : isClosed ? "ห้องปิด/ไม่พร้อม" : ""}
+                      title={isOccupied && !isStart ? "เวลานี้มีคิวแล้ว" : isClosed ? "ห้องปิด/ไม่พร้อม" : isPast ? "ผ่านไปแล้ว" : ""}
                       onClick={() => {
                         if (isOccupied && !isStart) {
                           showToast?.("error", `⚠️ ${b.time} มีคิวอยู่แล้ว กรุณาเลือกเวลาอื่น`);
+                          return;
+                        }
+                        if (isPast) {
+                          showToast?.("error", `⚠️ ${b.time} ผ่านไปแล้ว ลงคิวย้อนหลังไม่ได้`);
                           return;
                         }
                         if (!isDisabled) setForm((f) => ({ ...f, timeBlock: b.block }));
