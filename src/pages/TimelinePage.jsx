@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { isPastPlacement } from "../utils/backdateRule";
 import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed, roleAtLeast, requiresRecorderNote } from "../utils/helpers";
 import { addDays } from "../utils/queueRanges";
 import { CUSTOMER_TYPES } from "../utils/constants";
@@ -367,13 +368,15 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                           return (
                             <td
                               key={room.id}
-                              title={isBooked ? `คิวของคุณ ${q.name}` : isClosed ? "ห้องปิด/ไม่พร้อม" : "กดเพื่อจองคิว"}
+                              title={isBooked ? `คิวของคุณ ${q.name}` : isClosed ? "ห้องปิด/ไม่พร้อม" : isPastPlacement(date, b) ? "วันที่นี้ผ่านไปแล้ว" : "กดเพื่อจองคิว"}
                               onClick={(e) => {
                                 if (q) {
                                   const rect = e.currentTarget.getBoundingClientRect();
                                   setPopup({ q, room, block: b, x: rect.left, y: rect.bottom });
                                 } else if (isClosed) {
                                   showToast?.("error", "⚠️ ห้องนี้ปิด/ไม่พร้อมในเวลานี้ ไม่สามารถลงคิวได้");
+                                } else if (isPastPlacement(date, b)) {
+                                  showToast?.("error", "⚠️ วันที่นี้ผ่านไปแล้ว ลงคิวย้อนหลังไม่ได้");
                                 } else {
                                   setBookingForm({
                                     ...getEmptyBookingForm(),
