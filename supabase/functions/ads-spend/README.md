@@ -13,7 +13,7 @@
 | deploy อยู่จริง | ใช่ (slug `ads-spend`) |
 | `verify_jwt` | `false` (ฟังก์ชันตรวจ session ของ Qlass เอง ผ่าน header `x-qlass-session`) |
 | entrypoint ตอน deploy | `index.ts` (ไม่ได้อยู่ใต้ `supabase/functions/`) |
-| มีใครเรียกใช้ไหม | **ไม่มี** — `src/components/AdSpendCard.jsx` ใน `main` ยังดึงจาก Google Sheet สาธารณะเหมือนเดิม |
+| มีใครเรียกใช้ไหม | **ใช่ (ต.ค. 2569)** — `src/components/AdSpendCard.jsx` เรียกผ่าน `fetchAdsSpendRange` แทน Google Sheet สาธารณะ (logic อยู่ใน `src/utils/adsSpend.js`) |
 | secret ที่ต้องมี | `QLASS_ADS_SPEND_URL`, `QLASS_ADS_SPEND_TOKEN` |
 | สิทธิ์ | เฉพาะ role `superadmin` |
 
