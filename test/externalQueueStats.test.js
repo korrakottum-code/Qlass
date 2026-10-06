@@ -15,7 +15,7 @@ const sql = readFileSync(
 );
 // migration ล่าสุดเป็นตัวที่มีผลจริงบน production (create or replace ทับของเดิม)
 const sqlLatest = readFileSync(
-  new URL("../supabase/migrations/20260830090000_external_queue_stats_procedures.sql", import.meta.url),
+  new URL("../supabase/migrations/20261008090000_external_queue_stats_waiting_overdue.sql", import.meta.url),
   "utf8"
 );
 
@@ -118,4 +118,39 @@ test("migration ล่าสุดยังล็อกสิทธิ์ไว�
 
 test("รายโปรถูกจำกัดจำนวน ไม่ส่งทั้ง 284 รายการ", () => {
   assert.match(sqlLatest, /limit 40/);
+});
+
+test("ช่องใหม่ (คิวรอ / เลื่อนมา / ค้าง) มีทั้งใน totals และในแต่ละแถวของ branches", () => {
+  for (const key of ["waiting", "waitingNew", "waitingReturning", "waitingCourse", "rescheduledIn", "overdue"]) {
+    const occurrences = sqlLatest.match(new RegExp(`'${key}'`, "g")) || [];
+    // totals (ค่าจริง) + totals (ค่าเริ่มต้นตอนไม่มีคิว) + branches = 3
+    assert.equal(occurrences.length, 3, `'${key}' ต้องอยู่ใน totals, ค่าเริ่มต้นของ totals และ branches`);
+  }
+});
+
+test("ช่องเดิม pending / rescheduled ไม่เปลี่ยนความหมาย (แดชบอร์ดยังอ่านอยู่)", () => {
+  assert.match(sqlLatest, /s\.status in \('pending', 'waiting_queue', 'follow1', 'follow2', 'follow3'\)\)::int as pending/);
+  assert.match(sqlLatest, /s\.status in \('rescheduled', 'rescheduled_in'\)\)::int as rescheduled/);
+});
+
+test("คิวรอแยกตามประเภทลูกค้า new / old / course", () => {
+  assert.match(sqlLatest, /s\.status = 'waiting_queue' and s\.customer_type = 'new'\)::int as waiting_new/);
+  assert.match(sqlLatest, /s\.status = 'waiting_queue' and s\.customer_type = 'old'\)::int as waiting_returning/);
+  assert.match(sqlLatest, /s\.status = 'waiting_queue' and s\.customer_type = 'course'\)::int as waiting_course/);
+});
+
+test("overdue ใช้ชุดสถานะเดียวกับ UNACTIVATED ของรายงานแอคทีฟ และตัดคิวรอออก", () => {
+  assert.match(
+    sqlLatest,
+    /s\.status in \('pending', 'follow1', 'follow2', 'follow3', 'confirmed', 'rescheduled_in'\)/
+  );
+  const overdueBlock = sqlLatest.match(/count\(\*\) filter \(\s*where s\.status in \('pending', 'follow1'[\s\S]*?\)::int as overdue/);
+  assert.ok(overdueBlock, "ต้องมีบล็อกนับ overdue");
+  assert.ok(!/waiting_queue/.test(overdueBlock[0]), "overdue ต้องไม่นับคิวรอ");
+});
+
+test("overdue เทียบกับ 'วันนี้' ตามเวลาไทย ไม่ใช่ current_date ของเซิร์ฟเวอร์ (UTC)", () => {
+  assert.match(sqlLatest, /s\.date < \(now\(\) at time zone 'Asia\/Bangkok'\)::date/);
+  const sqlCode = sqlLatest.replace(/--.*$/gm, "");
+  assert.ok(!/current_date/.test(sqlCode), "ห้ามใช้ current_date — เป็น UTC ทำให้ 00:00-06:59 น. ไทยเพี้ยนไปหนึ่งวัน");
 });
