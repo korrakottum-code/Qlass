@@ -729,7 +729,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
 
                 {typeChosen && (<>
                 <div>
-                  <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>หัตถการ</label>
+                  <label style={{ fontSize: 11, color: "var(--text3)", display: "block", marginBottom: 3 }}>หัตถการ <span style={{ color: "var(--red)" }}> *</span></label>
                   <select style={{ width: "100%", fontSize: 13 }} value={bookingForm.procedureId}
                     onChange={(e) => setBookingForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "", areaIds: [], areaNames: "", durationBlocks: null }))}>
                     <option value="">— เลือกหัตถการ —</option>
@@ -833,6 +833,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                   className="btn btn-primary"
                   disabled={saving || !bookingForm.name.trim() || !bookingForm.phone.trim()
                     || (requiresRecorderNote(currentUser, null) && !bookingForm.recordedNote?.trim())
+                    || !bookingForm.procedureId
                     || (!!bookingForm.procedureId && !bookingForm.promoId)}
                   onClick={async () => {
                     if (!onSubmitBooking) return;
