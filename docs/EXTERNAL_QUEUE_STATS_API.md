@@ -17,12 +17,16 @@ Header: Authorization: Bearer <QLASS_EXTERNAL_API_KEY>
   "totals": {
     "total": 18240, "done": 14980, "noShow": 1620, "cancelled": 980,
     "confirmed": 420, "pending": 240, "rescheduled": 0,
-    "newCustomers": 4310, "returningCustomers": 12840, "courseCustomers": 1090
+    "newCustomers": 4310, "returningCustomers": 12840, "courseCustomers": 1090,
+    "waiting": 166, "waitingNew": 125, "waitingReturning": 27, "waitingCourse": 14,
+    "rescheduledIn": 14, "overdue": 38
   },
   "branches": [
     { "branchId": "…", "name": "อุดรธานี", "total": 1180, "done": 990, "noShow": 120,
       "cancelled": 70, "confirmed": 0, "pending": 0, "rescheduled": 0,
-      "newCustomers": 280, "returningCustomers": 830, "courseCustomers": 70 }
+      "newCustomers": 280, "returningCustomers": 830, "courseCustomers": 70,
+      "waiting": 12, "waitingNew": 9, "waitingReturning": 2, "waitingCourse": 1,
+      "rescheduledIn": 1, "overdue": 3 }
   ],
   "procedures": [ { "name": "Hifu", "total": 1252, "done": 980, "noShow": 190,
                     "cancelled": 40, "newCustomers": 310, "courseCustomers": 620 } ],
@@ -58,6 +62,21 @@ Header: Authorization: Bearer <QLASS_EXTERNAL_API_KEY>
 - **RPC ให้สิทธิ์เฉพาะ `service_role`** — `anon` และ `authenticated` เรียกไม่ได้ ตามแนวเดียวกับ goal18 ที่ถอนสิทธิ์ browser role
 - รวมยอดใน SQL แทนการดึงแถวมานับใน Edge Function เพราะ `queues` โตเรื่อยๆ การดึงแถวต้องวนเพจทีละ 1000 และเอาข้อมูลลูกค้าผ่าน memory โดยไม่จำเป็น
 - อ่านอย่างเดียว ไม่มีคำสั่งเขียนใดๆ
+
+## ช่อง "คิวรอ / เลื่อนมา / คิวค้าง" (ใช้เทียบกับหน้า Qlass)
+
+ช่อง `pending` และ `rescheduled` เดิมถูกจัดกลุ่มไว้กว้าง (รวมคิวรอ / เลื่อนมา) และ **ความหมายไม่เปลี่ยน** เพราะมีระบบอื่นอ่านอยู่ จึงเพิ่มช่องแยกให้ ทั้งใน `totals` และในแต่ละแถวของ `branches`:
+
+| ช่อง | ความหมาย |
+|---|---|
+| `waiting` | `status = waiting_queue` (คิวรอ — ยังไม่มีวันนัดจริง) |
+| `waitingNew` / `waitingReturning` / `waitingCourse` | คิวรอแยกตาม `customer_type` = `new` / `old` / `course` |
+| `rescheduledIn` | `status = rescheduled_in` (เลื่อนมา — ยังไม่ปิดงาน ต่างจาก "เลื่อนออก" ที่ปิดงานแล้ว) |
+| `overdue` | สถานะใน `pending, follow1, follow2, follow3, confirmed, rescheduled_in` **และ** `date` < วันนี้ตามเวลาไทย (Asia/Bangkok) — กติกาเดียวกับ `classifyActivation()` ใน `src/utils/statusActivation.js` = ตัวเลข "ค้างไม่แอคทีฟ" ในหน้า "การแอคทีฟสถานะคิว" |
+
+วิธีให้ตัวเลขตรงกับหน้า "คิวนัดทำ" ใน Summary: `total − waiting`, `newCustomers − waitingNew`, `returningCustomers − waitingReturning`, `courseCustomers − waitingCourse` (หน้า Qlass ไม่นับคิวรอเป็นนัด)
+
+`overdue` ลดลงเรื่อยๆ เมื่อสาขาทยอยปิดสถานะ และ "วันนี้" ตามเวลาไทยเสมอ (ไม่ใช่ UTC ของเซิร์ฟเวอร์) จึงต้องเทียบกับหน้า Qlass ณ เวลาเดียวกัน
 
 ## ข้อจำกัด
 
