@@ -589,6 +589,14 @@ export default function App() {
       return;
     }
 
+    // ─── บังคับเลือกหัตถการ (คิวใหม่ ไม่ใช่คิวรอ) ───
+    // กฎโปรด้านล่างทำงานเฉพาะตอนเลือกหัตถการแล้ว ถ้าข้ามหัตถการก็ข้ามโปรไปด้วย
+    // ผลคือคิวหลุดเข้า "ไม่ระบุหัตถการ/ไม่ระบุโปร" ในหน้าสรุปทุกสัปดาห์ (ต.ค. 2569)
+    if (!editingQueueId && form.status !== "waiting_queue" && !form.procedureId) {
+      showToast("error", "กรุณาเลือกหัตถการก่อนบันทึกคิว");
+      return;
+    }
+
     // ─── บังคับเลือกโปร (16 ก.ย. 2569 เป็นต้นไปเท่านั้น ไม่ย้อนหลัง) ───
     // เจ้าของงานพบว่า ~500 คิว/เดือนพิมพ์ประเภทลูกค้าเป็น "ใช้คอร์ส" แต่ลืมติ๊กโปร
     // "ใช้คอร์ส" ทำให้ตกไปกอง "ไม่ระบุโปร" ในหน้าสรุปอย่างเงียบ ๆ จึงบังคับให้ต้อง
@@ -1773,6 +1781,11 @@ export default function App() {
                   // ก็ disabled ไว้แล้ว) กติกาเดียวกับหน้าบันทึกคิว ดู handleBookingSubmit
                   if (requiresRecorderNote(currentUser, null) && !bookingForm.recordedNote?.trim()) {
                     showToast("error", "บัญชีนี้ใช้ร่วมกันหลายคน กรุณาระบุชื่อผู้บันทึกจริงก่อนบันทึก");
+                    return false;
+                  }
+                  // บังคับเลือกหัตถการ — Timeline สร้างคิวใหม่เสมอ ดู handleBookingSubmit
+                  if (!bookingForm.procedureId) {
+                    showToast("error", "กรุณาเลือกหัตถการก่อนบันทึกคิว");
                     return false;
                   }
                   // บังคับเลือกโปร — กติกาเดียวกับหน้าบันทึกคิว ดู handleBookingSubmit

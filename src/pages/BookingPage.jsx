@@ -523,7 +523,7 @@ export default function BookingPage({
 
             {/* หัตถการ + โปร */}
             <div className="form-group">
-              <label className="form-label">หัตถการหลักที่สนใจ</label>
+              <label className="form-label">หัตถการหลักที่สนใจ{!editingQueueId && !isWaitingQueueMode && <span style={{ color: "var(--red)" }}> *</span>}</label>
               <select
                 value={form.procedureId}
                 onChange={(e) => setForm((f) => ({ ...f, procedureId: e.target.value, promoId: "", price: "", durationBlocks: null, areaIds: [], areaNames: "", timeBlock: null }))}
