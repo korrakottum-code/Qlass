@@ -259,6 +259,7 @@ function SectionStats({ queues, promoPriceIndex, showStatus = false }) {
     follow3: queues.filter((q) => q.status === "follow3").length,
     confirmed: queues.filter((q) => q.status === "confirmed").length,
     rescheduled: queues.filter((q) => q.status === "rescheduled").length,
+    rescheduled_in: queues.filter((q) => q.status === "rescheduled_in").length,
     no_show: queues.filter((q) => q.status === "no_show").length,
     cancelled: queues.filter((q) => q.status === "cancelled").length,
     done: queues.filter((q) => q.status === "done").length,
@@ -292,6 +293,7 @@ function SectionStats({ queues, promoPriceIndex, showStatus = false }) {
             {byStatus.follow3 > 0 && <StatChip label="โทรตาม ×3" value={byStatus.follow3} color="#dc2626" />}
             {byStatus.confirmed > 0 && <StatChip label="ยืนยันแล้ว" value={byStatus.confirmed} color="#3b82f6" />}
             {byStatus.rescheduled > 0 && <StatChip label="เลื่อนนัด" value={byStatus.rescheduled} color="#8b5cf6" />}
+            {byStatus.rescheduled_in > 0 && <StatChip label="เลื่อนมา" value={byStatus.rescheduled_in} color="#0891b2" />}
             {byStatus.no_show > 0 && <StatChip label="ไม่มาตามนัด" value={byStatus.no_show} color="#6b7280" />}
             {byStatus.cancelled > 0 && <StatChip label="ยกเลิก" value={byStatus.cancelled} color="#ef4444" />}
             {byStatus.done > 0 && <StatChip label="มาแล้ว/เสร็จ" value={byStatus.done} color="#10b981" />}
