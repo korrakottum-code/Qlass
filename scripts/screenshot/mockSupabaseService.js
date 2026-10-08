@@ -312,3 +312,15 @@ export const getAllRoomSchedules = fetchRoomSchedules;
 export const getAllStaff = fetchStaff;
 export const getAllQueues = fetchQueues;
 export const getAllCategories = fetchCategories;
+
+// ค่าโฆษณาสาธิต (ไม่เรียกเครือข่าย) — ตัวเลขคงที่ตามวัน เพื่อให้ภาพในคู่มือไม่เปลี่ยนทุกครั้ง
+export async function fetchAdsSpendRange(since, until) {
+  const byDay = {};
+  const daily = [];
+  for (let d = since; d <= until; d = addDays(d, 1)) {
+    const spend = 3000 + ((Number(d.slice(-2)) * 137) % 1500);
+    byDay[d] = spend;
+    daily.push({ day: d, spend });
+  }
+  return { ok: true, spend: Object.values(byDay).reduce((a, b) => a + b, 0), byDay, hasDaily: true, asOf: null, currency: "THB" };
+}
