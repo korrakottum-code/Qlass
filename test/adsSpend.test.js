@@ -96,7 +96,7 @@ test("fetchAdsSpend: ส่ง session token ผ่าน header และส่
     since: "2026-08-01", until: "2026-08-19", token: "sess-123",
     invoke: async (name, options) => { seen = { name, options }; return { data: { spend: 0, daily: [] }, error: null }; },
   });
-  assert.equal(seen.name, "ads-spend");
+  assert.equal(seen.name, "ads-spend-cache");
   assert.deepEqual(seen.options.body, { since: "2026-08-01", until: "2026-08-19" });
   assert.equal(seen.options.headers["X-Qlass-Session"], "sess-123");
 });

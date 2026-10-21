@@ -1,4 +1,4 @@
-// ค่าโฆษณา (Meta Ads) — ดึงผ่าน Edge Function `ads-spend` ที่ proxy ไป Korrakot-DB
+// ค่าโฆษณา (Meta Ads) — ดึงผ่าน Edge Function `ads-spend-cache` (อ่านจากตาราง ad_spend_daily ที่ดึงจาก Korrakot-DB มาเก็บไว้)
 // logic ล้วน แยกจาก UI เพื่อให้เทสต์ได้ (แบบเดียวกับ hnLookup.js)
 
 const DAY_MS = 86400000;
@@ -100,7 +100,7 @@ async function readFunctionErrorCode(error) {
 export async function fetchAdsSpend({ since, until, token, invoke }) {
   if (!DATE_RE.test(since || "") || !DATE_RE.test(until || "")) return { ok: false, error: "invalid_range" };
   try {
-    const { data, error } = await invoke("ads-spend", {
+    const { data, error } = await invoke("ads-spend-cache", {
       body: { since, until },
       headers: { "X-Qlass-Session": token || "" },
     });
@@ -118,6 +118,10 @@ export async function fetchAdsSpend({ since, until, token, invoke }) {
       hasDaily: Array.isArray(data?.daily),
       asOf: data?.asOf || null,
       currency: data?.currency || "THB",
+      // เก็บไว้ในตาราง ad_spend_daily: stale = ดึงใหม่ไม่สำเร็จมานาน, syncing = กำลังดึงเบื้องหลัง, coverageFrom = ข้อมูลเริ่มวันไหน
+      stale: data?.stale === true,
+      syncing: data?.syncing === true,
+      coverageFrom: typeof data?.coverageFrom === "string" ? data.coverageFrom : null,
     };
   } catch (e) {
     return { ok: false, error: e?.message || "request_failed" };

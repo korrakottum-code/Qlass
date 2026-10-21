@@ -13,7 +13,13 @@ const ERROR_LABELS = {
   rate_limited: "เรียกถี่เกินไป ลองใหม่อีกครั้ง",
   upstream_error: "ระบบค่าโฆษณาปลายทางปฏิเสธ/ไม่ตอบ (ตรวจ token ฝั่งเซิร์ฟเวอร์)",
   invalid_range: "ช่วงวันที่ไม่ถูกต้อง",
+  ads_not_ready: "กำลังเตรียมข้อมูลค่าโฆษณาครั้งแรก (ดึงย้อนหลังตั้งแต่ 1 ส.ค.) รอสักครู่ ระบบจะลองใหม่เอง",
+  service_unavailable: "ระบบค่าโฆษณาขัดข้องชั่วคราว ลองใหม่อีกครั้ง",
 };
+
+// ยังเตรียมข้อมูลไม่เสร็จ → ลองใหม่เองทุก 15 วินาที ไม่เกิน 8 ครั้ง (ราว 2 นาที)
+const NOT_READY_RETRY_MS = 15 * 1000;
+const NOT_READY_MAX_RETRIES = 8;
 
 const fmtBaht = (n) =>
   "฿" + Math.round(n).toLocaleString("en-US");
@@ -42,6 +48,8 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
   useEffect(() => {
     if (!since || !until) return undefined;
     let alive = true;
+    let retryTimer = null;
+    let retries = 0;
     const run = async () => {
       const res = await fetchAdsSpendRange(since, until);
       if (!alive) return;
@@ -51,12 +59,16 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
         setLastFetched(new Date());
       } else {
         setError(res.error);
+        if (res.error === "ads_not_ready" && retries < NOT_READY_MAX_RETRIES) {
+          retries += 1;
+          retryTimer = setTimeout(run, NOT_READY_RETRY_MS);
+        }
       }
       setLoading(false);
     };
     run();
     const id = setInterval(run, REFRESH_MS);
-    return () => { alive = false; clearInterval(id); };
+    return () => { alive = false; clearInterval(id); clearTimeout(retryTimer); };
   }, [since, until, reloadKey]);
 
   const reload = useCallback(() => {
@@ -204,6 +216,16 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
         {error && (
           <div style={{ padding: "10px 14px", background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.3)", borderRadius: 8, color: "#dc2626", fontSize: 13, fontWeight: 600 }}>
             ⚠️ โหลดค่าโฆษณาไม่ได้ ({ERROR_LABELS[error] || error}) — ตัวเลขด้านล่างจึงยังไม่แสดง
+          </div>
+        )}
+        {!error && result?.stale && (
+          <div style={{ padding: "8px 12px", marginBottom: 10, background: "rgba(234,88,12,0.08)", border: "1px solid rgba(234,88,12,0.3)", borderRadius: 8, color: "#c2410c", fontSize: 12, fontWeight: 600 }}>
+            ⚠️ ดึงค่าโฆษณาล่าสุดไม่สำเร็จ ตอนนี้แสดงข้อมูลที่เก็บไว้ (อัปเดตล่าสุด {result.asOf ? new Date(result.asOf).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "-"})
+          </div>
+        )}
+        {!error && result?.coverageFrom && dateRange && dateRange.start < result.coverageFrom && (
+          <div style={{ padding: "8px 12px", marginBottom: 10, background: "rgba(234,88,12,0.08)", border: "1px solid rgba(234,88,12,0.3)", borderRadius: 8, color: "#c2410c", fontSize: 12, fontWeight: 600 }}>
+            ⚠️ ข้อมูลค่าโฆษณามีตั้งแต่ {result.coverageFrom} เท่านั้น ช่วงก่อนหน้านั้นยังไม่รวมในยอด
           </div>
         )}
         {!error && range?.truncated && (
