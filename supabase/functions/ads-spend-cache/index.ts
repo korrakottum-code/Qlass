@@ -165,9 +165,11 @@ async function refresh(plan: { since: string; until: string; backfill: boolean }
   }
 }
 
+// ตัวแปรสากลของ Supabase Edge Runtime — ให้งานที่เหลือทำต่อหลังตอบ response แล้ว
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
+
 function keepAlive(job: Promise<unknown>) {
-  const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime;
-  runtime?.waitUntil?.(job);
+  if (typeof EdgeRuntime !== "undefined") EdgeRuntime?.waitUntil(job);
 }
 
 async function readState(): Promise<SyncState | null> {
