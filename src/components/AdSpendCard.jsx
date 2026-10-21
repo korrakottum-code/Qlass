@@ -163,14 +163,14 @@ export default function AdSpendCard({ dateRange, rangeLabel, selectedDate, queue
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, cursor: "pointer", userSelect: "none" }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <h3 style={{ margin: 0 }}>💰 ค่าโฆษณา (ทุกช่องทาง)</h3>
+          <h3 style={{ margin: 0 }}>💰 ค่าโฆษณา (Estimate)</h3>
           {!error && (
             <span style={{ fontSize: 12, fontWeight: 700, fontFamily: "var(--mono)", color: "var(--green)", background: "rgba(34,197,94,0.12)", borderRadius: 10, padding: "2px 10px", whiteSpace: "nowrap" }}>
               {loading && result === null ? "กำลังโหลด…" : rangeTotal == null ? "—" : fmtBaht(rangeTotal)}
             </span>
           )}
           <span style={{ fontSize: 11, color: "var(--text3)" }}>
-            จาก Meta Ads Dashboard — รีเฟรชทุก 1 ชม.
+            ประมาณการ นับเฉพาะ Meta Ads (ราว 95%+ ของงบ) — รีเฟรชทุก 1 ชม.
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
