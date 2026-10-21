@@ -3,8 +3,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // ค่าโฆษณารายวันแบบ "ดึงมาเก็บไว้" — การ์ดในหน้าสรุปอ่านจากตาราง ad_spend_daily (เร็ว)
 // แทนที่จะรอ Korrakot-DB/Meta ทุกครั้ง (ช้า 3-25 วินาที และ 504 ได้) ดู migration 20261021120000_ad_spend_cache.sql
 //
-// ทำงานแบบ "ดึงเมื่อเก่า": ถ้าข้อมูลเก่ากว่า 1 ชม. (หรือยังไม่เคยดึงย้อนหลัง) ขอสิทธิ์ดึง (lease) แล้วดึง Korrakot-DB
-// รอไม่เกิน WAIT_BUDGET_MS ถ้าไม่ทันก็ตอบข้อมูลที่เก็บไว้ไปก่อน ส่วนที่ดึงต่อทำเบื้องหลังจนเสร็จ
+// ทำงานแบบ "ดึงเมื่อเก่า": ขอสิทธิ์ดึง (lease) แล้วดึง Korrakot-DB เป็นสองส่วน
+//   1) ช่วงล่าสุด (ครั้งแรก = ต้นเดือนนี้/14 วันล่าสุด, หลังจากนั้น = 7 วันล่าสุดเมื่อเก่ากว่า 1 ชม.) รอไม่เกิน WAIT_BUDGET_MS
+//   2) เติมย้อนหลังทีละ BACKFILL_CHUNK_DAYS วันจนถึง BACKFILL_FROM ทำเบื้องหลังเท่านั้น ไม่ให้ผู้ใช้รอ
+// ดึงช่วงล่าสุดก่อนเพราะเดือนเก่า Korrakot-DB ต้องไปดึงจาก Meta ช้าเกิน 25 วินาที (21 ต.ค. 2569 ดึง ส.ค. ทั้งเดือนล้ม 2 รอบ)
 // token ของ Korrakot-DB อยู่ฝั่ง server เท่านั้น (SPA bundle ใครก็อ่านได้) ตรวจ session + เฉพาะ superadmin เหมือน ads-spend เดิม
 
 const ADS_API = Deno.env.get("QLASS_ADS_SPEND_URL") ?? "https://korrakot-db.vercel.app/api/external/ads-spend";
@@ -33,9 +35,13 @@ const REFRESH_MAX_AGE_MS = 60 * 60 * 1000;
 const STALE_AFTER_MS = 90 * 60 * 1000;
 const SETTLE_DAYS = 7;
 const CHUNK_DAYS = 31;
-const LEASE_TTL_SECONDS = 180;
+const BACKFILL_CHUNK_DAYS = 14;
+const LEASE_TTL_SECONDS = 120;
 const WAIT_BUDGET_MS = 9_000;
 const UPSTREAM_TIMEOUT_MS = 25_000;
+const BACKFILL_TIMEOUT_MS = 60_000;
+// เพดานเวลาทั้งงานเบื้องหลัง (Supabase ตัดที่ราว 150 วินาที) — เริ่มช่วงใหม่เฉพาะเมื่อยังเหลือเวลาพอทั้งช่วง
+const JOB_WALL_BUDGET_MS = 130_000;
 
 // <pure>
 const DAY_MS = 86400000;
@@ -64,16 +70,45 @@ interface SyncState {
   backfilled_from: string | null;
 }
 
-// null = ไม่ต้องดึง; backfill = ยังไม่เคยดึงย้อนหลังถึง backfillFrom (ดึงทั้งช่วง) ไม่งั้นดึงแค่ settleDays วันล่าสุด
-function planRefresh(state: SyncState | null, nowMs: number, backfillFrom: string, maxAgeMs: number, settleDays: number) {
+function minDay(a: string, b: string): string {
+  return a < b ? a : b;
+}
+
+function maxDay(a: string, b: string): string {
+  return a > b ? a : b;
+}
+
+interface Range {
+  since: string;
+  until: string;
+}
+
+interface Plan {
+  // setsCoverage = ช่วงนี้ต่อเนื่องถึงวันนี้ ใช้ขยับ backfilled_from ได้
+  recent: (Range & { setsCoverage: boolean }) | null;
+  backfill: Range | null;
+}
+
+// recent: ครั้งแรก (ยังไม่มี backfilled_from) = ทุกอย่างที่การ์ดเปิดมาเห็น (ต้นเดือนนี้ + กราฟ 14 วัน),
+//         หลังจากนั้น = settleDays วันล่าสุดเมื่อข้อมูลเก่ากว่า maxAgeMs
+// backfill: ช่วงถัดไปที่เก่ากว่าที่มีอยู่ ทีละ chunkDays วัน จนถึง backfillFrom (null = ครบแล้ว)
+function planRefresh(state: SyncState | null, nowMs: number, backfillFrom: string, maxAgeMs: number, settleDays: number, chunkDays: number): Plan {
   const today = bangkokToday(nowMs);
-  const needsBackfill = !state?.backfilled_from || state.backfilled_from > backfillFrom;
+  const covered = state?.backfilled_from ?? null;
   const lastOk = state?.last_success_at ? Date.parse(state.last_success_at) : null;
   const stale = lastOk === null || nowMs - lastOk > maxAgeMs;
-  if (!needsBackfill && !stale) return null;
-  const recentStart = addDays(today, -settleDays);
-  const since = needsBackfill ? backfillFrom : (recentStart < backfillFrom ? backfillFrom : recentStart);
-  return { since, until: today, backfill: needsBackfill };
+  let recent: Plan["recent"] = null;
+  if (!covered) {
+    const start = minDay(`${today.slice(0, 7)}-01`, addDays(today, -14));
+    recent = { since: maxDay(start, backfillFrom), until: today, setsCoverage: true };
+  } else if (stale) {
+    recent = { since: maxDay(addDays(today, -settleDays), backfillFrom), until: today, setsCoverage: false };
+  }
+  const oldest = recent?.setsCoverage ? recent.since : covered;
+  const backfill = oldest && oldest > backfillFrom
+    ? { since: maxDay(addDays(oldest, -chunkDays), backfillFrom), until: addDays(oldest, -1) }
+    : null;
+  return { recent, backfill };
 }
 
 function sumDaily(rows: Array<{ spend: number }>): number {
@@ -127,14 +162,14 @@ async function findActiveStaff(token: string | null) {
   return staff;
 }
 
-async function fetchDaily(range: { since: string; until: string }): Promise<Array<{ day: string; spend: number }>> {
+async function fetchDaily(range: Range, timeoutMs: number): Promise<Array<{ day: string; spend: number }>> {
   const url = new URL(ADS_API);
   url.searchParams.set("since", range.since);
   url.searchParams.set("until", range.until);
   url.searchParams.set("groupBy", "day");
   const res = await fetch(url, {
     headers: { "Authorization": `Bearer ${adsToken}`, "Accept": "application/json" },
-    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`upstream_${res.status}`);
   const json = await res.json();
@@ -145,23 +180,32 @@ async function fetchDaily(range: { since: string; until: string }): Promise<Arra
 }
 
 // ไม่ throw: ล้มเหลวแล้วบันทึกสาเหตุลง ad_spend_sync_state แล้วคืน false (ผู้เรียกยังตอบข้อมูลที่เก็บไว้ได้)
-async function refresh(plan: { since: string; until: string; backfill: boolean }): Promise<boolean> {
+async function refreshRange(range: Range, setsCoverage: boolean, timeoutMs: number): Promise<boolean> {
   const startedAt = Date.now();
   try {
     const rows: Array<{ day: string; spend: number }> = [];
-    for (const range of chunkRange(plan.since, plan.until, CHUNK_DAYS)) rows.push(...await fetchDaily(range));
+    for (const part of chunkRange(range.since, range.until, CHUNK_DAYS)) rows.push(...await fetchDaily(part, timeoutMs));
     const { error } = await supabase.rpc("ad_spend_save_v1", {
       p_rows: rows,
-      p_backfilled_from: plan.backfill ? plan.since : null,
+      p_backfilled_from: setsCoverage ? range.since : null,
     });
     if (error) throw new Error(`save_${error.code ?? "failed"}`);
-    console.log("ads-spend-cache refreshed", JSON.stringify({ since: plan.since, until: plan.until, backfill: plan.backfill, rows: rows.length, ms: Date.now() - startedAt }));
+    console.log("ads-spend-cache refreshed", JSON.stringify({ since: range.since, until: range.until, setsCoverage, rows: rows.length, ms: Date.now() - startedAt }));
     return true;
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    console.error("ads-spend-cache refresh failed", message, "after ms", Date.now() - startedAt);
-    await supabase.rpc("ad_spend_fail_v1", { p_error: message });
+    console.error("ads-spend-cache refresh failed", JSON.stringify({ since: range.since, until: range.until, message, ms: Date.now() - startedAt }));
+    await supabase.rpc("ad_spend_fail_v1", { p_error: `${range.since}..${range.until}: ${message}` });
     return false;
+  }
+}
+
+// เติมย้อนหลังต่อเนื่องจนหมดเวลา หรือล้ม (รอบหน้าค่อยต่อจากที่ค้าง เพราะ backfilled_from ขยับทีละช่วงที่สำเร็จ)
+async function backfillLoop(first: Range, jobStartedAt: number) {
+  let range: Range | null = first;
+  while (range && Date.now() - jobStartedAt + BACKFILL_TIMEOUT_MS < JOB_WALL_BUDGET_MS) {
+    if (!await refreshRange(range, true, BACKFILL_TIMEOUT_MS)) return;
+    range = planRefresh(await readState(), Date.now(), BACKFILL_FROM, REFRESH_MAX_AGE_MS, SETTLE_DAYS, BACKFILL_CHUNK_DAYS).backfill;
   }
 }
 
@@ -200,21 +244,24 @@ Deno.serve(async (req) => {
     if (span < 0 || span > MAX_RANGE_DAYS) return response({ error: "invalid_range" }, 400, origin);
 
     let state = await readState();
-    const plan = planRefresh(state, Date.now(), BACKFILL_FROM, REFRESH_MAX_AGE_MS, SETTLE_DAYS);
+    const plan = planRefresh(state, Date.now(), BACKFILL_FROM, REFRESH_MAX_AGE_MS, SETTLE_DAYS, BACKFILL_CHUNK_DAYS);
     let syncing = false;
-    if (plan && adsToken) {
+    if ((plan.recent || plan.backfill) && adsToken) {
       const { data: leased } = await supabase.rpc("ad_spend_lease_v1", { p_ttl_seconds: LEASE_TTL_SECONDS });
       if (leased === true) {
-        const job = refresh(plan);
-        const outcome = await Promise.race([
-          job.then(() => "done"),
-          new Promise<string>((resolve) => setTimeout(() => resolve("pending"), WAIT_BUDGET_MS)),
-        ]);
-        if (outcome === "pending") {
-          syncing = true;
-          keepAlive(job);
-        } else {
-          state = await readState();
+        const jobStartedAt = Date.now();
+        const recent = plan.recent;
+        const recentJob = recent ? refreshRange(recent, recent.setsCoverage, UPSTREAM_TIMEOUT_MS) : Promise.resolve(true);
+        // ย้อนหลังทำต่อเฉพาะเมื่อช่วงล่าสุดสำเร็จ (ไม่งั้น backfilled_from จะอ้างว่าต่อเนื่องถึงวันนี้ทั้งที่ไม่จริง)
+        const fullJob = recentJob.then((ok) => (ok && plan.backfill ? backfillLoop(plan.backfill, jobStartedAt) : undefined));
+        keepAlive(fullJob);
+        if (recent) {
+          const outcome = await Promise.race([
+            recentJob.then(() => "done"),
+            new Promise<string>((resolve) => setTimeout(() => resolve("pending"), WAIT_BUDGET_MS)),
+          ]);
+          if (outcome === "done") state = await readState();
+          else syncing = true;
         }
       }
     }

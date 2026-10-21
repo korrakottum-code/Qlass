@@ -63,10 +63,13 @@ test("Edge Function: token อยู่ฝั่ง server เท่านั้
 
 test("Edge Function: ขอ lease ก่อนดึง, รอไม่เกินงบเวลาแล้วตอบข้อมูลที่เก็บไว้, ไม่ตอบ ฿0 เมื่อยังไม่เคยดึง", () => {
   const iLease = edge.indexOf('rpc("ad_spend_lease_v1"');
-  const iRefresh = edge.indexOf("const job = refresh(plan)");
-  assert.ok(iLease > 0 && iRefresh > iLease, "ต้องได้ lease ก่อน refresh");
+  const iRefresh = edge.indexOf("const recentJob = recent ? refreshRange(");
+  assert.ok(iLease > 0 && iRefresh > iLease, "ต้องได้ lease ก่อนดึง");
   assert.match(edge, /WAIT_BUDGET_MS/);
-  assert.match(edge, /keepAlive\(job\)/);
+  assert.match(edge, /keepAlive\(fullJob\)/);
+  // ย้อนหลังทำเฉพาะเบื้องหลัง และต่อเมื่อช่วงล่าสุดสำเร็จเท่านั้น
+  assert.match(edge, /recentJob\.then\(\(ok\) => \(ok && plan\.backfill \? backfillLoop\(/);
+  assert.match(edge, /JOB_WALL_BUDGET_MS/);
   assert.match(edge, /rpc\("ad_spend_save_v1"/);
   assert.match(edge, /rpc\("ad_spend_fail_v1"/);
   assert.match(edge, /if \(!state\?\.last_success_at\)[\s\S]*?ads_not_ready/);
@@ -110,21 +113,35 @@ test("pure: addDays / bangkokToday / chunkRange", { skip: !canStrip || !pure }, 
   assert.deepEqual(chunkRange("2026-10-22", "2026-10-21", 31), []);
 });
 
-test("pure: planRefresh — ดึงย้อนหลังครั้งแรก / ดึงเฉพาะ 7 วันล่าสุดเมื่อเก่า / ไม่ดึงเมื่อยังสด", { skip: !canStrip || !pure }, async () => {
+test("pure: planRefresh — ครั้งแรกดึงเดือนนี้ก่อน / เก่าแล้วดึง 7 วันล่าสุด / เติมย้อนหลังทีละช่วง", { skip: !canStrip || !pure }, async () => {
   const { planRefresh } = await loadPure();
   const now = Date.UTC(2026, 9, 21, 5, 0); // 12:00 ไทย 21 ต.ค.
   const H = 3600000;
   const fresh = new Date(now - 10 * 60000).toISOString();
   const old = new Date(now - 2 * H).toISOString();
-  // ไม่เคยดึงเลย -> ดึงทั้งช่วงตั้งแต่ 1 ส.ค.
-  assert.deepEqual(planRefresh(null, now, "2026-08-01", H, 7), { since: "2026-08-01", until: "2026-10-21", backfill: true });
-  assert.deepEqual(planRefresh({ last_success_at: null, backfilled_from: null }, now, "2026-08-01", H, 7), { since: "2026-08-01", until: "2026-10-21", backfill: true });
-  // ย้อนหลังถึง 1 ส.ค. แล้ว และยังสด -> ไม่ต้องดึง
-  assert.equal(planRefresh({ last_success_at: fresh, backfilled_from: "2026-08-01" }, now, "2026-08-01", H, 7), null);
-  // ย้อนหลังแล้วแต่เก่ากว่า 1 ชม. -> ดึงแค่ 7 วันล่าสุด ไม่ใช่ทั้งช่วง
-  assert.deepEqual(planRefresh({ last_success_at: old, backfilled_from: "2026-08-01" }, now, "2026-08-01", H, 7), { since: "2026-10-14", until: "2026-10-21", backfill: false });
-  // ย้อนหลังได้แค่ถึง 1 ก.ย. แต่ต้องการ 1 ส.ค. -> ดึงทั้งช่วงอีกรอบแม้ยังสด
-  assert.deepEqual(planRefresh({ last_success_at: fresh, backfilled_from: "2026-09-01" }, now, "2026-08-01", H, 7), { since: "2026-08-01", until: "2026-10-21", backfill: true });
+  const plan = (state) => planRefresh(state, now, "2026-08-01", H, 7, 14);
+
+  // ไม่เคยดึงเลย -> ต้นเดือนนี้ (1 ต.ค.) ถึงวันนี้ก่อน แล้วเติมย้อนหลัง 14 วันถัดไป
+  assert.deepEqual(plan(null), {
+    recent: { since: "2026-10-01", until: "2026-10-21", setsCoverage: true },
+    backfill: { since: "2026-09-17", until: "2026-09-30" },
+  });
+  // ต้นเดือน: ครอบกราฟ 14 วันย้อนหลังด้วย (3 ต.ค. -> 19 ก.ย.)
+  assert.equal(planRefresh(null, Date.UTC(2026, 9, 3, 5, 0), "2026-08-01", H, 7, 14).recent.since, "2026-09-19");
+  // มีข้อมูลถึง 1 ส.ค. แล้วและยังสด -> ไม่ต้องดึงอะไร
+  assert.deepEqual(plan({ last_success_at: fresh, backfilled_from: "2026-08-01" }), { recent: null, backfill: null });
+  // มีครบแล้วแต่เก่ากว่า 1 ชม. -> ดึงแค่ 7 วันล่าสุด (ไม่ขยับ coverage)
+  assert.deepEqual(plan({ last_success_at: old, backfilled_from: "2026-08-01" }), {
+    recent: { since: "2026-10-14", until: "2026-10-21", setsCoverage: false },
+    backfill: null,
+  });
+  // ยังสดแต่ย้อนหลังยังไม่ครบ -> ไม่ดึงช่วงล่าสุด เติมย้อนหลังช่วงถัดไปอย่างเดียว
+  assert.deepEqual(plan({ last_success_at: fresh, backfilled_from: "2026-09-17" }), {
+    recent: null,
+    backfill: { since: "2026-09-03", until: "2026-09-16" },
+  });
+  // ช่วงสุดท้ายถูกตัดที่ 1 ส.ค. ไม่เลยไป
+  assert.deepEqual(plan({ last_success_at: fresh, backfilled_from: "2026-08-06" }).backfill, { since: "2026-08-01", until: "2026-08-05" });
 });
 
 test("pure: sumDaily", { skip: !canStrip || !pure }, async () => {
