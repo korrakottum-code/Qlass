@@ -97,6 +97,57 @@ function branchName(value: unknown) {
   const name = String(value ?? "").trim();
   return name.length >= 1 && name.length <= 80 ? name : null;
 }
+// รหัสสาขาที่บอทน้องคลาส (booking-api) ใช้อ้างถึงสาขา: ตัวพิมพ์ใหญ่ 2–6 ตัว ตรงกับ check constraint ของ
+// booking_api_branches — undefined = ฟอร์มไม่ได้ส่งมา (หน้าเว็บเวอร์ชันก่อนช่องนี้ยังเปิดค้างอยู่) ต้องไม่แตะ
+// รหัสเดิม ไม่งั้นแค่แก้ชื่อสาขาก็ทำให้สาขาหายจาก /v1/branches, "" = ถอนออกจากบอท, null = รูปแบบผิด
+function bookingApiCode(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return "";
+  const code = String(value).trim().toUpperCase();
+  if (code === "") return "";
+  return /^[A-Z]{2,6}$/.test(code) ? code : null;
+}
+async function readBookingApiBranch(branchId: string) {
+  const { data, error } = await supabase
+    .from("booking_api_branches").select("code,active").eq("branch_id", branchId).maybeSingle();
+  if (error) throw error;
+  return data ? { code: String(data.code), active: data.active === true } : { code: "", active: false };
+}
+// ตาราง booking_api_branches ปิดจากคีย์หน้าเว็บ จึงเขียนได้ทางนี้ทางเดียว (service_role)
+// code เป็น primary key, branch_id เป็น unique → เปลี่ยนรหัสของสาขา = ลบแถวเดิมแล้วใส่ใหม่
+// ห้าม upsert on conflict(code) เพราะจะแย่งรหัสจากสาขาอื่นมาเงียบ ๆ — ให้ insert ชนแล้วตอบ in_use แทน
+async function saveBookingApiBranch(branchId: string, code: string, active: boolean) {
+  const { data: existing, error: readError } = await supabase
+    .from("booking_api_branches").select("code,active").eq("branch_id", branchId).maybeSingle();
+  if (readError) throw readError;
+  if (!code) {
+    if (existing) {
+      const { error } = await supabase.from("booking_api_branches").delete().eq("branch_id", branchId);
+      if (error) throw error;
+    }
+    return { code: "", active: false };
+  }
+  if (existing?.code === code) {
+    if (existing.active !== active) {
+      const { error } = await supabase.from("booking_api_branches").update({ active }).eq("branch_id", branchId);
+      if (error) throw error;
+    }
+    return { code, active };
+  }
+  if (existing) {
+    const { error } = await supabase.from("booking_api_branches").delete().eq("branch_id", branchId);
+    if (error) throw error;
+  }
+  const { error } = await supabase.from("booking_api_branches").insert({ code, branch_id: branchId, active });
+  if (error) {
+    if (String((error as { code?: string }).code ?? "") === "23505") return "in_use";
+    throw error;
+  }
+  return { code, active };
+}
+function publicBranch(branch: { id: unknown; name: unknown }, booking: { code: string; active: boolean }) {
+  return { id: branch.id, name: branch.name, bookingApiCode: booking.code, bookingApiActive: booking.active };
+}
 const queueCreateErrors = new Set([
   "invalid_queue_payload", "past_date_not_allowed", "invalid_branch", "branch_forbidden",
   "invalid_room", "room_required", "invalid_procedure", "invalid_duration",
@@ -290,6 +341,9 @@ Deno.serve(async (req) => {
 
       const name = branchName(body.branch?.name);
       if (!name) return response({ error: "invalid_branch_payload" }, 400, origin);
+      const code = bookingApiCode(body.branch?.bookingApiCode);
+      if (code === null) return response({ error: "invalid_booking_code" }, 400, origin);
+      const active = body.branch?.bookingApiActive !== false;
 
       if (body.action === "branch_update") {
         if (typeof body.branchId !== "string" || body.branchId.length === 0) {
@@ -297,12 +351,39 @@ Deno.serve(async (req) => {
         }
         const { data, error } = await supabase.from("branches").update({ name }).eq("id", body.branchId).select().single();
         if (error) throw error;
-        return response({ branch: { id: data.id, name: data.name } }, 200, origin);
+        const booking = code === undefined
+          ? await readBookingApiBranch(data.id)
+          : await saveBookingApiBranch(data.id, code, active);
+        if (booking === "in_use") return response({ error: "booking_code_in_use" }, 409, origin);
+        return response({ branch: publicBranch(data, booking) }, 200, origin);
       }
 
+      // เช็ครหัสซ้ำก่อนสร้างสาขา ไม่งั้นสาขาเกิดแล้วแต่รหัสไม่ติด ผู้ใช้เห็นแต่ "ไม่สำเร็จ" ทั้งที่สาขาโผล่ในรายการ
+      if (code) {
+        const { data: taken, error: takenError } = await supabase
+          .from("booking_api_branches").select("branch_id").eq("code", code).maybeSingle();
+        if (takenError) throw takenError;
+        if (taken) return response({ error: "booking_code_in_use" }, 409, origin);
+      }
       const { data, error } = await supabase.from("branches").insert({ name }).select().single();
       if (error) throw error;
-      return response({ branch: { id: data.id, name: data.name } }, 200, origin);
+      const booking = code ? await saveBookingApiBranch(data.id, code, active) : { code: "", active: false };
+      if (booking === "in_use") return response({ error: "booking_code_in_use" }, 409, origin);
+      return response({ branch: publicBranch(data, booking) }, 200, origin);
+    }
+
+    // รายการรหัส Booking API ของทุกสาขา (หน้า "จัดการสาขา" ใช้แสดงคอลัมน์และเติมค่าในฟอร์ม)
+    if (body?.action === "branch_booking_list") {
+      const current = await findSession(body.token);
+      if (!current) return response({ error: "invalid_session" }, 401, origin);
+      if (!branchManagementRoles.has(String(current.user.role ?? ""))) {
+        return response({ error: "forbidden" }, 403, origin);
+      }
+      const { data, error } = await supabase.from("booking_api_branches").select("branch_id,code,active");
+      if (error) throw error;
+      return response({
+        codes: (data ?? []).map((row) => ({ branchId: row.branch_id, code: row.code, active: row.active === true })),
+      }, 200, origin);
     }
 
     if (body?.action === "branch_delete") {

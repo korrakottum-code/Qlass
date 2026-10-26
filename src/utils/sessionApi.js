@@ -58,6 +58,11 @@ export function createSessionApi(invoke) {
     async deleteBranchServer(token, branchId) {
       await callSessionFunction({ action: "branch_delete", token, branchId });
     },
+    // รหัส Booking API ของทุกสาขา (ตาราง booking_api_branches ปิดจากคีย์หน้าเว็บ) — คืน [{ branchId, code, active }]
+    async fetchBranchBookingCodes(token) {
+      const data = await callSessionFunction({ action: "branch_booking_list", token });
+      return data.codes || [];
+    },
     // คูปอง: ทุกการอ่าน/เขียนผ่าน staff-session (ตารางปิดจากคีย์หน้าเว็บ) — คืน { coupon } หรือ { total, coupons }
     async lookupCoupon(token, code) {
       return (await callSessionFunction({ action: "coupon_lookup", token, code })).coupon;

@@ -33,7 +33,7 @@ import { learnFromCorrection } from "./utils/smartParser";
 import { checkFreshRoomBookingConflict } from "./utils/bookingConflict";
 import { shouldUseServerQueueCreate, createQueueOnServer } from "./utils/serverQueueCreate";
 import { extractQueueCreateErrorCode, queueCreateErrorMessage } from "./utils/queueCreateGate";
-import { fetchAuthenticatedStaff, fetchLoginDirectory, getReleaseStatus, getServerSessionToken, loginWithPin, restoreServerSession, revokeServerSession, useServerSession, flushClientDiagnostics, createStaffServer, updateStaffServer, deleteStaffServer, createBranchServer, updateBranchServer, deleteBranchServer } from "./utils/sessionAuth";
+import { fetchAuthenticatedStaff, fetchLoginDirectory, getReleaseStatus, getServerSessionToken, loginWithPin, restoreServerSession, revokeServerSession, useServerSession, flushClientDiagnostics, createStaffServer, updateStaffServer, deleteStaffServer, createBranchServer, updateBranchServer, deleteBranchServer, fetchBranchBookingCodes } from "./utils/sessionAuth";
 import { serverErrorCode } from "./utils/sessionApi";
 import { recordClientDiagnostic } from "./utils/clientDiagnostics";
 import { controlledRefreshEnabled, getControlledRefreshStatus, serverDiagnosticsEnabled, flushClientDiagnostics as flushDiagnostics } from "./utils/clientObservability";
@@ -1033,20 +1033,57 @@ export default function App() {
   }, [showToast, queues, currentUser]);
 
   // ═══════ CRUD HELPERS ═══════
+  // รหัสที่บอทน้องคลาส (booking-api) ใช้เรียกสาขา: { [branchId]: { code, active } } — อยู่ในตารางที่ปิดจาก
+  // คีย์หน้าเว็บ จึงอ่านผ่าน staff-session ได้เฉพาะผู้ดูแลระบบ (คนเดียวที่เห็นหน้าจัดการสาขา)
+  // โหลดไม่ได้ = คอลัมน์ว่าง ไม่ขวางการจัดการสาขา
+  const [branchBookingCodes, setBranchBookingCodes] = useState({});
+  useEffect(() => {
+    if (!useServerSession || currentUser?.role !== "superadmin") return undefined;
+    let disposed = false;
+    fetchBranchBookingCodes(getServerSessionToken())
+      .then((codes) => {
+        if (disposed) return;
+        setBranchBookingCodes(Object.fromEntries(codes.map((c) => [c.branchId, { code: c.code, active: c.active === true }])));
+      })
+      .catch(() => {});
+    return () => { disposed = true; };
+  }, [currentUser?.id, currentUser?.role]);
+
   // การเขียนตาราง "สาขา" ย้ายไปฝั่งเซิร์ฟเวอร์แล้ว (แพทเทิร์นเดียวกับพนักงาน) เพื่อจะปิดสิทธิ์
   // เขียนของคีย์ที่ฝังอยู่ในหน้าเว็บได้ — คีย์นั้นใครเปิดหน้าเว็บก็อ่านได้ ถ้ายังเขียนได้อยู่
   // แปลว่าคนนอกสร้าง/แก้/ลบสาขาได้ด้วย
   const saveBranch = useCallback(async (data) => {
-    if (data.id) {
-      const updated = useServerSession
-        ? await updateBranchServer(getServerSessionToken(), data.id, data)
-        : await updateBranch(data.id, data);
-      setBranches(prev => prev.map(b => b.id === data.id ? updated : b));
-    } else {
-      const created = useServerSession
-        ? await createBranchServer(getServerSessionToken(), data)
-        : await createBranch(data);
-      setBranches(prev => [...prev, created]);
+    // คำตอบจากเซิร์ฟเวอร์พ่วงรหัส Booking API มาด้วย — เก็บแยกจาก branches ให้คอลัมน์/ฟอร์มตรงทันที
+    const rememberBooking = (b) => {
+      if (!useServerSession || typeof b?.bookingApiCode !== "string") return;
+      setBranchBookingCodes(prev => {
+        const next = { ...prev };
+        if (b.bookingApiCode) next[b.id] = { code: b.bookingApiCode, active: b.bookingApiActive === true };
+        else delete next[b.id];
+        return next;
+      });
+    };
+    try {
+      if (data.id) {
+        const updated = useServerSession
+          ? await updateBranchServer(getServerSessionToken(), data.id, data)
+          : await updateBranch(data.id, data);
+        setBranches(prev => prev.map(b => b.id === data.id ? updated : b));
+        rememberBooking(updated);
+      } else {
+        const created = useServerSession
+          ? await createBranchServer(getServerSessionToken(), data)
+          : await createBranch(data);
+        setBranches(prev => [...prev, created]);
+        rememberBooking(created);
+      }
+    } catch (error) {
+      // รหัสเหตุผลอยู่ใน body ของคำตอบ ไม่ใช่ error.message (ดู deleteBranch) — ไม่บอกให้ชัด
+      // ผู้ใช้จะเห็นแค่ "ไม่สำเร็จ" แล้วลองรหัสเดิมซ้ำไม่จบ
+      const serverCode = await serverErrorCode(error);
+      if (serverCode === "booking_code_in_use") showToast("error", "รหัส Booking API นี้ถูกใช้กับสาขาอื่นแล้ว — เลือกรหัสอื่น");
+      else if (serverCode === "invalid_booking_code") showToast("error", "รหัส Booking API ต้องเป็นตัวอักษร A–Z 2–6 ตัว");
+      throw error;
     }
     setModal(null);
     showToast("success", "บันทึกสาขาเรียบร้อย");
@@ -1337,6 +1374,8 @@ export default function App() {
       throw error;
     }
     setBranches(prev => prev.filter(b => b.id !== id));
+    // แถวใน booking_api_branches หายตาม FK cascade — ลบออกจากแผนที่ให้คอลัมน์ไม่ค้าง
+    setBranchBookingCodes(prev => { const next = { ...prev }; delete next[id]; return next; });
     showToast("success", "ลบสาขาแล้ว");
   }, [showToast]);
 
@@ -1726,6 +1765,7 @@ export default function App() {
               <BranchesPage
                 branches={branches}
                 rooms={rooms}
+                bookingCodes={useServerSession ? branchBookingCodes : null}
                 onAdd={() => setModal({ type: "branch", data: null })}
                 onEdit={(b) => setModal({ type: "branch", data: b })}
                 onDelete={deleteBranch}
@@ -2026,7 +2066,13 @@ export default function App() {
       {modal && (
         <Modal onClose={() => setModal(null)}>
           {modal.type === "branch" && (
-            <BranchModal data={modal.data} onSave={saveBranch} onClose={() => setModal(null)} />
+            <BranchModal
+              data={modal.data}
+              booking={modal.data ? branchBookingCodes[modal.data.id] : undefined}
+              bookingEnabled={useServerSession}
+              onSave={saveBranch}
+              onClose={() => setModal(null)}
+            />
           )}
           {modal.type === "procedure" && (
             <ProcedureModal data={modal.data} categories={categories} onSave={saveProcedure} onClose={() => setModal(null)} />

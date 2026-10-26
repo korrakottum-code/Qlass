@@ -95,6 +95,10 @@ Supabase Edge Function secrets (`supabase secrets set`):
 - `QLASS_ALLOWED_ORIGIN` / `QLASS_ALLOWED_ORIGINS` — browser-called functions only
 - `QLASS_EXTERNAL_API_KEY` — server-to-server key for `external-queue-stats`; must be ≥32 chars or the function fails closed
 
+### Booking API (Saifa AI / "น้องคลาส" bot)
+
+`supabase/functions/booking-api` lets an external chat bot check availability and book queues (`docs/BOOKING_API_REFERENCE.md`). It books as the bot staff account under the **same room rules as `create_queue_v1`** (room type, `room_procedures`, schedules, conflicts). SKUs come automatically from `promos`; branches appear in `GET /v1/branches` only once they have a row in `booking_api_branches` (2–6 uppercase letters, e.g. `KK`). That table is closed to the browser key, so the superadmin sets the code and the "accepting bookings" switch in the Branch modal, which writes through `staff-session` (`branch_create` / `branch_update` with `bookingApiCode` / `bookingApiActive`, read back with `branch_booking_list`).
+
 ### External read-only API
 
 `supabase/functions/external-queue-stats` exposes **aggregated queue counts** to other systems (e.g. an executive dashboard) without granting database access. It authenticates with `QLASS_EXTERNAL_API_KEY` (separate from staff login), aggregates inside SQL via the `public.external_queue_stats` RPC, and returns **no customer data and no `price`** — only counts per branch and per day. Deploy with `--no-verify-jwt` because the function checks the API key itself. See [`docs/EXTERNAL_QUEUE_STATS_API.md`](./docs/EXTERNAL_QUEUE_STATS_API.md).
