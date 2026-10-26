@@ -43,7 +43,11 @@ test("รหัสซ้ำกับสาขาอื่นต้องตอ�
   const save = edge.slice(edge.indexOf("async function saveBookingApiBranch("), edge.indexOf("function publicBranch("));
   // code เป็น primary key: upsert on conflict(code) จะย้ายรหัสของสาขาอื่นมาเป็นของเรา — ห้ามใช้
   assert.doesNotMatch(save, /\.upsert\(/);
-  assert.match(save, /\.insert\(\{ code, branch_id: branchId, active \}\)/);
+  // เปลี่ยนรหัสของสาขาที่มีรหัสอยู่แล้ว = update แถวเดิม (ชนแล้วแถวเดิมยังอยู่) ไม่ใช่ลบแล้ว insert ใหม่
+  // (insert ชน 23505 ตอนนั้นแถวเดิมหายไปแล้ว สาขาตกจาก /v1/branches ทั้งที่ตอบ 409)
+  assert.match(save, /existing\s*\?\s*await supabase\.from\("booking_api_branches"\)\.update\(\{ code, active \}\)\.eq\("branch_id", branchId\)/);
+  assert.match(save, /:\s*await supabase\.from\("booking_api_branches"\)\.insert\(\{ code, branch_id: branchId, active \}\)/);
+  assert.doesNotMatch(save.slice(save.indexOf("if (existing?.code === code")), /\.delete\(\)/, "ทางเปลี่ยนรหัสต้องไม่มี delete");
   assert.match(save, /=== "23505"\) return "in_use"/);
   assert.match(edge, /booking_code_in_use/);
   // ตอนสร้างสาขาใหม่ เช็ครหัสซ้ำก่อน insert สาขา ไม่งั้นสาขาเกิดแล้วแต่รหัสไม่ติด
@@ -64,8 +68,23 @@ test("ฟอร์มเวอร์ชันเก่าที่ไม่ส�
 test("เว้นรหัสว่าง = ถอนสาขาออกจาก API (ลบแถว) ไม่ใช่เก็บแถวค้างด้วยรหัสว่าง", () => {
   const save = edge.slice(edge.indexOf("async function saveBookingApiBranch("), edge.indexOf("function publicBranch("));
   assert.match(save, /if \(!code\) \{[\s\S]*?\.delete\(\)\.eq\("branch_id", branchId\)/);
-  // รหัสเดิมเท่ากัน → แก้แค่ active ไม่ลบ-ใส่ใหม่ (สาขาไม่หายจาก /v1/branches แม้ชั่วขณะ)
-  assert.match(save, /if \(existing\?\.code === code\)/);
+  // รหัสเดิมเท่ากัน active เท่ากัน → ไม่เขียนอะไรเลย
+  assert.match(save, /if \(existing\?\.code === code && existing\.active === active\) return \{ code, active \};/);
+});
+
+test("ยังไม่รู้รหัส (โหลดไม่เสร็จ/ล้ม) ต้องซ่อนช่องรหัส ไม่ใช่ให้ฟอร์มส่งค่าว่างไปลบรหัสจริง", () => {
+  // ถ้า state เริ่มเป็น {} ฟอร์มจะเห็นทุกสาขาเป็น "ไม่มีรหัส" แล้วส่ง bookingApiCode: "" ตอนแก้ชื่อ → เซิร์ฟเวอร์ลบแถวทิ้ง
+  assert.match(app, /const \[branchBookingCodes, setBranchBookingCodes\] = useState\(null\);/);
+  assert.match(app, /bookingEnabled=\{useServerSession && branchBookingCodes !== null\}/);
+  assert.match(app, /booking=\{modal\.data && branchBookingCodes \? branchBookingCodes\[modal\.data\.id\] : undefined\}/);
+  // โหลดล้มต้องมีเสียง ไม่ใช่กลืนเงียบ
+  const effect = app.slice(app.indexOf("fetchBranchBookingCodes(getServerSessionToken())"), app.indexOf("const saveBranch = useCallback("));
+  assert.match(effect, /\.catch\(\(\) => \{[\s\S]*?showToast\("error"/);
+  // คำตอบ save/delete ห้ามเปลี่ยน null เป็นแผนที่บางส่วน
+  const save = app.slice(app.indexOf("const saveBranch = useCallback("), app.indexOf("const saveProcedure = useCallback("));
+  assert.match(save, /if \(prev === null\) return prev;/);
+  const del = app.slice(app.indexOf("const deleteBranch = useCallback("), app.indexOf("const deleteProcedure = useCallback("));
+  assert.match(del, /if \(prev === null\) return prev;/);
 });
 
 test("ฝั่งแอป: โหลดรหัสผ่านเซิร์ฟเวอร์เฉพาะผู้ดูแลระบบ และส่งรหัสไปกับฟอร์มสาขา", () => {
@@ -74,7 +93,6 @@ test("ฝั่งแอป: โหลดรหัสผ่านเซิร์
   assert.ok(auth.includes("fetchBranchBookingCodes"), "sessionAuth ไม่ได้ export fetchBranchBookingCodes");
   assert.match(app, /if \(!useServerSession \|\| currentUser\?\.role !== "superadmin"\) return undefined;/);
   assert.match(app, /fetchBranchBookingCodes\(getServerSessionToken\(\)\)/);
-  assert.match(app, /bookingEnabled=\{useServerSession\}/);
   assert.match(app, /bookingCodes=\{useServerSession \? branchBookingCodes : null\}/);
   // ฟอร์มส่ง bookingApiCode/bookingApiActive เฉพาะโหมดเซิร์ฟเวอร์ — โหมดเขียนตรงไม่มีทางแตะตารางนี้
   assert.match(modal, /if \(!bookingEnabled\) return onSave\(\{ id: data\?\.id, name: name\.trim\(\) \}\)/);

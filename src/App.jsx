@@ -1035,8 +1035,9 @@ export default function App() {
   // ═══════ CRUD HELPERS ═══════
   // รหัสที่บอทน้องคลาส (booking-api) ใช้เรียกสาขา: { [branchId]: { code, active } } — อยู่ในตารางที่ปิดจาก
   // คีย์หน้าเว็บ จึงอ่านผ่าน staff-session ได้เฉพาะผู้ดูแลระบบ (คนเดียวที่เห็นหน้าจัดการสาขา)
-  // โหลดไม่ได้ = คอลัมน์ว่าง ไม่ขวางการจัดการสาขา
-  const [branchBookingCodes, setBranchBookingCodes] = useState({});
+  // null = ยังไม่รู้ (ยังไม่โหลด/โหลดล้ม) → ซ่อนช่องรหัสในฟอร์ม ฟอร์มส่งแค่ชื่อ เซิร์ฟเวอร์ไม่แตะรหัสเดิม
+  // ถ้าใช้ {} แทน ฟอร์มจะเห็นเป็น "ไม่มีรหัส" แล้วส่งค่าว่างไปลบรหัสจริงทิ้งแค่เพราะแก้ชื่อสาขา
+  const [branchBookingCodes, setBranchBookingCodes] = useState(null);
   useEffect(() => {
     if (!useServerSession || currentUser?.role !== "superadmin") return undefined;
     let disposed = false;
@@ -1045,9 +1046,11 @@ export default function App() {
         if (disposed) return;
         setBranchBookingCodes(Object.fromEntries(codes.map((c) => [c.branchId, { code: c.code, active: c.active === true }])));
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!disposed) showToast("error", "โหลดรหัส Booking API ของสาขาไม่สำเร็จ — ช่องรหัสจะไม่แสดงจนกว่าจะรีเฟรช");
+      });
     return () => { disposed = true; };
-  }, [currentUser?.id, currentUser?.role]);
+  }, [currentUser?.id, currentUser?.role, showToast]);
 
   // การเขียนตาราง "สาขา" ย้ายไปฝั่งเซิร์ฟเวอร์แล้ว (แพทเทิร์นเดียวกับพนักงาน) เพื่อจะปิดสิทธิ์
   // เขียนของคีย์ที่ฝังอยู่ในหน้าเว็บได้ — คีย์นั้นใครเปิดหน้าเว็บก็อ่านได้ ถ้ายังเขียนได้อยู่
@@ -1057,6 +1060,7 @@ export default function App() {
     const rememberBooking = (b) => {
       if (!useServerSession || typeof b?.bookingApiCode !== "string") return;
       setBranchBookingCodes(prev => {
+        if (prev === null) return prev; // ยังไม่รู้รหัสสาขาอื่น — เติมทีละสาขาจะทำให้ฟอร์มเปิดช่องรหัสทั้งที่ข้อมูลไม่ครบ
         const next = { ...prev };
         if (b.bookingApiCode) next[b.id] = { code: b.bookingApiCode, active: b.bookingApiActive === true };
         else delete next[b.id];
@@ -1375,7 +1379,7 @@ export default function App() {
     }
     setBranches(prev => prev.filter(b => b.id !== id));
     // แถวใน booking_api_branches หายตาม FK cascade — ลบออกจากแผนที่ให้คอลัมน์ไม่ค้าง
-    setBranchBookingCodes(prev => { const next = { ...prev }; delete next[id]; return next; });
+    setBranchBookingCodes(prev => { if (prev === null) return prev; const next = { ...prev }; delete next[id]; return next; });
     showToast("success", "ลบสาขาแล้ว");
   }, [showToast]);
 
@@ -2068,8 +2072,8 @@ export default function App() {
           {modal.type === "branch" && (
             <BranchModal
               data={modal.data}
-              booking={modal.data ? branchBookingCodes[modal.data.id] : undefined}
-              bookingEnabled={useServerSession}
+              booking={modal.data && branchBookingCodes ? branchBookingCodes[modal.data.id] : undefined}
+              bookingEnabled={useServerSession && branchBookingCodes !== null}
               onSave={saveBranch}
               onClose={() => setModal(null)}
             />

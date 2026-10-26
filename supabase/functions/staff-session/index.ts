@@ -114,8 +114,9 @@ async function readBookingApiBranch(branchId: string) {
   return data ? { code: String(data.code), active: data.active === true } : { code: "", active: false };
 }
 // ตาราง booking_api_branches ปิดจากคีย์หน้าเว็บ จึงเขียนได้ทางนี้ทางเดียว (service_role)
-// code เป็น primary key, branch_id เป็น unique → เปลี่ยนรหัสของสาขา = ลบแถวเดิมแล้วใส่ใหม่
-// ห้าม upsert on conflict(code) เพราะจะแย่งรหัสจากสาขาอื่นมาเงียบ ๆ — ให้ insert ชนแล้วตอบ in_use แทน
+// code เป็น primary key, branch_id เป็น unique, ไม่มีตารางไหน FK มาที่ code → เปลี่ยนรหัสของสาขา = update คอลัมน์
+// code ในแถวเดิม (statement เดียว ชนรหัสสาขาอื่นก็ล้มทั้งก้อน แถวเดิมยังอยู่) ห้ามลบแล้วใส่ใหม่ (insert ชน = แถวเดิม
+// หายไปแล้ว สาขาตกจาก /v1/branches ทั้งที่ตอบ 409) และห้าม upsert on conflict(code) (แย่งรหัสจากสาขาอื่นเงียบ ๆ)
 async function saveBookingApiBranch(branchId: string, code: string, active: boolean) {
   const { data: existing, error: readError } = await supabase
     .from("booking_api_branches").select("code,active").eq("branch_id", branchId).maybeSingle();
@@ -127,18 +128,10 @@ async function saveBookingApiBranch(branchId: string, code: string, active: bool
     }
     return { code: "", active: false };
   }
-  if (existing?.code === code) {
-    if (existing.active !== active) {
-      const { error } = await supabase.from("booking_api_branches").update({ active }).eq("branch_id", branchId);
-      if (error) throw error;
-    }
-    return { code, active };
-  }
-  if (existing) {
-    const { error } = await supabase.from("booking_api_branches").delete().eq("branch_id", branchId);
-    if (error) throw error;
-  }
-  const { error } = await supabase.from("booking_api_branches").insert({ code, branch_id: branchId, active });
+  if (existing?.code === code && existing.active === active) return { code, active };
+  const { error } = existing
+    ? await supabase.from("booking_api_branches").update({ code, active }).eq("branch_id", branchId)
+    : await supabase.from("booking_api_branches").insert({ code, branch_id: branchId, active });
   if (error) {
     if (String((error as { code?: string }).code ?? "") === "23505") return "in_use";
     throw error;
