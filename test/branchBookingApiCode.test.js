@@ -50,8 +50,12 @@ test("รหัสซ้ำกับสาขาอื่นต้องตอ�
   assert.doesNotMatch(save.slice(save.indexOf("if (existing?.code === code")), /\.delete\(\)/, "ทางเปลี่ยนรหัสต้องไม่มี delete");
   assert.match(save, /=== "23505"\) return "in_use"/);
   assert.match(edge, /booking_code_in_use/);
-  // ตอนสร้างสาขาใหม่ เช็ครหัสซ้ำก่อน insert สาขา ไม่งั้นสาขาเกิดแล้วแต่รหัสไม่ติด
-  const create = edge.slice(edge.indexOf('body.action === "branch_update"'), edge.indexOf('body?.action === "branch_booking_list"'));
+  // เช็ครหัสซ้ำ "ก่อน" แตะตาราง branches ทั้งทางสร้างและทางแก้ — ไม่งั้นสาขาเกิด/ชื่อเปลี่ยนใน DB แล้ว แต่ตอบ 409
+  const update = edge.slice(edge.indexOf('body.action === "branch_update"'), edge.indexOf("// เช็ครหัสซ้ำก่อนสร้างสาขา"));
+  const updateBranchAt = update.indexOf('from("branches").update');
+  const updateTakenAt = update.indexOf('.eq("code", code).neq("branch_id", body.branchId).maybeSingle()');
+  assert.ok(updateTakenAt > -1 && updateTakenAt < updateBranchAt, "ทางแก้ไขต้องเช็ครหัสชนสาขาอื่นก่อนแก้ชื่อ");
+  const create = edge.slice(edge.indexOf("// เช็ครหัสซ้ำก่อนสร้างสาขา"), edge.indexOf('body?.action === "branch_booking_list"'));
   const insertBranchAt = create.indexOf('from("branches").insert');
   const takenCheckAt = create.indexOf('.eq("code", code).maybeSingle()');
   assert.ok(takenCheckAt > -1 && takenCheckAt < insertBranchAt, "ต้องเช็ครหัสซ้ำก่อนสร้างสาขา");
@@ -80,6 +84,11 @@ test("ยังไม่รู้รหัส (โหลดไม่เสร็
   // โหลดล้มต้องมีเสียง ไม่ใช่กลืนเงียบ
   const effect = app.slice(app.indexOf("fetchBranchBookingCodes(getServerSessionToken())"), app.indexOf("const saveBranch = useCallback("));
   assert.match(effect, /\.catch\(\(\) => \{[\s\S]*?showToast\("error"/);
+  // ฟอร์มต้องล็อกค่า bookingEnabled ตอนเปิด: รายการรหัสที่มาถึงหลังเปิดฟอร์มห้ามทำให้ช่องรหัสโผล่ว่าง ๆ
+  // แล้วบันทึกชื่อเฉย ๆ กลายเป็นส่งค่าว่างไปลบรหัสจริง
+  assert.match(modal, /const \[enabled\] = useState\(bookingEnabled\);/);
+  assert.match(modal, /if \(!enabled\) return onSave\(\{ id: data\?\.id, name: name\.trim\(\) \}\)/);
+  assert.doesNotMatch(modal.slice(modal.indexOf("function handleSave")), /\bbookingEnabled\b/, "หลังประกาศ enabled ห้ามอ่าน prop สดอีก");
   // คำตอบ save/delete ห้ามเปลี่ยน null เป็นแผนที่บางส่วน
   const save = app.slice(app.indexOf("const saveBranch = useCallback("), app.indexOf("const saveProcedure = useCallback("));
   assert.match(save, /if \(prev === null\) return prev;/);
@@ -95,7 +104,6 @@ test("ฝั่งแอป: โหลดรหัสผ่านเซิร์
   assert.match(app, /fetchBranchBookingCodes\(getServerSessionToken\(\)\)/);
   assert.match(app, /bookingCodes=\{useServerSession \? branchBookingCodes : null\}/);
   // ฟอร์มส่ง bookingApiCode/bookingApiActive เฉพาะโหมดเซิร์ฟเวอร์ — โหมดเขียนตรงไม่มีทางแตะตารางนี้
-  assert.match(modal, /if \(!bookingEnabled\) return onSave\(\{ id: data\?\.id, name: name\.trim\(\) \}\)/);
   assert.match(modal, /bookingApiCode: trimmed, bookingApiActive: active/);
   // คอลัมน์ในตารางสาขาซ่อนเมื่อไม่มีข้อมูล (null) ไม่ใช่โชว์ "ไม่เปิดให้บอท" ผิด ๆ ในโหมดเขียนตรง
   assert.match(page, /const showBooking = bookingCodes !== null;/);

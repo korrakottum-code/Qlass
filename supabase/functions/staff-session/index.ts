@@ -342,6 +342,13 @@ Deno.serve(async (req) => {
         if (typeof body.branchId !== "string" || body.branchId.length === 0) {
           return response({ error: "invalid_branch_payload" }, 400, origin);
         }
+        // เช็ครหัสชนสาขาอื่นก่อนแตะชื่อ — ไม่งั้นชื่อเปลี่ยนใน DB แล้วแต่ตอบ 409 แอปโชว์ชื่อเดิมจนรีเฟรช
+        if (code) {
+          const { data: taken, error: takenError } = await supabase
+            .from("booking_api_branches").select("branch_id").eq("code", code).neq("branch_id", body.branchId).maybeSingle();
+          if (takenError) throw takenError;
+          if (taken) return response({ error: "booking_code_in_use" }, 409, origin);
+        }
         const { data, error } = await supabase.from("branches").update({ name }).eq("id", body.branchId).select().single();
         if (error) throw error;
         const booking = code === undefined

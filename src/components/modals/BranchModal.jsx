@@ -8,13 +8,16 @@ const BOOKING_CODE_RE = /^[A-Z]{2,6}$/;
 // ตรงจากเบราว์เซอร์ ซึ่งแตะตาราง booking_api_branches ไม่ได้ จึงไม่แสดงช่องนี้เลย
 export default function BranchModal({ data, booking, bookingEnabled = false, onSave, onClose }) {
   const [name, setName] = useState(data?.name || "");
+  // ล็อกค่าตอนเปิดฟอร์ม: ถ้ารายการรหัสโหลดเสร็จ "หลัง" เปิดฟอร์ม prop จะพลิกเป็น true กลางคันโดยที่ code ยังเป็น ""
+  // → ช่องรหัสโผล่ว่าง ๆ แล้วการกดบันทึกชื่อเฉย ๆ จะส่งค่าว่างไปลบรหัสจริงของสาขา
+  const [enabled] = useState(bookingEnabled);
   const [code, setCode] = useState(booking?.code || "");
   const [active, setActive] = useState(booking ? booking.active === true : true);
   const [codeError, setCodeError] = useState("");
 
   function handleSave() {
     if (!name.trim()) return undefined;
-    if (!bookingEnabled) return onSave({ id: data?.id, name: name.trim() });
+    if (!enabled) return onSave({ id: data?.id, name: name.trim() });
     const trimmed = code.trim().toUpperCase();
     if (trimmed && !BOOKING_CODE_RE.test(trimmed)) {
       setCodeError("ต้องเป็นตัวอักษร A–Z 2–6 ตัว เช่น KK, UD");
@@ -38,7 +41,7 @@ export default function BranchModal({ data, booking, bookingEnabled = false, onS
           />
         </div>
 
-        {bookingEnabled && (
+        {enabled && (
           <div className="form-group" style={{ marginTop: 14 }}>
             <label className="form-label">รหัสสาขาสำหรับน้องคลาส AI (Booking API)</label>
             <input
