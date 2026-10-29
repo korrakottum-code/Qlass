@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 
-export default function PromosPage({ promos, procedures, onAdd, onEdit, onDelete, onReorder }) {
+export default function PromosPage({ promos, procedures, onAdd, onEdit, onDelete, onReorder, isReordering = false }) {
   const [filterProcedure, setFilterProcedure] = useState("all");
 
   const filteredPromos = useMemo(() => {
@@ -66,8 +66,8 @@ export default function PromosPage({ promos, procedures, onAdd, onEdit, onDelete
                   </td>
                   <td>
                     <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
-                      <button className="btn btn-sm btn-secondary" onClick={() => onReorder(p.id, "up")} disabled={i === 0} title="ขึ้น">▲</button>
-                      <button className="btn btn-sm btn-secondary" onClick={() => onReorder(p.id, "down")} disabled={i === filteredPromos.length - 1} title="ลง">▼</button>
+                      <button className="btn btn-sm btn-secondary" onClick={() => onReorder(p.id, "up", filterProcedure)} disabled={isReordering || i === 0} title="ขึ้น">▲</button>
+                      <button className="btn btn-sm btn-secondary" onClick={() => onReorder(p.id, "down", filterProcedure)} disabled={isReordering || i === filteredPromos.length - 1} title="ลง">▼</button>
                       <button className="btn btn-sm btn-secondary" onClick={() => onEdit(p)}>✏️</button>
                       <button className="btn btn-sm btn-danger" onClick={() => {
                         if (window.confirm(`ลบโปร "${p.name}" ออกจากระบบ?`)) onDelete(p.id);
