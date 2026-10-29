@@ -44,6 +44,7 @@ import { BACKDATE_MESSAGE, isPastPlacement } from "./utils/backdateRule";
 import { buildRescheduledQueue } from "./utils/rescheduleQueue";
 import { buildRoomProcedureIndex, isProcedureAllowedInRoom, shouldEnforceOnSave, procedureRoomBlockMessage } from "./utils/roomProcedures";
 import { buildProcedureAreaIndex } from "./utils/procedureAreas";
+import { planPromoReorder } from "./utils/promoReorder";
 
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
@@ -89,6 +90,7 @@ export default function App() {
   const [procedures, setProcedures] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [promos, setPromos] = useState([]);
+  const [isReorderingPromos, setIsReorderingPromos] = useState(false);
   const [roomSchedules, setRoomSchedules] = useState([]);
   // [{ roomId, procedureId }] — เตียงไหนรับหัตถการอะไร. เตียงที่ไม่มีแถวเลย = ยังไม่ตั้งค่า
   // ให้ใช้กติกาเดิม M/T (ดู src/utils/roomProcedures.js)
@@ -100,6 +102,7 @@ export default function App() {
   const [categories, setCategories] = useState(PROCEDURE_CATEGORIES);
   const [staff, setStaff] = useState([]);
   const [tickets, setTickets] = useState([]);
+  const promoReorderInFlightRef = useRef(false);
 
   // ─── Auth (persist across refresh) ───
   const [currentUser, setCurrentUser] = useState(() => {
@@ -1184,36 +1187,43 @@ export default function App() {
     showToast("success", "บันทึกโปรเรียบร้อย");
   }, [showToast]);
 
-  const reorderPromo = useCallback(async (promoId, direction) => {
-    const idx = promos.findIndex((p) => p.id === promoId);
-    if (idx < 0) return;
-    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= promos.length) return;
+  const reorderPromo = useCallback(async (promoId, direction, procedureId = "all") => {
+    if (promoReorderInFlightRef.current) return;
+    const plan = planPromoReorder(promos, promoId, direction, procedureId);
+    if (!plan) return;
 
-    // Swap in a local copy
-    const reordered = [...promos];
-    [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
-
-    // Optimistic UI — assign sort_order = position index immediately
-    setPromos(reordered.map((p, i) => ({ ...p, sortOrder: i })));
-
-    // Collect items whose sort_order needs updating in DB
-    // First time: all 252 items (lazy init), subsequent swaps: only 2 items
-    const updateFns = [];
-    for (let i = 0; i < reordered.length; i++) {
-      if (reordered[i].sortOrder !== i) {
-        const item = reordered[i];
-        const newOrder = i;
-        updateFns.push(() => updatePromo(item.id, { sortOrder: newOrder }));
+    // Save before updating the screen. Normally this changes only two rows;
+    // legacy duplicate sort orders are normalized once in guarded batches.
+    const savedChanges = [];
+    promoReorderInFlightRef.current = true;
+    setIsReorderingPromos(true);
+    try {
+      const CHUNK = 50;
+      for (let i = 0; i < plan.changes.length; i += CHUNK) {
+        const chunk = plan.changes.slice(i, i + CHUNK);
+        const results = await Promise.allSettled(
+          chunk.map((change) => updatePromo(change.id, { sortOrder: change.sortOrder })),
+        );
+        results.forEach((result, index) => {
+          if (result.status === "fulfilled") savedChanges.push(chunk[index]);
+        });
+        if (results.some((result) => result.status === "rejected")) {
+          throw new Error("ไม่สามารถบันทึกลำดับโปรได้ครบ");
+        }
       }
+      setPromos(plan.nextPromos);
+    } catch (error) {
+      // Avoid leaving a partial order behind if a batch fails midway.
+      await Promise.allSettled(
+        savedChanges.map((change) => updatePromo(change.id, { sortOrder: change.previousSortOrder })),
+      );
+      console.error("reorderPromo failed:", error);
+      showToast("error", "จัดลำดับโปรไม่สำเร็จ — ยังไม่ได้เปลี่ยนรายการ");
+    } finally {
+      promoReorderInFlightRef.current = false;
+      setIsReorderingPromos(false);
     }
-
-    // Batch in chunks to avoid overwhelming the API
-    const CHUNK = 50;
-    for (let i = 0; i < updateFns.length; i += CHUNK) {
-      await Promise.all(updateFns.slice(i, i + CHUNK).map((fn) => fn()));
-    }
-  }, [promos]);
+  }, [promos, showToast]);
 
   const reorderRoom = useCallback(async (roomId, direction) => {
     // หา branch ของห้องนี้ แล้ว reorder เฉพาะห้องใน branch เดียวกัน
@@ -1800,6 +1810,7 @@ export default function App() {
                 onEdit={(p) => setModal({ type: "promo", data: p })}
                 onDelete={deletePromo}
                 onReorder={reorderPromo}
+                isReordering={isReorderingPromos}
               />
             )}
 
