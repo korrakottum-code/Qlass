@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
 import { ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK } from "../../utils/constants";
 import { blockToTime } from "../../utils/helpers";
-import { ALWAYS_ALLOWED_PROCEDURE_NAMES, noteMentionsOutsideSelection, roomLockLabel, buildRoomProcedureIndex } from "../../utils/roomProcedures";
+import { ALWAYS_ALLOWED_PROCEDURE_NAMES, noteMentionsOutsideSelection, roomLockLabel, buildRoomProcedureIndex, procedureFitsRoomType } from "../../utils/roomProcedures";
 
 // index.css ตั้ง input { width:100% } กับทุก input — checkbox ที่ไม่บอกความกว้างเองจะยืดเต็ม
 // แถวแล้วดันข้อความไปชิดขวา ต้องล็อกขนาดกลับให้เท่ากล่องติ๊กจริง
@@ -67,7 +67,7 @@ export default function RoomModal({
 
   // หัตถการที่เลือกได้ = ฝั่งเดียวกับประเภทเตียง (M/T) — ข้ามฝั่งไม่มีทางถูก
   const selectableProcs = useMemo(
-    () => procedures.filter((p) => p.roomType === type),
+    () => procedures.filter((p) => procedureFitsRoomType(p, type)),
     [procedures, type]
   );
 

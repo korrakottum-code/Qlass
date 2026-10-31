@@ -149,12 +149,13 @@ export default function ProceduresPage({
                   <span
                     className="badge"
                     style={{
-                      background: p.roomType === "M" ? "var(--blue-soft)" : "var(--green-soft)",
-                      color: p.roomType === "M" ? "var(--blue)" : "var(--green)",
+                      background: p.roomType === "M" ? "var(--blue-soft)" : p.roomType === "T" ? "var(--green-soft)" : "var(--accent-soft)",
+                      color: p.roomType === "M" ? "var(--blue)" : p.roomType === "T" ? "var(--green)" : "var(--accent)",
                       fontFamily: "var(--mono)", fontWeight: 700,
                     }}
+                    title={p.roomType === "MT" ? "ลงได้ทั้งห้อง M และห้อง T" : undefined}
                   >
-                    {p.roomType}
+                    {p.roomType === "MT" ? "M + T" : p.roomType}
                   </span>
                 </td>
                 <td style={{ fontFamily: "var(--mono)" }}>{p.blocks} บล็อค</td>
