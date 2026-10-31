@@ -36,7 +36,7 @@ alter table public.procedures
   check (room_type is null or (room_type <> '' and room_type ~ '^M?T?N?$'));
 
 comment on column public.procedures.room_type is
-  'ห้องที่หัตถการนี้ลงได้ เรียงตามลำดับ M, T, N: M = ห้องฉีด, T = ห้องเครื่อง/ทรีตเมนต์, N = ห้องพยาบาล เช่น MT = ได้ทั้งห้องฉีดและห้องเครื่อง';
+  'ห้องที่หัตถการนี้ลงได้ เรียงตามลำดับ M, T, N: M = ห้องแพทย์, T = ห้องเครื่อง/ทรีตเมนต์, N = ห้องพยาบาล เช่น MN = ได้ทั้งห้องแพทย์และห้องพยาบาล';
 
 alter table public.rooms
   drop constraint if exists rooms_type_check;
@@ -45,7 +45,7 @@ alter table public.rooms
   check (type = any (array['M'::text, 'T'::text, 'N'::text]));
 
 comment on column public.rooms.type is
-  'ประเภทห้อง: M = ห้องฉีด, T = ห้องเครื่อง/ทรีตเมนต์, N = ห้องพยาบาล';
+  'ประเภทห้อง: M = ห้องแพทย์, T = ห้องเครื่อง/ทรีตเมนต์, N = ห้องพยาบาล';
 
 -- ═══ กันหน้าเว็บที่เปิดค้างเขียนทับประเภท/ชื่อเตียง ═══
 -- หน้าเว็บโหลดตาราง rooms ครั้งเดียวตอนเปิด (ไม่มี Realtime ของ rooms) และฟอร์มแก้ห้องส่ง name + type
