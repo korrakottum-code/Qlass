@@ -30,6 +30,32 @@
 // (คนละ id) ถ้าเปลี่ยนชื่อหัตถการเหล่านี้ในระบบ ต้องแก้รายการนี้ตามด้วย
 export const ALWAYS_ALLOWED_PROCEDURE_NAMES = ["ปิดคิว", "โปรประจำเดือน (T)", "Influencer", "ปรึกษาทั่วไป"];
 
+// ประเภทห้องของหัตถการ: ตัวอักษรประเภทห้องเรียงกันตามลำดับ M, T, N เช่น "M", "MT", "MTN"
+// (= ลงได้ทุกประเภทห้องที่อยู่ในสตริง)
+// ห้ามเทียบประเภทห้องของหัตถการกับของเตียงด้วยเครื่องหมายเท่ากับตรง ๆ ที่ไหนอีก ให้เรียกตัวนี้แทน
+// ต้องตรงกับ ROOM_TYPES ใน constants.js (ไฟล์นี้ไม่ import อะไรเพื่อให้ทดสอบด้วย node ได้ตรง ๆ)
+export const PROCEDURE_ROOM_TYPE_VALUES = ["M", "T", "N"];
+
+/** รายการประเภทห้องที่หัตถการนี้ลงได้ เช่น "MT" → ["M", "T"] */
+export function procedureRoomTypes(procedure) {
+  const value = procedure?.roomType;
+  if (typeof value !== "string" || !value) return [];
+  return PROCEDURE_ROOM_TYPE_VALUES.filter((type) => value.includes(type));
+}
+
+/** หัตถการนี้ลงห้องประเภทนี้ได้ไหม (ยังไม่ดูการตั้งค่ารายเตียง) */
+export function procedureFitsRoomType(procedure, roomType) {
+  if (!procedure) return false;
+  if (procedure.roomType === roomType) return true;
+  return !!roomType && procedureRoomTypes(procedure).includes(roomType);
+}
+
+/** แปลงรายการที่ติ๊กเป็นค่าที่เก็บใน DB: ["N","M"] → "MN", [] → "" */
+export function encodeProcedureRoomTypes(types) {
+  const set = new Set(types || []);
+  return PROCEDURE_ROOM_TYPE_VALUES.filter((type) => set.has(type)).join("");
+}
+
 /**
  * links: [{ roomId, procedureId }] จาก DB
  * คืน Map<roomId, Set<procedureId>> — เตียงที่ไม่มี key = ยังไม่ตั้งค่า
@@ -69,7 +95,7 @@ export function isProcedureAllowedInRoom(index, room, procedure) {
   }
 
   // ยังไม่ตั้งค่า → กติกาเดิม M/T
-  return procedure.roomType === room.type;
+  return procedureFitsRoomType(procedure, room.type);
 }
 
 /** หัตถการทั้งหมดที่เตียงนี้รับ — ใช้กรอง dropdown ในหน้าลงคิว */
@@ -105,7 +131,7 @@ export function unservedProcedures(index, rooms, procedures, branchId) {
 
   return (procedures || []).filter((procedure) => {
     // หัตถการฝั่ง M ยังวิ่งด้วยกติกาเดิม ตราบใดที่ยังไม่มีใครตั้งค่าห้อง M
-    const candidates = branchRooms.filter((room) => room.type === procedure.roomType);
+    const candidates = branchRooms.filter((room) => procedureFitsRoomType(procedure, room.type));
     if (candidates.length === 0) return false;
     return !candidates.some((room) => isProcedureAllowedInRoom(index, room, procedure));
   });

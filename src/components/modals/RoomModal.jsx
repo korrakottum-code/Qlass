@@ -1,8 +1,9 @@
 import { useState, useMemo } from "react";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
-import { ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK } from "../../utils/constants";
+import { ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK, roomTypeMeta } from "../../utils/constants";
 import { blockToTime } from "../../utils/helpers";
-import { ALWAYS_ALLOWED_PROCEDURE_NAMES, noteMentionsOutsideSelection, roomLockLabel, buildRoomProcedureIndex } from "../../utils/roomProcedures";
+import { nextRoomName } from "../../utils/roomNaming";
+import { ALWAYS_ALLOWED_PROCEDURE_NAMES, noteMentionsOutsideSelection, roomLockLabel, buildRoomProcedureIndex, procedureFitsRoomType } from "../../utils/roomProcedures";
 
 // index.css ตั้ง input { width:100% } กับทุก input — checkbox ที่ไม่บอกความกว้างเองจะยืดเต็ม
 // แถวแล้วดันข้อความไปชิดขวา ต้องล็อกขนาดกลับให้เท่ากล่องติ๊กจริง
@@ -14,13 +15,8 @@ function sameSet(a, b) {
   return b.every((id) => set.has(id));
 }
 
-// คำนวณชื่อห้องถัดไป เช่น M01, M02, T03
-function getNextRoomName(rooms, branchId, type) {
-  if (!branchId || !type) return "";
-  const existing = rooms.filter((r) => r.branchId === branchId && r.type === type);
-  const next = existing.length + 1;
-  return `${type}${String(next).padStart(2, "0")}`;
-}
+// คำนวณชื่อห้องถัดไป เช่น M01, M02, T03 — กติกาอยู่ใน roomNaming.js
+const getNextRoomName = nextRoomName;
 
 // Spinner +/- 30 นาที (6 บล็อค) แบบเดียวกับ ScheduleModal
 function TimeSpinner({ label, value, onChange, min, max }) {
@@ -65,9 +61,9 @@ export default function RoomModal({
   const [openBlock, setOpenBlock] = useState(data?.openBlock ?? WORK_START_BLOCK);
   const [closeBlock, setCloseBlock] = useState(data?.closeBlock ?? WORK_END_BLOCK);
 
-  // หัตถการที่เลือกได้ = ฝั่งเดียวกับประเภทเตียง (M/T) — ข้ามฝั่งไม่มีทางถูก
+  // หัตถการที่เลือกได้ = หัตถการที่ประเภทห้องรวมประเภทเตียงนี้ (M/T/N) — ข้ามฝั่งไม่มีทางถูก
   const selectableProcs = useMemo(
-    () => procedures.filter((p) => p.roomType === type),
+    () => procedures.filter((p) => procedureFitsRoomType(p, type)),
     [procedures, type]
   );
 
@@ -225,7 +221,6 @@ export default function RoomModal({
               }}>
                 {branches.filter((b) => b.name && b.name.trim()).map((b) => {
                   const checked = selectedBranchIds.includes(b.id);
-                  const existingCount = rooms.filter((r) => r.branchId === b.id && r.type === type).length;
                   return (
                     <label
                       key={b.id}
@@ -244,7 +239,7 @@ export default function RoomModal({
                       />
                       {b.name}
                       <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text3)", fontFamily: "var(--mono)" }}>
-                        → {type}{String(existingCount + 1).padStart(2, "0")}
+                        → {getNextRoomName(rooms, b.id, type)}
                       </span>
                     </label>
                   );
@@ -279,7 +274,7 @@ export default function RoomModal({
                     display: "inline-flex", alignItems: "center", gap: 8,
                     padding: "8px 16px", borderRadius: "var(--radius-sm)",
                     border: `2px solid ${rt?.color}`,
-                    background: type === "M" ? "var(--blue-soft)" : "var(--green-soft)",
+                    background: roomTypeMeta(type).soft,
                   }}
                 >
                   <span style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: 18, color: rt?.color }}>
@@ -318,7 +313,7 @@ export default function RoomModal({
                 display: "flex", alignItems: "center", gap: 12,
                 padding: "10px 14px", borderRadius: "var(--radius-sm)",
                 border: `2px solid ${rt?.color || "var(--border)"}`,
-                background: type === "M" ? "var(--blue-soft)" : "var(--green-soft)",
+                background: roomTypeMeta(type).soft,
               }}>
                 <span style={{
                   fontFamily: "var(--mono)", fontSize: 28, fontWeight: 800,
@@ -339,7 +334,7 @@ export default function RoomModal({
               <div style={{
                 padding: "10px 14px", borderRadius: "var(--radius-sm)",
                 border: `2px solid ${rt?.color || "var(--border)"}`,
-                background: type === "M" ? "var(--blue-soft)" : "var(--green-soft)",
+                background: roomTypeMeta(type).soft,
                 fontSize: 12, color: "var(--text2)", lineHeight: 1.8,
                 maxHeight: 120, overflowY: "auto",
               }}>

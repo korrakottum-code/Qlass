@@ -1,4 +1,5 @@
 import { Fragment, useState } from "react";
+import { roomTypeMeta } from "../utils/constants";
 
 export default function ProceduresPage({
   procedures, categories,
@@ -149,12 +150,14 @@ export default function ProceduresPage({
                   <span
                     className="badge"
                     style={{
-                      background: p.roomType === "M" ? "var(--blue-soft)" : "var(--green-soft)",
-                      color: p.roomType === "M" ? "var(--blue)" : "var(--green)",
+                      // ห้องเดียว = สีของห้องนั้น, หลายห้อง = สีหลักของระบบ
+                      background: (p.roomType || "").length > 1 ? "var(--accent-soft)" : roomTypeMeta(p.roomType).soft,
+                      color: (p.roomType || "").length > 1 ? "var(--accent)" : roomTypeMeta(p.roomType).color,
                       fontFamily: "var(--mono)", fontWeight: 700,
                     }}
+                    title={(p.roomType || "").length > 1 ? `ลงได้ทั้ง ${(p.roomType || "").split("").map((t) => roomTypeMeta(t).short).join(", ")}` : undefined}
                   >
-                    {p.roomType}
+                    {(p.roomType || "").split("").join(" + ")}
                   </span>
                 </td>
                 <td style={{ fontFamily: "var(--mono)" }}>{p.blocks} บล็อค</td>

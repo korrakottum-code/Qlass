@@ -1,5 +1,6 @@
 import { useMemo, useRef, useEffect } from "react";
 import { blockToTime, isActiveQueueStatus } from "../utils/helpers";
+import { roomTypeMeta } from "../utils/constants";
 
 const HOUR_COLOR = [
   "#e0f2fe", "#bfdbfe", "#ddd6fe", "#fde68a",
@@ -152,7 +153,7 @@ export default function RoomTimeGrid({
                   borderRight: "1px solid var(--border)",
                   background: isSelectedRoom ? "var(--accent-soft)" : undefined,
                 }}>
-                  <span style={{ color: room.type === "M" ? "var(--blue)" : "var(--green)", fontSize: 10, fontWeight: 800 }}>
+                  <span style={{ color: roomTypeMeta(room.type).color, fontSize: 10, fontWeight: 800 }}>
                     [{room.type}]
                   </span>
                   <span style={{ color: "var(--text1)", lineHeight: 1.2, fontSize: 11 }}>
@@ -182,7 +183,7 @@ export default function RoomTimeGrid({
                       bg = "var(--surface3)";
                       opacity = 0.5;
                     } else if (isBlocked) {
-                      bg = room.type === "M" ? "#fde8e8" : "#d1fae5";
+                      bg = roomTypeMeta(room.type).gridBg;
                       cursor = "not-allowed";
                       title = `${occ.name}${occ.proc ? ` — ${occ.proc}` : ""}`;
                     } else if (isSelectedStart) {
@@ -224,7 +225,7 @@ export default function RoomTimeGrid({
                         {isBlocked && occ?.isStart && (
                           <div style={{
                             position: "absolute", left: 1, right: 1, top: "50%", transform: "translateY(-50%)",
-                            fontSize: 8, fontWeight: 700, color: room.type === "M" ? "#b91c1c" : "#065f46",
+                            fontSize: 8, fontWeight: 700, color: roomTypeMeta(room.type).gridText,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                             textAlign: "center", lineHeight: 1.1, padding: "0 1px",
                             fontFamily: "var(--body)",

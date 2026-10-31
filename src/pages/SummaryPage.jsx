@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, Fragment } from "react";
-import { CUSTOMER_TYPES, ROLES, QUEUE_STATUSES } from "../utils/constants";
+import { CUSTOMER_TYPES, ROLES, QUEUE_STATUSES, roomTypeMeta } from "../utils/constants";
 import { getTodayStr, formatThaiDate, blockToTime, getCustomerBadgeClass, canViewAllBranches, isoToLocalDateStr } from "../utils/helpers";
 import { buildPromoPriceIndex, queueBookedValue } from "../utils/promoValue";
 import { buildActivationReport, sortActivationRows, formatRate, isAppointmentQueue } from "../utils/statusActivation";
@@ -201,7 +201,7 @@ function QueueMiniTable({ items, procedures, rooms, branches, emptyText }) {
                   {room ? (
                     <span style={{
                       fontFamily: "var(--mono)", fontWeight: 700, fontSize: 12,
-                      color: room.type === "M" ? "var(--blue)" : "var(--green)",
+                      color: roomTypeMeta(room.type).color,
                     }}>{room.name}</span>
                   ) : "—"}
                 </td>
@@ -654,7 +654,7 @@ function OverdueDetail({ row, procedures, rooms }) {
               <div style={{ fontSize: 11, color: "var(--text3)" }}>{q.phone}</div>
               <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 2 }}>
                 {proc?.name || "ไม่ระบุหัตถการ"}
-                {room && <span style={{ fontFamily: "var(--mono)", fontWeight: 700, color: room.type === "M" ? "var(--blue)" : "var(--green)" }}> · {room.name}</span>}
+                {room && <span style={{ fontFamily: "var(--mono)", fontWeight: 700, color: roomTypeMeta(room.type).color }}> · {room.name}</span>}
               </div>
             </div>
           );
@@ -689,7 +689,7 @@ function OverdueDetail({ row, procedures, rooms }) {
                     <div style={{ fontSize: 11, color: "var(--text3)" }}>{q.phone}</div>
                   </td>
                   <td style={{ fontSize: 13 }}>{proc?.name || "—"}</td>
-                  <td style={{ fontFamily: "var(--mono)", fontSize: 12, fontWeight: 700, color: room?.type === "M" ? "var(--blue)" : "var(--green)" }}>
+                  <td style={{ fontFamily: "var(--mono)", fontSize: 12, fontWeight: 700, color: roomTypeMeta(room?.type).color }}>
                     {room?.name || "—"}
                   </td>
                   <td>

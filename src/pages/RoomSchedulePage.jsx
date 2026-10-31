@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { formatThaiDate, blockToTime, getTodayStr } from "../utils/helpers";
+import { roomTypeMeta } from "../utils/constants";
 
 const PAGE_SIZE = 50;
 
@@ -82,7 +83,7 @@ export default function RoomSchedulePage({ roomSchedules, rooms, branches, onAdd
                       <td>
                         <span style={{
                           fontFamily: "var(--mono)", fontWeight: 700, fontSize: 13,
-                          color: room?.type === "M" ? "var(--blue)" : "var(--green)",
+                          color: roomTypeMeta(room?.type).color,
                         }}>
                           {room?.name || "—"}
                         </span>

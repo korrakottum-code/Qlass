@@ -1098,7 +1098,11 @@ export default function App() {
 
   const saveProcedure = useCallback(async (data) => {
     if (data.id) {
-      const updated = await updateProcedure(data.id, data);
+      // ส่งประเภทห้องเฉพาะเมื่อผู้ใช้เปลี่ยนจริง — หน้าเว็บโหลดหัตถการครั้งเดียวตอนเปิด แท็บที่เปิดค้าง
+      // อาจถือค่าเก่า (เช่น M ทั้งที่ฐานข้อมูลเป็น MN แล้ว) ถ้าส่งทุกครั้ง แก้แค่ชื่อก็เขียนประเภทกลับเป็นค่าเก่า
+      const original = procedures.find((p) => p.id === data.id);
+      const payload = original && original.roomType === data.roomType ? { ...data, roomType: undefined } : data;
+      const updated = await updateProcedure(data.id, payload);
       setProcedures(prev => prev.map(p => p.id === data.id ? updated : p));
     } else {
       const created = await createProcedure(data);
@@ -1106,7 +1110,7 @@ export default function App() {
     }
     setModal(null);
     showToast("success", "บันทึกหัตถการเรียบร้อย");
-  }, [showToast]);
+  }, [showToast, procedures]);
 
   // ─── บริเวณของหัตถการ ───
   // ไม่แตะคิวที่ลงไปแล้ว: เวลาของคิวถูกตรึงไว้ในตัวคิวเองตั้งแต่ freeze_queue_duration

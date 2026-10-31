@@ -4,9 +4,10 @@ import { getTodayStr, formatThaiDate } from "../utils/helpers";
 import {
   computeCapacitySummary, listDates, daysUntilEndOfMonth,
   blocksToHours, freePercent, averageFreePercentByBranch, computeWeeklyPace, PACE_LOOKBACK_WEEKS,
-  findTreatmentProcedure, computeFreeProgramReadiness,
+  findTreatmentProcedure, computeFreeProgramReadiness, CAPACITY_ROOM_TYPES, capacityRoomType,
 } from "../utils/capacity";
 import { roomsForProcedure } from "../utils/roomProcedures";
+import { roomTypeMeta } from "../utils/constants";
 
 // สีของ heatmap ตาม % ว่าง — ไล่เฉดต่อเนื่อง (แดง→ส้ม→เหลือง→เขียวอ่อน→เขียวเข้ม)
 // แทนที่จะแบ่ง 5 บั้นหยาบๆ เพราะข้อมูลจริงกระจุกช่วง 60-100% ทำให้บั้นแบบเดิม
@@ -52,11 +53,11 @@ function StatCard({ label, value, sub, color }) {
 // การ์ดเดียวโชว์ห้องฉีด/ห้องเครื่องคู่กันในบรรทัดเดียว — เดิมแยกเป็น 2 การ์ดเต็ม ทำให้ล้นไปอยู่คนละแถวบนจอที่ไม่กว้างพอ
 // ตัวเลขหลักเป็น "% ว่าง" ไม่ใช่ชั่วโมง — เจ้าของงานอ่าน "3,087 ชม. จาก 3,691.5 ชม." แล้วแปลไม่ออกว่าว่างมากหรือน้อย
 // ต้องหารในหัวเอง ส่วนเปอร์เซ็นต์บอกได้ทันทีและเทียบข้ามฝั่งได้ทั้งที่ความจุสองฝั่งไม่เท่ากัน
-function TypeSplitCard({ mCell, tCell }) {
-  const sides = [
-    { key: "M", label: "ว่าง ห้องฉีด (M)", hint: "ฉีด / ดริป", cell: mCell, color: "var(--blue)" },
-    { key: "T", label: "ว่าง ห้องเครื่อง (T)", hint: "เลเซอร์ / ทรีตเมนต์", cell: tCell, color: "var(--green)" },
-  ];
+function TypeSplitCard({ byType, types }) {
+  const sides = types.map((type) => {
+    const meta = roomTypeMeta(type);
+    return { key: type, label: `ว่าง ${meta.short} (${type})`, hint: meta.hint, cell: byType[type], color: meta.color };
+  });
   return (
     <div style={{
       padding: "12px 14px", borderRadius: 10,
@@ -208,7 +209,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
     (filterBranch === "all" || r.branchId === filterBranch)
     // ห้องที่ไม่ได้ตั้งประเภทไว้ ถูกนับเป็น T ที่ computeCapacitySummary — ต้องใช้กติกาเดียวกันตรงนี้
     // ไม่งั้นตัวหารบนการ์ดกับตัวเลขในตารางจะคนละชุด
-    && (typeFilter === "all" || (r.type === "M" ? "M" : "T") === typeFilter)
+    && (typeFilter === "all" || capacityRoomType(r) === typeFilter)
   )), [rooms, filterBranch, typeFilter]);
 
   // รอบฟรีทรีตเมนต์สัปดาห์นี้ — ภาพรวมทุกสาขาที่ผู้ใช้เห็นเสมอ ไม่ผูกกับตัวกรองด้านล่าง (เหมือนแถบ "เทียบกับปกติ")
@@ -247,13 +248,18 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
   // เลือกดูประเภทเดียวอยู่แล้ว การแยกสองแถวไม่มีความหมาย — ปิดไว้เงียบ ๆ ไม่ต้องล้างสถานะปุ่ม
   const splitRows = splitByType && typeFilter === "all";
   // บนจอมือถือการ์ดแคบมาก ป้ายยาวจะถูกตัดท้าย — ใช้คำสั้นที่ยังบอกได้ว่ากำลังดูห้องประเภทไหนอยู่
-  const typeShortLabel = typeFilter === "M" ? "ห้องฉีด" : typeFilter === "T" ? "ห้องเครื่อง" : "ห้อง";
+  const typeShortLabel = typeFilter === "all" ? "ห้อง" : roomTypeMeta(typeFilter).short;
   const totalPct = freePercent(summary.totals);
   // เทียบเป็น % ว่าง ไม่ใช่ชั่วโมงดิบ — ห้องเครื่องมีความจุมากกว่าห้องฉีดเกือบสองเท่า ถ้าเทียบชั่วโมง
   // ฝั่งที่ใหญ่กว่าจะชนะเกือบทุกครั้งทั้งที่อาจแน่นกว่าจริง คำแนะนำโปรจะชี้ผิดฝั่ง
-  const mFreePct = freePercent(summary.totals.byType.M);
-  const tFreePct = freePercent(summary.totals.byType.T);
-  const freerType = (mFreePct ?? -1) >= (tFreePct ?? -1) ? "M" : "T";
+  // ห้องพยาบาล (N) โชว์เฉพาะเมื่อมีห้อง N ในระบบ — ไม่งั้นทุกที่จะมีช่อง N ว่าง ๆ "—" รก
+  const shownTypes = useMemo(() => (
+    rooms.some((r) => r.type === "N") ? CAPACITY_ROOM_TYPES : CAPACITY_ROOM_TYPES.filter((t) => t !== "N")
+  ), [rooms]);
+  // ประเภทที่ % ว่างมากที่สุด (ข้ามประเภทที่ไม่มีห้องเปิด) — เสมอกันให้ลำดับ M, T, N ชนะ เหมือนเดิมที่ M ชนะ T
+  const freerType = shownTypes.reduce((best, type) => (
+    (freePercent(summary.totals.byType[type]) ?? -1) > (freePercent(summary.totals.byType[best]) ?? -1) ? type : best
+  ), shownTypes[0]);
 
   const selectedCell = selected
     ? summary.days.find((d) => d.date === selected.date)?.byBranch[selected.branchId]
@@ -289,7 +295,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label className="form-label">ประเภทห้อง</label>
           <div style={{ display: "flex", gap: 6 }}>
-            {[["all", "ทั้งหมด"], ["M", "ห้องฉีด (M)"], ["T", "ห้องเครื่อง (T)"]].map(([v, l]) => (
+            {[["all", "ทั้งหมด"], ...shownTypes.map((t) => [t, `${roomTypeMeta(t).short} (${t})`])].map(([v, l]) => (
               <button key={v} onClick={() => { setTypeFilter(v); setSelected(null); }} style={{
                 padding: "7px 14px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700,
                 border: typeFilter === v ? "1.5px solid var(--accent)" : "1.5px solid var(--border)",
@@ -310,7 +316,9 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
                 background: splitByType ? "var(--accent-soft, rgba(0,0,0,0.05))" : "var(--surface2)",
                 color: splitByType ? "var(--accent)" : "var(--text2)",
               }}>
-              {splitByType ? "✓ แยกสองแถวแล้ว" : "แยกฉีด / เครื่อง เป็นสองแถว"}
+              {shownTypes.length > 2
+                ? (splitByType ? "✓ แยกตามประเภทห้องแล้ว" : "แยกตามประเภทห้อง")
+                : (splitByType ? "✓ แยกสองแถวแล้ว" : "แยกฉีด / เครื่อง เป็นสองแถว")}
             </button>
           </div>
         )}
@@ -342,7 +350,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
         </div>
         {/* เลือกดูประเภทเดียวอยู่ การ์ดคู่จะซ้ำกับการ์ด "ยังว่าง" ด้านบนเป๊ะ ๆ (อีกฝั่งเป็น 0 เสมอ) */}
         {typeFilter === "all" && (
-          <TypeSplitCard mCell={summary.totals.byType.M} tCell={summary.totals.byType.T} />
+          <TypeSplitCard byType={summary.totals.byType} types={shownTypes} />
         )}
       </div>
 
@@ -355,8 +363,8 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
           background: "var(--surface2)", border: "1px solid var(--border)",
         }}>
           💡 {filterBranch === "all" ? "ภาพรวมทุกสาขา" : branches.find((b) => b.id === filterBranch)?.name}
-          {" "}ว่างฝั่ง <b style={{ color: freerType === "M" ? "var(--blue)" : "var(--green)" }}>{freerType === "M" ? "ห้องฉีด (M)" : "ห้องเครื่อง (T)"}</b> มากกว่า
-          {" "}— เหมาะโฟกัสแคมเปญ/โปรกลุ่มห้อง{freerType === "M" ? "ฉีด" : "เครื่อง"}ที่นี่ก่อน
+          {" "}ว่างฝั่ง <b style={{ color: roomTypeMeta(freerType).color }}>{`${roomTypeMeta(freerType).short} (${freerType})`}</b> มากกว่า
+          {" "}— เหมาะโฟกัสแคมเปญ/โปรกลุ่ม{roomTypeMeta(freerType).short}ที่นี่ก่อน
         </div>
       )}
 
@@ -397,12 +405,12 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
             <tbody>
               {visibleBranches.map((b) => (
                 splitRows ? (
-                  [["M", "ห้องฉีด (M)"], ["T", "ห้องเครื่อง (T)"]].map(([type, typeLabel], idx) => (
+                  shownTypes.map((type) => [type, `${roomTypeMeta(type).short} (${type})`]).map(([type, typeLabel], idx, all) => (
                     <tr key={`${b.id}_${type}`}>
                       <td style={{
                         position: "sticky", left: 0, zIndex: 2, background: "var(--surface)",
                         padding: "6px 10px", fontSize: 12, fontWeight: idx === 0 ? 700 : 500,
-                        borderBottom: idx === 1 ? "1px solid var(--border)" : "none",
+                        borderBottom: idx === all.length - 1 ? "1px solid var(--border)" : "none",
                         borderTop: idx === 0 ? "2px solid var(--border2)" : "none",
                         borderRight: "2px solid var(--border2)",
                         maxWidth: 140,
@@ -421,7 +429,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
                             )}
                           </div>
                         )}
-                        <div style={{ fontSize: 10, color: type === "M" ? "var(--blue)" : "var(--green)" }}>{typeLabel}</div>
+                        <div style={{ fontSize: 10, color: roomTypeMeta(type).color }}>{typeLabel}</div>
                       </td>
                       {dates.map((date) => {
                         const cell = summary.days.find((d) => d.date === date)?.byBranch[b.id]?.byType[type];
@@ -435,7 +443,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
                               padding: "6px 2px", textAlign: "center", fontSize: 11, fontWeight: 700,
                               background: freeColor(pct), cursor: cell ? "pointer" : "default",
                               color: "#1f2937",
-                              borderBottom: idx === 1 ? "1px solid var(--border)" : "none",
+                              borderBottom: idx === all.length - 1 ? "1px solid var(--border)" : "none",
                               borderTop: idx === 0 ? "2px solid var(--border2)" : "none",
                               borderRight: "1px solid var(--border)",
                               outline: isSel ? "2px solid var(--accent)" : "none", outlineOffset: -2,
@@ -495,7 +503,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
             background: `linear-gradient(to right, ${FREE_COLOR_STOPS.map((s) => `hsl(${s.h},${s.s}%,${s.l}%) ${s.pct}%`).join(", ")})`,
           }} />
           <span>ว่างมาก</span>
-          <span style={{ marginLeft: "auto" }}>กดช่องเพื่อดูรายละเอียดวัน/สาขานั้น · เลือก "ประเภทห้อง" ด้านบนเพื่อดูเฉพาะห้องฉีด (M) หรือห้องเครื่อง (T)</span>
+          <span style={{ marginLeft: "auto" }}>กดช่องเพื่อดูรายละเอียดวัน/สาขานั้น · เลือก "ประเภทห้อง" ด้านบนเพื่อดูเฉพาะห้องประเภทเดียว</span>
         </div>
       </div>
 
@@ -531,7 +539,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
                     และถ้ากำลังเลือกดูประเภทเดียวอยู่ ไม่ต้องโชว์ เพราะอีกฝั่งถูกกรองออกไปแล้วจะขึ้นเป็น "—%" ชวนงง */}
                 {typeFilter === "all" && (
                   <div style={{ marginTop: 4 }}>
-                    ห้องฉีด (M): ว่าง {freePercent(selectedCell.byType.M) ?? "—"}% · ห้องเครื่อง (T): ว่าง {freePercent(selectedCell.byType.T) ?? "—"}%
+                    {shownTypes.map((type) => `${roomTypeMeta(type).short} (${type}): ว่าง ${freePercent(selectedCell.byType[type]) ?? "—"}%`).join(" · ")}
                   </div>
                 )}
               </div>

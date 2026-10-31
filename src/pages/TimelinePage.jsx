@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { isPastPlacement } from "../utils/backdateRule";
 import { getTodayStr, blockToTime, formatThaiDate, getEmptyBookingForm, isActiveQueueStatus, isOverdueUnconfirmed, isRoomBlockClosed, roleAtLeast, requiresRecorderNote } from "../utils/helpers";
 import { addDays } from "../utils/queueRanges";
-import { CUSTOMER_TYPES } from "../utils/constants";
+import { CUSTOMER_TYPES, roomTypeMeta } from "../utils/constants";
 import { getBedSwitchState } from "../utils/bedSwitch";
 import HnLookup from "../components/HnLookup";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
@@ -67,6 +67,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
   const filteredRooms = useMemo(() => {
     return rooms.filter((r) => r.branchId === filterBranch);
   }, [rooms, filterBranch]);
+  // ห้องพยาบาล (N) เพิ่งมี — โชว์สีในคำอธิบายเฉพาะสาขาที่มีห้อง N จะได้ไม่เบียดบรรทัดบนมือถือ
+  const hasNurseRoom = filteredRooms.some((r) => r.type === "N");
 
   const dayQueues = useMemo(() =>
     queues.filter((q) => q.date === date),
@@ -254,13 +256,13 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                         borderBottom: "2px solid var(--border2)",
                         borderRight: "1px solid var(--border)",
                         position: "sticky", top: 0, zIndex: 3,
-                        background: room.type === "M" ? "#eff6ff" : "#f0fdf4",
+                        background: roomTypeMeta(room.type).rowBg,
                       }}>
                         {/* ทุกคอลัมน์ใช้โครงเดียวกัน: ชื่อ → เครื่อง → สถานะ/โน้ต → (ดันลงล่าง) จำนวน+ปุ่ม
                             ป้ายทุกใบกว้างเต็มคอลัมน์ ขอบซ้ายขวาจะได้ตรงกันทุกใบทุกคอลัมน์
                             แทนที่จะเป็น pill ลอย ๆ กว้างไม่เท่ากันจัดกึ่งกลาง */}
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 3, height: "100%", boxSizing: "border-box", padding: "6px 8px" }}>
-                          <div style={{ fontSize: 12, fontWeight: 800, color: room.type === "M" ? "var(--blue)" : "var(--green)" }}>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: roomTypeMeta(room.type).color }}>
                             {room.name}
                           </div>
                           <div style={{ fontSize: 10, color: "var(--text3)", fontWeight: 400 }}>
@@ -360,8 +362,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                           const isClosed = !isBooked && isRoomBlockClosed(roomSchedules, room.id, date, b, room);
                           const isCourse = q?.customerType === "course";
                           const isOverdue = isBooked && isOverdueUnconfirmed(q);
-                          const isM = room.type === "M";
-                          const bookedBg = isOverdue ? "rgba(217,119,6,0.2)" : isCourse ? "#fef9c3" : isM ? "#fde8e8" : "#dcfce7";
+                          // T ใช้เขียวอ่อนกว่า gridBg กลางนิดหนึ่งตามที่หน้านี้ใช้มาตลอด
+                          const bookedBg = isOverdue ? "rgba(217,119,6,0.2)" : isCourse ? "#fef9c3" : room.type === "T" ? "#dcfce7" : roomTypeMeta(room.type).gridBg;
                           const closedBg = "var(--surface3)";
                           const emptyBg = isHourStart ? "rgba(0,0,0,0.02)" : "transparent";
 
@@ -410,11 +412,11 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
                                   display: "flex", flexDirection: "column", justifyContent: "center",
                                   overflow: "hidden",
                                 }}>
-                                  <div style={{ fontSize: 11, fontWeight: 700, color: isOverdue ? "#b45309" : isCourse ? "#92400e" : isM ? "#991b1b" : "#166534", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: isOverdue ? "#b45309" : isCourse ? "#92400e" : room.type === "M" ? "#991b1b" : room.type === "T" ? "#166534" : roomTypeMeta(room.type).gridText, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                     {isOverdue ? "⚠️ " : ""}{q.name}
                                   </div>
                                   {q.procName && (
-                                    <div title={q.promoName ? `${q.procName} · ${q.promoName}` : q.procName} style={{ fontSize: 9, color: isCourse ? "#b45309" : isM ? "#b91c1c" : "#166534", opacity: 0.8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    <div title={q.promoName ? `${q.procName} · ${q.promoName}` : q.procName} style={{ fontSize: 9, color: isCourse ? "#b45309" : room.type === "M" ? "#b91c1c" : room.type === "T" ? "#166534" : roomTypeMeta(room.type).gridText, opacity: 0.8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                       {q.procName}{q.promoName ? ` · ${q.promoName}` : ""}
                                     </div>
                                   )}
@@ -436,8 +438,8 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
               (เดิมชื่อยาวทำให้ตกเป็น 3 บรรทัด กินที่ตารางไปเปล่า ๆ) */}
           <div style={{ display: "flex", gap: isMobile ? 8 : 12, padding: isMobile ? "6px 8px" : "8px 12px", borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap", alignItems: "center" }}>
             {(isMobile
-              ? [["#fde8e8","M"],["#dcfce7","T"],["#fef9c3","คอร์ส"],["rgba(217,119,6,0.2)","เลยเวลา"],["var(--surface3)","ปิด"],["transparent","ว่าง"]]
-              : [["#fde8e8","มีคิว (M)"],["#dcfce7","มีคิว (T)"],["#fef9c3","ใช้คอร์ส"],["rgba(217,119,6,0.2)","เลยเวลายืนยัน"],["var(--surface3)","ปิด / ไม่พร้อม"],["transparent","ว่าง"]]
+              ? [["#fde8e8","M"],["#dcfce7","T"],...(hasNurseRoom ? [[roomTypeMeta("N").gridBg,"N"]] : []),["#fef9c3","คอร์ส"],["rgba(217,119,6,0.2)","เลยเวลา"],["var(--surface3)","ปิด"],["transparent","ว่าง"]]
+              : [["#fde8e8","มีคิว (M)"],["#dcfce7","มีคิว (T)"],...(hasNurseRoom ? [[roomTypeMeta("N").gridBg,"มีคิว (N)"]] : []),["#fef9c3","ใช้คอร์ส"],["rgba(217,119,6,0.2)","เลยเวลายืนยัน"],["var(--surface3)","ปิด / ไม่พร้อม"],["transparent","ว่าง"]]
             ).map(([c, l]) => (
               <span key={l} style={{ display: "flex", alignItems: "center", gap: isMobile ? 3 : 4, fontSize: isMobile ? 10 : 11, fontWeight: isMobile ? 700 : 400, color: "var(--text2)", whiteSpace: "nowrap" }}>
                 <span style={{ width: isMobile ? 11 : 12, height: isMobile ? 11 : 12, borderRadius: 3, background: c, border: "1px solid var(--border2)", display: "inline-block", flexShrink: 0 }} />{l}
@@ -488,7 +490,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
               )}
               <div style={{ display: "flex", gap: 8 }}>
                 <span style={{ color: "var(--text3)", minWidth: 56 }}>ห้อง</span>
-                <span style={{ fontWeight: 600, color: popup.room.type === "M" ? "var(--blue)" : "var(--green)" }}>
+                <span style={{ fontWeight: 600, color: roomTypeMeta(popup.room.type).color }}>
                   [{popup.room.type}] {popup.room.name}
                 </span>
               </div>
@@ -611,7 +613,7 @@ export default function TimelinePage({ queues, branches, rooms, procedures, prom
 
               {/* Room + Time info */}
               <div style={{ background: "var(--surface2)", borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12, display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <span style={{ color: room?.type === "M" ? "var(--blue)" : "var(--green)", fontWeight: 700 }}>
+                <span style={{ color: roomTypeMeta(room?.type).color, fontWeight: 700 }}>
                   [{room?.type}] {room?.name}
                 </span>
                 <span style={{ color: "var(--text3)" }}>{branch?.name}</span>
