@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { CUSTOMER_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK } from "../utils/constants";
+import { CUSTOMER_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK, roomTypeMeta } from "../utils/constants";
 import { isPastPlacement } from "../utils/backdateRule";
 import { WORK_BLOCKS, blockToTime, formatRecorderLabel, formatThaiDate, getEmptyBookingForm, getTodayStr, isActiveQueueStatus, requiresRecorderNote } from "../utils/helpers";
 import { proceduresForRoom, isRoomConfigured, roomLockLabel } from "../utils/roomProcedures";
@@ -534,10 +534,10 @@ export default function BookingPage({
                 ))}
               </select>
               {selectedRoom && (
-                <span style={{ fontSize: 11, color: selectedRoom.type === "M" ? "var(--blue)" : "var(--green)", fontStyle: "italic", fontWeight: 600 }}>
+                <span style={{ fontSize: 11, color: roomTypeMeta(selectedRoom.type).color, fontStyle: "italic", fontWeight: 600 }}>
                   {roomIsConfigured
                     ? `แสดงเฉพาะหัตถการที่ ${selectedRoom.name} รับ (${filteredProcedures.length} รายการ)`
-                    : `แสดงเฉพาะหัตถการประเภท ${selectedRoom.type === "M" ? "M (ห้องหมอ)" : "T (ห้องเครื่อง/ทรีตเมนต์)"}`}
+                    : `แสดงเฉพาะหัตถการประเภท ${selectedRoom.type === "T" ? "T (ห้องเครื่อง/ทรีตเมนต์)" : `${selectedRoom.type} (${roomTypeMeta(selectedRoom.type).short})`}`}
                 </span>
               )}
             </div>

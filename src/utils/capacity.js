@@ -91,18 +91,24 @@ export function daysUntilEndOfMonth(startDate) {
 }
 
 /**
- * สรุปความจุ/จอง/ว่าง ต่อวัน ต่อสาขา ต่อประเภทห้อง (M/T)
+ * สรุปความจุ/จอง/ว่าง ต่อวัน ต่อสาขา ต่อประเภทห้อง (M/T/N)
  * คืนค่า:
  * {
  *   days: [{ date, capacity, booked, free,
  *            byBranch: { [branchId]: { capacity, booked, free,
- *              byType: { M: {...}, T: {...} },
+ *              byType: { M: {...}, T: {...}, N: {...} },
  *              bySegment: { morning: {capacity, free}, ... } } } }],
  *   totals: { capacity, booked, free,
- *             byType: { M: {capacity, booked, free}, T: {...} } }
+ *             byType: { M: {capacity, booked, free}, T: {...}, N: {...} } }
  * }
  * หน่วยทั้งหมดเป็น block (1 block = 5 นาที) — แปลงเป็นชั่วโมงด้วย blocksToHours
  */
+// ประเภทห้องที่ใช้นับความจุ — ห้องที่ไม่ได้ตั้งประเภท (หรือค่าแปลก) นับเป็น T เหมือนที่ผ่านมา
+export const CAPACITY_ROOM_TYPES = ["M", "T", "N"];
+export function capacityRoomType(room) {
+  return room?.type === "M" || room?.type === "N" ? room.type : "T";
+}
+
 export function computeCapacitySummary({ rooms, roomSchedules, queues, procedures, dates }) {
   const scheduleIndex = buildScheduleIndex(roomSchedules);
   const procById = {};
@@ -119,7 +125,8 @@ export function computeCapacitySummary({ rooms, roomSchedules, queues, procedure
   });
 
   const emptyCell = () => ({ capacity: 0, booked: 0, free: 0 });
-  const totals = { ...emptyCell(), byType: { M: emptyCell(), T: emptyCell() } };
+  const emptyByType = () => ({ M: emptyCell(), T: emptyCell(), N: emptyCell() });
+  const totals = { ...emptyCell(), byType: emptyByType() };
   const days = [];
 
   for (const date of dates) {
@@ -140,12 +147,12 @@ export function computeCapacitySummary({ rooms, roomSchedules, queues, procedure
         }
       });
 
-      const type = room.type === "M" ? "M" : "T";
+      const type = capacityRoomType(room);
       const branchId = room.branchId || "__none__";
       if (!day.byBranch[branchId]) {
         day.byBranch[branchId] = {
           ...emptyCell(),
-          byType: { M: emptyCell(), T: emptyCell() },
+          byType: emptyByType(),
           bySegment: {
             morning: { capacity: 0, free: 0 },
             afternoon: { capacity: 0, free: 0 },
@@ -379,7 +386,7 @@ export const FREE_PROGRAM_FORECAST_DAYS = 7; // วันนี้ถึง +6
 // หา "หัตถการทรีตเมนต์" จากรายการหัตถการ — จับด้วยชื่อ (ระบบจริงชื่อ "Treatment") ไม่ผูก id
 // เพราะแต่ละสภาพแวดล้อม (จริง/เดโม) id ไม่เหมือนกัน คืน null ถ้าไม่มี = ซ่อนตัวกรองไปเลย
 export function findTreatmentProcedure(procedures) {
-  const list = (procedures || []).filter((p) => (p.roomType || "T") !== "M");
+  const list = (procedures || []).filter((p) => (p.roomType || "T").includes("T"));
   const exact = list.find((p) => String(p.name || "").trim().toLowerCase() === "treatment");
   if (exact) return exact;
   return list.find((p) => String(p.name || "").toLowerCase().includes("treatment")) || null;

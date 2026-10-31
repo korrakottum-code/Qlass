@@ -86,13 +86,36 @@ test("ไม่มีที่ไหนเทียบ roomType กับ type �
 
 test("migration รับ MT ทั้งตอนลงคิวและใน Booking API", () => {
   const sql = readFileSync(
-    new URL("../supabase/migrations/20261031120000_procedure_room_type_both.sql", import.meta.url),
+    new URL("../supabase/migrations/20261031120000_room_type_nurse_and_multi.sql", import.meta.url),
     "utf8",
   );
-  assert.match(sql, /check \(room_type is null or room_type in \('M', 'T', 'MT'\)\)/);
+  assert.match(sql, /check \(room_type is null or \(room_type <> '' and room_type ~ '\^M\?T\?N\?\$'\)\)/);
+  assert.match(sql, /check \(type = any \(array\['M'::text, 'T'::text, 'N'::text\]\)\)/);
   assert.match(sql, /coalesce\(strpos\(v_procedure\.room_type, v_room\.type\), 0\) = 0/);
   assert.match(sql, /coalesce\(strpos\(p\.room_type, r\.type\), 0\) > 0/);
   // ไม่ให้ไฟล์ปลดล็อกกฎเตียง→หัตถการไปด้วย
   assert.match(sql, /rp\.room_id = v_room_id and rp\.procedure_id = v_procedure_id/);
   assert.match(sql, /revoke all on function public\.create_queue_v1\(uuid, uuid, uuid, jsonb\) from public, anon, authenticated;/);
+});
+
+test("ห้องพยาบาล N: หัตถการ MN ลงได้ห้อง M และ N แต่ไม่ลงห้อง T", () => {
+  const nurseRooms = [...rooms, { id: "n1", name: "N01", branchId: "b1", type: "N" }];
+  const drip = { id: "drip", name: "วิตามินผิว", roomType: "MN" };
+  const index = buildRoomProcedureIndex([]);
+  assert.deepEqual(procedureRoomTypes(drip), ["M", "N"]);
+  assert.equal(encodeProcedureRoomTypes(["N", "T", "M"]), "MTN");
+  assert.equal(encodeProcedureRoomTypes(["N", "M"]), "MN");
+  assert.deepEqual(roomsForProcedure(index, nurseRooms, drip, "b1").map((r) => r.id), ["m1", "n1"]);
+  // หัตถการเดิมที่เป็น M ล้วน ไม่ไหลไปห้อง N เอง
+  assert.equal(isProcedureAllowedInRoom(index, nurseRooms[3], onlyM), false);
+});
+
+test("ประเภทห้องใน constants ตรงกับ roomProcedures และ migration", async () => {
+  const { ROOM_TYPE_VALUES, roomTypeMeta } = await import("../src/utils/constants.js");
+  const { PROCEDURE_ROOM_TYPE_VALUES } = await import("../src/utils/roomProcedures.js");
+  assert.deepEqual(ROOM_TYPE_VALUES, PROCEDURE_ROOM_TYPE_VALUES);
+  assert.deepEqual(ROOM_TYPE_VALUES, ["M", "T", "N"]);
+  assert.equal(roomTypeMeta("M").short, "ห้องแพทย์");
+  assert.equal(roomTypeMeta("N").short, "ห้องพยาบาล");
+  assert.equal(roomTypeMeta("X").value, "X");
 });

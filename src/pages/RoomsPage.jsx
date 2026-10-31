@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { blockToTime } from "../utils/helpers";
 import { isRoomConfigured, unservedProcedures } from "../utils/roomProcedures";
+import { ROOM_TYPES, roomTypeMeta } from "../utils/constants";
 
 export default function RoomsPage({
   branches, rooms, onAdd, onBulkAdd, onEdit, onDelete, onReorder,
@@ -19,8 +20,6 @@ export default function RoomsPage({
       </div>
       {branches.map((branch) => {
         const bRooms = rooms.filter((r) => r.branchId === branch.id);
-        const mCount = bRooms.filter((r) => r.type === "M").length;
-        const tCount = bRooms.filter((r) => r.type === "T").length;
         const isOpen = !!expanded[branch.id];
         // เตียงที่ล็อกหัตถการไว้แล้วกี่เตียง — ที่ยังไม่ตั้งค่าจะรับทุกอย่างตามประเภทห้องเหมือนเดิม
         const lockedCount = bRooms.filter((r) => isRoomConfigured(roomProcedureIndex, r.id)).length;
@@ -38,8 +37,14 @@ export default function RoomsPage({
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: 12, color: "var(--text3)" }}>
                   {bRooms.length} ห้อง
-                  <span style={{ color: "var(--blue)", marginLeft: 6, fontWeight: 600 }}>M:{mCount}</span>
-                  <span style={{ color: "var(--green)", marginLeft: 4, fontWeight: 600 }}>T:{tCount}</span>
+                  {ROOM_TYPES.map((rt, idx) => {
+                    const count = bRooms.filter((r) => r.type === rt.value).length;
+                    // N เพิ่งมี — ซ่อนถ้าสาขานี้ยังไม่มีห้อง N จะได้ไม่รกทุกสาขา
+                    if (rt.value === "N" && count === 0) return null;
+                    return (
+                      <span key={rt.value} style={{ color: rt.color, marginLeft: idx === 0 ? 6 : 4, fontWeight: 600 }}>{rt.value}:{count}</span>
+                    );
+                  })}
                   {lockedCount > 0 && (
                     <span style={{ color: "var(--accent)", marginLeft: 6, fontWeight: 600 }}>
                       🔒 {lockedCount}/{bRooms.length}
@@ -133,13 +138,13 @@ export default function RoomsPage({
                         <span
                           className="badge"
                           style={{
-                            background: r.type === "M" ? "var(--blue-soft)" : "var(--green-soft)",
-                            color: r.type === "M" ? "var(--blue)" : "var(--green)",
+                            background: roomTypeMeta(r.type).soft,
+                            color: roomTypeMeta(r.type).color,
                             fontFamily: "var(--mono)",
                             fontWeight: 700,
                           }}
                         >
-                          {r.type} — {r.type === "M" ? "ห้องหมอ" : "ห้องเครื่อง/ทรีตเมนต์"}
+                          {r.type} — {r.type === "T" ? "ห้องเครื่อง/ทรีตเมนต์" : roomTypeMeta(r.type).short}
                         </span>
                       </td>
                       <td>

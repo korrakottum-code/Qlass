@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
 import { blockToTime, getTodayStr } from "../../utils/helpers";
 import { addDays } from "../../utils/queueRanges";
+import { roomTypeMeta } from "../../utils/constants";
 
 const DAY_NAMES = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 const DAY_NAMES_FULL = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัส", "ศุกร์", "เสาร์"];
@@ -405,17 +406,17 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
               {filteredRooms.map((r) => {
                 const br = branches.find((b) => b.id === r.branchId);
                 const checked = selectedRoomIds.includes(r.id);
-                const isM = r.type === "M";
+                const typeMeta = roomTypeMeta(r.type);
                 return (
                   <label
                     key={r.id}
                     style={{
                       display: "inline-flex", alignItems: "center", gap: 6,
                       padding: "5px 10px", borderRadius: 20, cursor: "pointer",
-                      border: `1.5px solid ${checked ? (isM ? "var(--blue)" : "var(--green)") : "var(--border)"}`,
-                      background: checked ? (isM ? "var(--blue-soft)" : "var(--green-soft)") : "var(--surface)",
+                      border: `1.5px solid ${checked ? typeMeta.color : "var(--border)"}`,
+                      background: checked ? typeMeta.soft : "var(--surface)",
                       fontSize: 12, fontWeight: checked ? 700 : 500,
-                      color: checked ? (isM ? "var(--blue)" : "var(--green)") : "var(--text2)",
+                      color: checked ? typeMeta.color : "var(--text2)",
                       transition: "all 0.15s",
                     }}
                   >

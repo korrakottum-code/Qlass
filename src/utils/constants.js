@@ -19,10 +19,30 @@ export const PROCEDURE_CATEGORIES = [
   "Other",
 ];
 
+// ประเภทห้อง — เพิ่มประเภทใหม่ที่นี่ที่เดียว ทุกหน้าดึงสี/ชื่อจาก roomTypeMeta()
+// ต้องเพิ่มค่าใน check constraint ของ rooms.type และ procedures.room_type ด้วย
 export const ROOM_TYPES = [
-  { value: "M", label: "M — ห้องฉีด (Injection / Drip)", color: "var(--blue)" },
-  { value: "T", label: "T — ห้องเครื่อง / ทรีตเมนต์", color: "var(--green)" },
+  // M เดิมใช้ทั้งงานแพทย์และงานพยาบาล (ดริป/ปากกาลดน้ำหนัก) — ตั้งแต่ 31 ต.ค. 2569 เจ้าของให้ M เป็นห้องแพทย์อย่างเดียว
+  // งานพยาบาลย้ายไปห้อง N
+  { value: "M", label: "M — ห้องแพทย์ (ฉีด)", short: "ห้องแพทย์", hint: "งานแพทย์ / ฉีด",
+    color: "var(--blue)", soft: "var(--blue-soft)", gridBg: "#fde8e8", gridText: "#b91c1c", rowBg: "#eff6ff" },
+  { value: "T", label: "T — ห้องเครื่อง / ทรีตเมนต์", short: "ห้องเครื่อง", hint: "เลเซอร์ / ทรีตเมนต์",
+    color: "var(--green)", soft: "var(--green-soft)", gridBg: "#d1fae5", gridText: "#065f46", rowBg: "#f0fdf4" },
+  { value: "N", label: "N — ห้องพยาบาล (Drip / ปากกาลดน้ำหนัก)", short: "ห้องพยาบาล", hint: "ดริป / ปากกาลดน้ำหนัก",
+    color: "var(--purple)", soft: "var(--purple-soft)", gridBg: "#ede4f7", gridText: "#5b3a8c", rowBg: "#f6f1fb" },
 ];
+
+export const ROOM_TYPE_VALUES = ROOM_TYPES.map((rt) => rt.value);
+
+const UNKNOWN_ROOM_TYPE = {
+  value: "?", label: "ไม่ระบุประเภทห้อง", short: "ห้อง", hint: "",
+  color: "var(--text3)", soft: "var(--surface2)", gridBg: "#eeeeee", gridText: "#555555", rowBg: "#f6f6f6",
+};
+
+/** สี/ชื่อของประเภทห้อง — ใช้แทนการเขียน type === "M" ? ... : ... เอง */
+export function roomTypeMeta(type) {
+  return ROOM_TYPES.find((rt) => rt.value === type) || { ...UNKNOWN_ROOM_TYPE, value: type || "?" };
+}
 
 export const initProcedures = [
   { id: "p1", name: "Botox", blocks: 3, category: "Injection", roomType: "M" },

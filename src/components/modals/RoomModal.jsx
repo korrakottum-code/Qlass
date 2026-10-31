@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
-import { ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK } from "../../utils/constants";
+import { ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK, roomTypeMeta } from "../../utils/constants";
 import { blockToTime } from "../../utils/helpers";
 import { ALWAYS_ALLOWED_PROCEDURE_NAMES, noteMentionsOutsideSelection, roomLockLabel, buildRoomProcedureIndex, procedureFitsRoomType } from "../../utils/roomProcedures";
 
@@ -279,7 +279,7 @@ export default function RoomModal({
                     display: "inline-flex", alignItems: "center", gap: 8,
                     padding: "8px 16px", borderRadius: "var(--radius-sm)",
                     border: `2px solid ${rt?.color}`,
-                    background: type === "M" ? "var(--blue-soft)" : "var(--green-soft)",
+                    background: roomTypeMeta(type).soft,
                   }}
                 >
                   <span style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: 18, color: rt?.color }}>
@@ -318,7 +318,7 @@ export default function RoomModal({
                 display: "flex", alignItems: "center", gap: 12,
                 padding: "10px 14px", borderRadius: "var(--radius-sm)",
                 border: `2px solid ${rt?.color || "var(--border)"}`,
-                background: type === "M" ? "var(--blue-soft)" : "var(--green-soft)",
+                background: roomTypeMeta(type).soft,
               }}>
                 <span style={{
                   fontFamily: "var(--mono)", fontSize: 28, fontWeight: 800,
@@ -339,7 +339,7 @@ export default function RoomModal({
               <div style={{
                 padding: "10px 14px", borderRadius: "var(--radius-sm)",
                 border: `2px solid ${rt?.color || "var(--border)"}`,
-                background: type === "M" ? "var(--blue-soft)" : "var(--green-soft)",
+                background: roomTypeMeta(type).soft,
                 fontSize: 12, color: "var(--text2)", lineHeight: 1.8,
                 maxHeight: 120, overflowY: "auto",
               }}>

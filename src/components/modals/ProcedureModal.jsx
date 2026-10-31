@@ -7,7 +7,7 @@ export default function ProcedureModal({ data, categories = [], onSave, onClose 
   const [name, setName] = useState(data?.name || "");
   const [blocks, setBlocks] = useState(data?.blocks || 3);
   const [category, setCategory] = useState(data?.category || "");
-  // เลือกได้ห้องเดียวหรือทั้งสองห้อง — เก็บเป็น "M", "T" หรือ "MT"
+  // เลือกได้ห้องเดียวหรือหลายห้อง — เก็บเป็นตัวอักษรเรียงกัน เช่น "M", "MT", "MTN"
   const [roomTypes, setRoomTypes] = useState(() => {
     const initial = procedureRoomTypes(data);
     return initial.length ? initial : ["M"];

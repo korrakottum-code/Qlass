@@ -10,31 +10,39 @@ import { readFileSync } from "node:fs";
 
 const page = readFileSync(new URL("../src/pages/CapacityPage.jsx", import.meta.url), "utf8");
 
-test("มีปุ่มเลือกประเภทห้อง ครบ ทั้งหมด/ห้องฉีด/ห้องเครื่อง", () => {
-  assert.match(page, /\[\["all", "ทั้งหมด"\], \["M", "ห้องฉีด \(M\)"\], \["T", "ห้องเครื่อง \(T\)"\]\]/);
+test("มีปุ่มเลือกประเภทห้อง ครบ ทั้งหมด + ทุกประเภทที่มีห้อง พร้อมคำไทยกำกับ", () => {
+  assert.match(page, /\[\["all", "ทั้งหมด"\], \.\.\.shownTypes\.map\(\(t\) => \[t, `\$\{roomTypeMeta\(t\)\.short\} \(\$\{t\}\)`\]\)\]/);
+  // ห้องพยาบาล (N) โชว์เฉพาะเมื่อมีห้อง N จริง
+  assert.match(page, /rooms\.some\(\(r\) => r\.type === "N"\) \? CAPACITY_ROOM_TYPES : CAPACITY_ROOM_TYPES\.filter\(\(t\) => t !== "N"\)/);
 });
 
 test("การเลือกประเภทต้องกรองที่ตัวห้อง ไม่ใช่แค่ซ่อนแถวในตาราง", () => {
   // ถ้ากรองแค่ตอนวาดตาราง ตัวเลขบนการ์ดด้านบนจะยังเป็นของสองประเภทรวมกัน อ่านขัดกันเอง
-  assert.match(page, /typeFilter === "all" \|\| \(r\.type === "M" \? "M" : "T"\) === typeFilter/);
+  assert.match(page, /typeFilter === "all" \|\| capacityRoomType\(r\) === typeFilter/);
   assert.match(page, /\)\), \[rooms, filterBranch, typeFilter\]\);/);
 });
 
-test("ห้องที่ไม่ได้ตั้งประเภทต้องถูกนับเป็น T เหมือนฝั่งคำนวณ", () => {
+test("ห้องที่ไม่ได้ตั้งประเภทต้องถูกนับเป็น T เหมือนฝั่งคำนวณ", async () => {
   const capacity = readFileSync(new URL("../src/utils/capacity.js", import.meta.url), "utf8");
-  assert.match(capacity, /const type = room\.type === "M" \? "M" : "T";/);
-  assert.match(page, /r\.type === "M" \? "M" : "T"/);
+  assert.match(capacity, /const type = capacityRoomType\(room\);/);
+  const { capacityRoomType } = await import("../src/utils/capacity.js");
+  assert.equal(capacityRoomType({ type: "M" }), "M");
+  assert.equal(capacityRoomType({ type: "T" }), "T");
+  assert.equal(capacityRoomType({ type: "N" }), "N");
+  assert.equal(capacityRoomType({ type: null }), "T");
+  assert.equal(capacityRoomType({ type: "X" }), "T");
 });
 
-test("การ์ดห้องฉีด/ห้องเครื่อง ต้องโชว์ % ว่าง ไม่ใช่ชั่วโมง", () => {
-  assert.match(page, /function TypeSplitCard\(\{ mCell, tCell \}\)/);
-  assert.ok(!/mFree=\{|blocksToHours\(mFree\)|blocksToHours\(tFree\)/.test(page),
-    "ห้ามกลับไปส่งชั่วโมงเข้าการ์ดคู่อีก");
+test("การ์ดแยกประเภทห้อง ต้องโชว์ % ว่าง ไม่ใช่ชั่วโมง", () => {
+  assert.match(page, /function TypeSplitCard\(\{ byType, types \}\)/);
+  assert.match(page, /const pct = freePercent\(side\.cell\);/);
+  assert.ok(!/mFree=\{|blocksToHours\(mFree\)|blocksToHours\(tFree\)|blocksToHours\(side\.cell/.test(page),
+    "ห้ามกลับไปส่งชั่วโมงเข้าการ์ดแยกประเภทอีก");
 });
 
 test("คำแนะนำว่าฝั่งไหนว่างกว่า ต้องเทียบเป็น % ไม่ใช่ชั่วโมงดิบ", () => {
-  // ความจุสองฝั่งไม่เท่ากัน ถ้าเทียบชั่วโมงดิบ ฝั่งที่ใหญ่กว่าจะชนะเกือบทุกครั้ง คำแนะนำจะชี้ผิดฝั่ง
-  assert.match(page, /const freerType = \(mFreePct \?\? -1\) >= \(tFreePct \?\? -1\) \? "M" : "T";/);
+  // ความจุแต่ละฝั่งไม่เท่ากัน ถ้าเทียบชั่วโมงดิบ ฝั่งที่ใหญ่กว่าจะชนะเกือบทุกครั้ง คำแนะนำจะชี้ผิดฝั่ง
+  assert.match(page, /\(freePercent\(summary\.totals\.byType\[type\]\) \?\? -1\) > \(freePercent\(summary\.totals\.byType\[best\]\) \?\? -1\)/);
   assert.ok(!/summary\.totals\.byType\.M\.free >= summary\.totals\.byType\.T\.free/.test(page),
     "ห้ามกลับไปเทียบชั่วโมงดิบอีก");
 });

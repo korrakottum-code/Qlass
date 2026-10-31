@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, memo } from "react";
-import { CUSTOMER_TYPES, QUEUE_STATUSES } from "../utils/constants";
+import { CUSTOMER_TYPES, QUEUE_STATUSES, roomTypeMeta } from "../utils/constants";
 import { getTodayStr, formatThaiDate, blockToTime, formatRecorderLabel, getCustomerBadgeClass, isOverdueUnconfirmed, isoToLocalDateStr, isActiveQueueStatus } from "../utils/helpers";
 import { pickDatePresets, daySpan } from "../utils/datePresets";
 import { isSearchable, matchesQueueSearch, sortSearchResults } from "../utils/queueSearch";
@@ -980,8 +980,8 @@ export default function QueueTablePage({
                       style={{
                         flex: "none", border: "none", background: "transparent", cursor: "pointer",
                         fontFamily: "var(--mono)", fontSize: 13, fontWeight: 600, padding: "9px 12px", whiteSpace: "nowrap",
-                        color: activeTab === r.roomId ? (r.roomType === "M" ? "var(--blue)" : "var(--green)") : "var(--text3)",
-                        borderBottom: `2.5px solid ${activeTab === r.roomId ? (r.roomType === "M" ? "var(--blue)" : "var(--green)") : "transparent"}`,
+                        color: activeTab === r.roomId ? (roomTypeMeta(r.roomType).color) : "var(--text3)",
+                        borderBottom: `2.5px solid ${activeTab === r.roomId ? (roomTypeMeta(r.roomType).color) : "transparent"}`,
                       }}
                     >
                       🚪 {r.roomName}

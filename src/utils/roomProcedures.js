@@ -30,9 +30,11 @@
 // (คนละ id) ถ้าเปลี่ยนชื่อหัตถการเหล่านี้ในระบบ ต้องแก้รายการนี้ตามด้วย
 export const ALWAYS_ALLOWED_PROCEDURE_NAMES = ["ปิดคิว", "โปรประจำเดือน (T)", "Influencer", "ปรึกษาทั่วไป"];
 
-// ประเภทห้องของหัตถการ: "M", "T" หรือ "MT" (= ลงได้ทั้งห้อง M และห้อง T)
+// ประเภทห้องของหัตถการ: ตัวอักษรประเภทห้องเรียงกันตามลำดับ M, T, N เช่น "M", "MT", "MTN"
+// (= ลงได้ทุกประเภทห้องที่อยู่ในสตริง)
 // ห้ามเทียบประเภทห้องของหัตถการกับของเตียงด้วยเครื่องหมายเท่ากับตรง ๆ ที่ไหนอีก ให้เรียกตัวนี้แทน
-export const PROCEDURE_ROOM_TYPE_VALUES = ["M", "T"];
+// ต้องตรงกับ ROOM_TYPES ใน constants.js (ไฟล์นี้ไม่ import อะไรเพื่อให้ทดสอบด้วย node ได้ตรง ๆ)
+export const PROCEDURE_ROOM_TYPE_VALUES = ["M", "T", "N"];
 
 /** รายการประเภทห้องที่หัตถการนี้ลงได้ เช่น "MT" → ["M", "T"] */
 export function procedureRoomTypes(procedure) {
@@ -48,7 +50,7 @@ export function procedureFitsRoomType(procedure, roomType) {
   return !!roomType && procedureRoomTypes(procedure).includes(roomType);
 }
 
-/** แปลงรายการที่ติ๊กเป็นค่าที่เก็บใน DB: ["T","M"] → "MT", [] → "" */
+/** แปลงรายการที่ติ๊กเป็นค่าที่เก็บใน DB: ["N","M"] → "MN", [] → "" */
 export function encodeProcedureRoomTypes(types) {
   const set = new Set(types || []);
   return PROCEDURE_ROOM_TYPE_VALUES.filter((type) => set.has(type)).join("");

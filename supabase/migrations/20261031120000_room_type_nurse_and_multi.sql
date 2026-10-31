@@ -1,17 +1,22 @@
--- หัตถการลงได้ทั้งห้อง M และห้อง T (procedures.room_type = 'MT')
+-- ประเภทห้องใหม่ N (ห้องพยาบาล) + หัตถการลงได้หลายประเภทห้อง
 --
 -- ═══ ทำไม ═══
--- เดิมหัตถการหนึ่งตัวผูกกับห้องได้ฝั่งเดียว (M หรือ T) แต่บางหัตถการทำได้ทั้งสองห้อง
--- ต้องสร้างหัตถการซ้ำสองตัวชื่อเดียวกัน ซึ่งทำให้รายงานแยกยอดกัน
+-- 1. เดิมมีห้องแค่ M (ห้องฉีด) กับ T (ห้องเครื่อง/ทรีตเมนต์) — เจ้าของต้องการห้องพยาบาลแยก
+--    ให้หน้าคิวว่างนับแยกและชื่อเตียงเป็น N01, N02
+-- 2. เดิมหัตถการหนึ่งตัวผูกกับห้องได้ประเภทเดียว แต่บางหัตถการทำได้หลายห้อง
+--    ต้องสร้างหัตถการซ้ำหลายตัวชื่อเดียวกัน ซึ่งทำให้รายงานแยกยอดกัน
 --
 -- ═══ เปลี่ยนอะไร ═══
--- 1. procedures.room_type รับค่าได้ 'M', 'T' หรือ 'MT' (= ทั้งสองห้อง) — ใส่ check กันค่าแปลก
---    ข้อมูลเดิมเป็น M/T ทั้งหมดอยู่แล้ว จึงไม่มีแถวไหนผิดกติกาใหม่
--- 2. create_queue_v1: เทียบประเภทห้องแบบ "ห้องนี้อยู่ในรายการที่หัตถการรับ" แทน "เท่ากันเป๊ะ"
---    หัตถการ M หรือ T ล้วนได้ผลเหมือนเดิมทุกกรณี (เงื่อนไขเดิมยังอยู่ แค่เพิ่มทางผ่านให้ 'MT')
--- 3. booking_api_candidate_rooms_v1 (Booking API ของน้องคลาส) ใช้กติกาเดียวกัน
+-- 1. rooms.type รับ 'N' เพิ่ม (เดิม check ไว้แค่ M/T)
+-- 2. procedures.room_type เป็นตัวอักษรประเภทห้องเรียงกันตามลำดับ M, T, N เช่น 'M', 'MT', 'TN', 'MTN'
+--    (= ลงได้ทุกประเภทห้องที่อยู่ในสตริง) — ใส่ check กันค่าแปลก
+--    ข้อมูลเดิมเป็น M/T ทั้งหมดอยู่แล้ว (M 20 ตัว, T 13 ตัว ณ 31 ต.ค. 2569) จึงไม่มีแถวไหนผิดกติกาใหม่
+-- 3. create_queue_v1: เทียบประเภทห้องแบบ "ห้องนี้อยู่ในรายการที่หัตถการรับ" แทน "เท่ากันเป๊ะ"
+--    หัตถการประเภทเดียวได้ผลเหมือนเดิมทุกกรณี (เงื่อนไขเดิมยังอยู่ แค่เพิ่มทางผ่าน)
+-- 4. booking_api_candidate_rooms_v1 (Booking API ของน้องคลาส) ใช้กติกาเดียวกัน
 --
 -- กฎเตียง→หัตถการ (room_procedures) ไม่แตะ — เตียงที่ตั้งค่าแล้วยังยึดตามที่ติ๊กไว้
+-- queues_fill_name_snapshots เขียนป้าย '[' || type || '] ' || name อยู่แล้ว ห้อง N ได้ '[N] N01' เอง
 --
 -- create_queue_v1 ส่วนที่เหลือคัดลอกจาก 20260916110000 ทั้งดุ้น ซึ่งตรวจแล้วว่าตรงกับ
 -- ฟังก์ชันที่รันอยู่จริงบน production (md5 ของ prosrc ที่ตัดบรรทัดว่างหัวท้าย
@@ -23,10 +28,19 @@ alter table public.procedures
   drop constraint if exists procedures_room_type_check;
 alter table public.procedures
   add constraint procedures_room_type_check
-  check (room_type is null or room_type in ('M', 'T', 'MT'));
+  check (room_type is null or (room_type <> '' and room_type ~ '^M?T?N?$'));
 
 comment on column public.procedures.room_type is
-  'ห้องที่หัตถการนี้ลงได้: M = ห้องฉีด, T = ห้องเครื่อง/ทรีตเมนต์, MT = ได้ทั้งสองห้อง';
+  'ห้องที่หัตถการนี้ลงได้ เรียงตามลำดับ M, T, N: M = ห้องฉีด, T = ห้องเครื่อง/ทรีตเมนต์, N = ห้องพยาบาล เช่น MT = ได้ทั้งห้องฉีดและห้องเครื่อง';
+
+alter table public.rooms
+  drop constraint if exists rooms_type_check;
+alter table public.rooms
+  add constraint rooms_type_check
+  check (type = any (array['M'::text, 'T'::text, 'N'::text]));
+
+comment on column public.rooms.type is
+  'ประเภทห้อง: M = ห้องฉีด, T = ห้องเครื่อง/ทรีตเมนต์, N = ห้องพยาบาล';
 
 create or replace function public.create_queue_v1(
   p_actor_staff_id uuid,
@@ -173,7 +187,7 @@ begin
 
   if v_procedure_id is not null then
     select * into v_procedure from public.procedures where id = v_procedure_id;
-    -- room_type เป็น M, T หรือ MT (ได้ทั้งสองห้อง) — ผ่านเมื่อประเภทห้องนี้อยู่ในรายการ
+    -- room_type เป็นตัวอักษรประเภทห้องเรียงกัน (เช่น M, MT, MTN) — ผ่านเมื่อประเภทห้องนี้อยู่ในรายการ
     if not found or (
       v_room_id is not null
       and v_procedure.room_type is distinct from v_room.type
@@ -325,7 +339,7 @@ end;
 $$;
 
 comment on function public.create_queue_v1(uuid, uuid, uuid, jsonb) is
-  'Goal 13b + room-procedure lock: server-only idempotent queue creation. Rejects a procedure the target bed is not configured to take; a bed with no room_procedures rows still falls back to the room_type match (procedure room_type M, T or MT = both). Both idempotency paths (pre-check and unique_violation fallback) compare the payload via queue_payload_unchanged (including area_names) and raise request_id_stale on a mismatch. Browser roles have no execute grant.';
+  'Goal 13b + room-procedure lock: server-only idempotent queue creation. Rejects a procedure the target bed is not configured to take; a bed with no room_procedures rows still falls back to the room_type match (procedure room_type lists every room type it fits, e.g. M, MT, MTN; room types M/T/N). Both idempotency paths (pre-check and unique_violation fallback) compare the payload via queue_payload_unchanged (including area_names) and raise request_id_stale on a mismatch. Browser roles have no execute grant.';
 
 revoke all on function public.create_queue_v1(uuid, uuid, uuid, jsonb) from public, anon, authenticated;
 

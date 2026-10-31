@@ -267,24 +267,26 @@ export function exportSummaryData(queues, branches, procedures, startDate, endDa
 
 export function exportBranchesData(branches, rooms) {
   const rows = [
-    ["ชื่อสาขา", "จำนวนห้อง", "ห้องประเภท M", "ห้องประเภท T"]
+    ["ชื่อสาขา", "จำนวนห้อง", "ห้องประเภท M", "ห้องประเภท T", "ห้องประเภท N"]
   ];
 
   branches.forEach(branch => {
     const branchRooms = rooms.filter(r => r.branchId === branch.id);
     const mRooms = branchRooms.filter(r => r.type === "M").length;
     const tRooms = branchRooms.filter(r => r.type === "T").length;
+    const nRooms = branchRooms.filter(r => r.type === "N").length;
 
     rows.push([
       branch.name,
       branchRooms.length,
       mRooms,
       tRooms,
+      nRooms,
     ]);
   });
 
   const filename = `ข้อมูลสาขา_${getTodayStr()}.xlsx`;
-  downloadXLSX(filename, rows, { numericCols: [1, 2, 3] });
+  downloadXLSX(filename, rows, { numericCols: [1, 2, 3, 4] });
 }
 
 // ═══════════════════════════════════════════════════════════
