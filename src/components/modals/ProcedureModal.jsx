@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
-import { ROOM_TYPES } from "../../utils/constants";
+import { ROOM_TYPES, roomTypeMeta } from "../../utils/constants";
 import { procedureRoomTypes, encodeProcedureRoomTypes } from "../../utils/roomProcedures";
 
 export default function ProcedureModal({ data, categories = [], onSave, onClose }) {
@@ -13,6 +13,10 @@ export default function ProcedureModal({ data, categories = [], onSave, onClose 
     return initial.length ? initial : ["M"];
   });
   const roomType = encodeProcedureRoomTypes(roomTypes);
+  const originalRoomType = data?.roomType || "";
+  const roomTypeSummary = roomTypes.length
+    ? encodeProcedureRoomTypes(roomTypes).split("").map((t) => roomTypeMeta(t).short).join(" + ")
+    : "";
 
   function toggleRoomType(value) {
     setRoomTypes((current) => {
@@ -26,6 +30,13 @@ export default function ProcedureModal({ data, categories = [], onSave, onClose 
 
   function handleSave() {
     if (name.trim() && category && roomType) {
+      // ปุ่มประเภทห้องเดิมเป็นแบบเลือกได้อันเดียว กด T = เปลี่ยนเป็น T — ตอนนี้กด T = เพิ่ม T
+      // แอดมินที่ติดมือแบบเดิมจะได้หลายห้องโดยไม่ตั้งใจ แล้วหัตถการนั้นลงได้ทุกเตียงที่ยังไม่ล็อกของประเภทใหม่ทั้งเครือ
+      // จึงถามยืนยันทุกครั้งที่ผลลัพธ์เป็นหลายห้องและไม่เหมือนค่าเดิม
+      if (roomType.length > 1 && roomType !== originalRoomType) {
+        const ok = window.confirm(`หัตถการนี้จะลงได้ ${roomType.length} ประเภทห้อง: ${roomTypeSummary}\n\nถ้าตั้งใจเปลี่ยนเป็นห้องเดียว ให้กดยกเลิก แล้วกดปุ่มห้องที่ไม่ต้องการออก`);
+        if (!ok) return;
+      }
       return onSave({ id: data?.id, name: name.trim(), blocks, category, roomType });
     }
   }
@@ -69,6 +80,9 @@ export default function ProcedureModal({ data, categories = [], onSave, onClose 
                   </button>
                 );
               })}
+            </div>
+            <div style={{ fontSize: 12, color: roomTypes.length > 1 ? "var(--accent)" : "var(--text3)", marginTop: 6, fontWeight: roomTypes.length > 1 ? 700 : 400 }}>
+              ลงได้ที่: {roomTypeSummary}
             </div>
           </div>
 

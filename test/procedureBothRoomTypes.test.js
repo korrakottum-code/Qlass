@@ -126,12 +126,16 @@ test("ตัวอ่านข้อความจองรู้จักช�
   assert.doesNotMatch(src, /\[MT\]\\d/);
 });
 
-test("migration เติม N ให้หัตถการกลางแบบ M หลังเปลี่ยน check แล้ว", () => {
-  const sql = readFileSync(
+test("ไฟล์หลักไม่แก้ข้อมูล การเติม N ให้หัตถการกลางแยกเป็นไฟล์ที่ลงทีหลัง", () => {
+  const main = readFileSync(
     new URL("../supabase/migrations/20261031120000_room_type_nurse_and_multi.sql", import.meta.url),
     "utf8",
   );
-  const update = sql.indexOf("update public.procedures");
-  assert.ok(update > sql.indexOf("add constraint procedures_room_type_check"), "ต้องเปลี่ยน check ก่อน update");
-  assert.match(sql, /set room_type = 'MN'\s+where room_type = 'M'\s+and name in \('Influencer', 'ปรึกษาทั่วไป'\);/);
+  // หน้าเว็บเก่าเห็น 'MN' แล้วหัตถการหายจากเตียง M — ห้ามแก้ข้อมูลในไฟล์ที่ลงก่อนเว็บใหม่
+  assert.doesNotMatch(main, /^\s*update\s+public\.procedures/im);
+  const later = readFileSync(
+    new URL("../supabase/migrations/20261031120100_generic_procedures_fit_nurse_room.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(later, /set room_type = 'MN'\s+where room_type = 'M'\s+and name in \('Influencer', 'ปรึกษาทั่วไป'\);/);
 });
