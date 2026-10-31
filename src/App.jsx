@@ -2103,7 +2103,7 @@ export default function App() {
             <RoomModal data={modal.data} branches={filteredBranches} rooms={filteredRooms} defaultBranchId={modal.defaultBranchId} bulkMode={modal.bulkMode} procedures={procedures} roomProcedureIndex={roomProcedureIndex} roomSchedules={filteredRoomSchedules} onSave={saveRoom} onClose={() => setModal(null)} />
           )}
           {modal.type === "schedule" && (
-            <ScheduleModal data={modal.data} rooms={filteredRooms} branches={filteredBranches} onSave={saveRoomSchedule} onClose={() => setModal(null)} />
+            <ScheduleModal data={modal.data} rooms={filteredRooms} branches={filteredBranches} queues={queues} procedures={procedures} onSave={saveRoomSchedule} onClose={() => setModal(null)} />
           )}
           {modal.type === "bed-switch" && (() => {
             // คำนวณสถานะ/รายชื่อคิวจาก state สด ตอน render — ถ้า realtime เปลี่ยนตอน modal เปิดอยู่จะเห็นทันที

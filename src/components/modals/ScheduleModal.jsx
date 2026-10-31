@@ -1,8 +1,12 @@
 import { useState, useMemo } from "react";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
-import { blockToTime, getTodayStr } from "../../utils/helpers";
+import { blockToTime, getTodayStr, formatThaiDate, isActiveQueueStatus } from "../../utils/helpers";
 import { addDays } from "../../utils/queueRanges";
 import { roomTypeMeta } from "../../utils/constants";
+import {
+  buildScheduleTiming, findQueuesInClosure, formatBlockDuration,
+  DEFAULT_CLOSE_START_BLOCK, DEFAULT_CLOSE_END_BLOCK,
+} from "../../utils/scheduleClosure";
 
 const DAY_NAMES = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 const DAY_NAMES_FULL = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัส", "ศุกร์", "เสาร์"];
@@ -189,7 +193,7 @@ function TimeSpinner({ label, value, onChange }) {
   );
 }
 
-export default function ScheduleModal({ data, rooms, branches, onSave, onClose }) {
+export default function ScheduleModal({ data, rooms, branches, queues = [], procedures = [], onSave, onClose }) {
   const [filterBranchId, setFilterBranchId] = useState(
     data?.roomId ? (rooms.find((r) => r.id === data.roomId)?.branchId || "") : ""
   );
@@ -208,6 +212,10 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
   const [pickedDates, setPickedDates] = useState([]); // สำหรับ calendar mode
   const [available, setAvailable] = useState(data?.available !== undefined ? data.available : false);
   const [noteOnly, setNoteOnly] = useState(data?.noteOnly || false);
+  // ปิดเฉพาะช่วงเวลา (เช่น ปิด 11:00–17:00 ช่วงที่หมอยังไม่มา) — เวลาเปิดปกติของเตียงไม่เปลี่ยน
+  const [closeRange, setCloseRange] = useState(
+    !!data && data.available === false && data.startBlock !== null && data.startBlock !== undefined
+  );
   const [startBlock, setStartBlock] = useState(data?.startBlock ?? 108); // 09:00
   const [endBlock, setEndBlock] = useState(data?.endBlock ?? 132);       // 11:00
   const [note, setNote] = useState(data?.note || "");
@@ -236,20 +244,48 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
     setWeekdays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]);
   }
 
+  const isClosing = !noteOnly && !available;
+  const showTimeRange = !noteOnly && (available || closeRange);
+  const saveDates = useMemo(() => (isEdit ? [date] : generatedDates), [isEdit, date, generatedDates]);
+
+  // คิวที่ยังค้างอยู่ในช่วงที่จะปิด — ปิดได้ แต่คิวไม่ถูกย้าย ต้องให้หน้าร้านจัดการเอง
+  const affectedQueues = useMemo(() => {
+    if (!isClosing) return [];
+    return findQueuesInClosure({
+      queues, procedures, roomIds: selectedRoomIds, dates: saveDates,
+      startBlock: closeRange ? startBlock : null,
+      endBlock: closeRange ? endBlock : null,
+      isActiveQueueStatus,
+    });
+  }, [isClosing, queues, procedures, selectedRoomIds, saveDates, closeRange, startBlock, endBlock]);
+
   function handleSave() {
     if (selectedRoomIds.length === 0) return;
     if (generatedDates.length === 0 && !isEdit) return;
-    const isClosedAllDay = !noteOnly && !available;
+    if (affectedQueues.length > 0) {
+      const ok = window.confirm(
+        `มีคิว ${affectedQueues.length} คิวอยู่ในช่วงที่จะปิด\n` +
+        "ปิดแล้วคิวเหล่านี้ไม่ถูกย้ายหรือยกเลิกให้ ต้องไปเลื่อน/ย้ายเอง\n\nยืนยันปิดหรือไม่?"
+      );
+      if (!ok) return;
+    }
     return onSave({
       id: data?.id,
       roomIds: selectedRoomIds,
-      dates: isEdit ? [date] : generatedDates,
-      available: noteOnly ? true : available,
-      startBlock: (noteOnly || isClosedAllDay) ? null : startBlock,
-      endBlock: (noteOnly || isClosedAllDay) ? null : endBlock,
+      dates: saveDates,
+      ...buildScheduleTiming({ noteOnly, available, closeRange, startBlock, endBlock }),
       noteOnly,
       note: note.trim(),
     });
+  }
+
+  function chooseCloseRange(next) {
+    setCloseRange(next);
+    // เปิดโหมดช่วงเวลาครั้งแรก — ตั้งค่าเริ่มต้นเป็นช่วงที่หมอเข้าเย็นบ่อยสุด (11:00–17:00)
+    if (next && !(data?.startBlock != null && data?.available === false)) {
+      setStartBlock(DEFAULT_CLOSE_START_BLOCK);
+      setEndBlock(DEFAULT_CLOSE_END_BLOCK);
+    }
   }
 
   const duration = endBlock - startBlock;
@@ -467,14 +503,39 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
             )}
             {!noteOnly && available && (
               <div style={{ marginTop: 6, fontSize: 11, color: "var(--green)", fontWeight: 600, lineHeight: 1.5 }}>
-                💡 ช่วงเวลาที่ตั้ง = เวลาเปิดจริงของวันนั้น (ครอบคลุมทั้งช่วง)<br />
-                ตัวอย่าง: ห้องเปิดปกติ 11:00–20:00 อยากต่อเวลาเป็น 22:00 → ตั้ง <b>11:00–22:00</b>
+                💡 ใช้ต่อเวลาเปิดให้ยาวกว่าปกติเท่านั้น (ย่นเวลาไม่ได้)<br />
+                ตัวอย่าง: ห้องเปิดปกติ 11:00–20:00 อยากต่อเวลาเป็น 22:00 → ตั้ง <b>11:00–22:00</b><br />
+                หมอมาช้า/กลับก่อน → ใช้ <b>⛔ ปิด / ไม่พร้อม → ปิดเฉพาะช่วงเวลา</b>
+              </div>
+            )}
+            {isClosing && (
+              <div className="type-options" style={{ marginTop: 8 }}>
+                <button
+                  className={`type-option ${!closeRange ? "selected" : ""}`}
+                  onClick={() => chooseCloseRange(false)}
+                  style={!closeRange ? { borderColor: "var(--red)", background: "var(--red-soft)", color: "var(--red)" } : {}}
+                >
+                  ปิดทั้งวัน
+                </button>
+                <button
+                  className={`type-option ${closeRange ? "selected" : ""}`}
+                  onClick={() => chooseCloseRange(true)}
+                  style={closeRange ? { borderColor: "var(--red)", background: "var(--red-soft)", color: "var(--red)" } : {}}
+                >
+                  ปิดเฉพาะช่วงเวลา
+                </button>
+              </div>
+            )}
+            {isClosing && closeRange && (
+              <div style={{ marginTop: 6, fontSize: 11, color: "var(--red)", fontWeight: 600, lineHeight: 1.5 }}>
+                💡 เวลาเปิดปกติของห้องไม่เปลี่ยน ปิดเฉพาะช่วงที่เลือก<br />
+                ตัวอย่าง: หมอเข้า 17:00 → ปิด <b>11:00–17:00</b>
               </div>
             )}
           </div>
 
           {/* Time spinner — ซ่อนเมื่อ noteOnly หรือ ปิดทั้งวัน */}
-          {!noteOnly && available && (
+          {showTimeRange && (
             <>
               <div className="form-group">
                 <TimeSpinner
@@ -506,12 +567,38 @@ export default function ScheduleModal({ data, rooms, branches, onSave, onClose }
                       {blockToTime(startBlock)} — {blockToTime(endBlock)}
                     </span>
                     <span style={{ color: "var(--text3)", fontWeight: 500 }}>
-                      ({duration * 5} นาที / {duration / STEP} ชั่วโมง)
+                      ({formatBlockDuration(duration)})
                     </span>
                   </div>
                 </div>
               )}
             </>
+          )}
+
+          {/* คิวที่ค้างในช่วงที่จะปิด */}
+          {affectedQueues.length > 0 && (
+            <div className="form-group full">
+              <div style={{
+                padding: "8px 12px", borderRadius: "var(--radius-sm)",
+                background: "var(--red-soft)", border: "1px solid rgba(192,57,43,0.25)",
+                fontSize: 12, color: "var(--red)", lineHeight: 1.6,
+              }}>
+                <div style={{ fontWeight: 700 }}>
+                  ⚠️ มีคิว {affectedQueues.length} คิวอยู่ในช่วงที่จะปิด — ปิดได้ แต่คิวไม่ถูกย้ายให้
+                </div>
+                {affectedQueues.slice(0, 8).map((q) => {
+                  const room = rooms.find((r) => r.id === q.roomId);
+                  return (
+                    <div key={q.id} style={{ color: "var(--text2)" }}>
+                      {formatThaiDate(q.date)} {q.timeBlock != null ? blockToTime(q.timeBlock) : ""} · {room?.name || ""} · {q.name || "-"}
+                    </div>
+                  );
+                })}
+                {affectedQueues.length > 8 && (
+                  <div style={{ color: "var(--text3)" }}>และอีก {affectedQueues.length - 8} คิว</div>
+                )}
+              </div>
+            </div>
           )}
 
           {/* หมายเหตุ */}
