@@ -134,8 +134,19 @@ test("ไฟล์หลักไม่แก้ข้อมูล การเ�
   // หน้าเว็บเก่าเห็น 'MN' แล้วหัตถการหายจากเตียง M — ห้ามแก้ข้อมูลในไฟล์ที่ลงก่อนเว็บใหม่
   assert.doesNotMatch(main, /^\s*update\s+public\.procedures/im);
   const later = readFileSync(
-    new URL("../supabase/migrations/20261031120100_generic_procedures_fit_nurse_room.sql", import.meta.url),
+    new URL("../supabase/migrations/20261031120100_nurse_beds_to_room_n.sql", import.meta.url),
     "utf8",
   );
-  assert.match(later, /set room_type = 'MN'\s+where room_type = 'M'\s+and name in \('Influencer', 'ปรึกษาทั่วไป'\);/);
+  // หัตถการเป็น MN (ไม่ใช่ N ล้วน) เพราะยังมีคิวบนเตียงหมอ และ 3 สาขาไม่มีเตียงพยาบาล
+  assert.match(later, /set room_type = 'MN'\s+where room_type = 'M'/);
+  for (const name of ["วิตามินผิว", "Go-ดริปผิว", "ปากกาลดน้ำหนัก", "Influencer", "ปรึกษาทั่วไป", "โปรประจำเดือน"]) {
+    assert.ok(later.includes(`'${name}'`), name);
+  }
+  assert.doesNotMatch(later, /set room_type = 'N'/);
+  // หัตถการต้องเปลี่ยนก่อนเตียง ไม่งั้นเตียง N จะรับคิวในล็อกตัวเองไม่ได้
+  assert.ok(later.indexOf("update public.procedures") < later.indexOf("update public.rooms set type = 'N'"));
+  // เปลี่ยนเฉพาะเตียงที่ทุกหัตถการในล็อกเป็นงานพยาบาล และหยุดทั้งไฟล์ถ้าจำนวนไม่ใช่ 33
+  assert.match(later, /not \(p\.name = any \(v_nurse_set\)\)/);
+  assert.match(later, /array_length\(v_ids, 1\), 0\) <> 33 then\s+raise exception/);
+  assert.doesNotMatch(later, /set name\s*=/, "ไฟล์นี้ไม่เปลี่ยนชื่อเตียง");
 });
