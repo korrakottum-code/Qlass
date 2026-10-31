@@ -373,12 +373,12 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
     if (result.roomId) break;
   }
   if (!result.roomId && rooms.length > 0) {
-    // match room name like M01, T02
-    const roomRe = /\b([MT]\d{1,2})\b/i;
+    // match room name like M01, T02, N01
+    const roomRe = /\b([MTN]\d{1,2})\b/i;
     for (let i = 0; i < lines.length; i++) {
       const m = lines[i].match(roomRe) || fullText.match(roomRe);
       if (m) {
-        const roomName = m[1].toUpperCase().replace(/^([MT])(\d)$/, "$10$2");
+        const roomName = m[1].toUpperCase().replace(/^([MTN])(\d)$/, "$10$2");
         const room = rooms.find((r) =>
           r.name.toUpperCase() === roomName && (!result.branchId || r.branchId === result.branchId)
         );
@@ -496,7 +496,7 @@ export function parseBookingText(rawText, { branches, procedures, promos, rooms 
       if (/฿|บาท/.test(line) && /\d/.test(line)) continue;
       if (/วันที่|เวลา|ราคา|หมายเหตุ|note/i.test(line)) continue;
       if (/^\d{1,2}\s*[:.]\s*\d{2}$/.test(line)) continue;
-      if (/^[MT]\d{1,2}$/i.test(line)) continue;
+      if (/^[MTN]\d{1,2}$/i.test(line)) continue;
       // remove leading numbering (1. 2. 3) etc.)
       const cleaned = line.replace(/^\d+[.)\s]+/, "").replace(/^[-–•]\s*/, "").trim();
       if (NOT_NAMES.test(cleaned)) continue;

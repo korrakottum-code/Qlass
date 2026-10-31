@@ -119,3 +119,19 @@ test("ประเภทห้องใน constants ตรงกับ roomProc
   assert.equal(roomTypeMeta("N").short, "ห้องพยาบาล");
   assert.equal(roomTypeMeta("X").value, "X");
 });
+
+test("ตัวอ่านข้อความจองรู้จักชื่อเตียง N01", async () => {
+  const src = readFileSync(new URL("../src/utils/smartParser.js", import.meta.url), "utf8");
+  assert.match(src, /const roomRe = \/\\b\(\[MTN\]\\d\{1,2\}\)\\b\/i;/);
+  assert.doesNotMatch(src, /\[MT\]\\d/);
+});
+
+test("migration เติม N ให้หัตถการกลางแบบ M หลังเปลี่ยน check แล้ว", () => {
+  const sql = readFileSync(
+    new URL("../supabase/migrations/20261031120000_room_type_nurse_and_multi.sql", import.meta.url),
+    "utf8",
+  );
+  const update = sql.indexOf("update public.procedures");
+  assert.ok(update > sql.indexOf("add constraint procedures_room_type_check"), "ต้องเปลี่ยน check ก่อน update");
+  assert.match(sql, /set room_type = 'MN'\s+where room_type = 'M'\s+and name in \('Influencer', 'ปรึกษาทั่วไป'\);/);
+});

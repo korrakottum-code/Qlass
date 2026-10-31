@@ -65,7 +65,7 @@ export default function RoomModal({
   const [openBlock, setOpenBlock] = useState(data?.openBlock ?? WORK_START_BLOCK);
   const [closeBlock, setCloseBlock] = useState(data?.closeBlock ?? WORK_END_BLOCK);
 
-  // หัตถการที่เลือกได้ = ฝั่งเดียวกับประเภทเตียง (M/T) — ข้ามฝั่งไม่มีทางถูก
+  // หัตถการที่เลือกได้ = หัตถการที่ประเภทห้องรวมประเภทเตียงนี้ (M/T/N) — ข้ามฝั่งไม่มีทางถูก
   const selectableProcs = useMemo(
     () => procedures.filter((p) => procedureFitsRoomType(p, type)),
     [procedures, type]

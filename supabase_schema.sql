@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS procedures (
   name TEXT NOT NULL,
   blocks INTEGER NOT NULL DEFAULT 1,
   category TEXT,
-  room_type TEXT CHECK (room_type IN ('M', 'T')),
+  room_type TEXT CHECK (room_type IS NULL OR (room_type <> '' AND room_type ~ '^M?T?N?$')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS rooms (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
   branch_id UUID REFERENCES branches(id) ON DELETE CASCADE,
-  type TEXT CHECK (type IN ('M', 'T')),
+  type TEXT CHECK (type IN ('M', 'T', 'N')),
   notes TEXT,
   open_block INTEGER NOT NULL,
   close_block INTEGER NOT NULL,
