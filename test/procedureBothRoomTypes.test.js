@@ -176,3 +176,25 @@ test("ชื่อเตียงใหม่ใช้เลขสูงสุ�
   // ไม่มีเลขกลางหาย = ผลเหมือนวิธีเดิม
   assert.equal(nextRoomName(rooms.slice(0, 2), "b1", "M"), "M03");
 });
+
+test("กันแท็บที่เปิดค้างเขียนทับประเภทห้อง/ชื่อเตียง", () => {
+  const rules = readFileSync(
+    new URL("../supabase/migrations/20261031120000_room_type_nurse_and_multi.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(rules, /new\.type := old\.type;\s+new\.name := old\.name;/);
+  assert.match(rules, /create trigger rooms_keep_identity\s+before update on public\.rooms/);
+  const later = readFileSync(
+    new URL("../supabase/migrations/20261031120100_nurse_beds_to_room_n.sql", import.meta.url),
+    "utf8",
+  );
+  // migration ต้องเปิดสิทธิ์ก่อนเปลี่ยนเตียง ไม่งั้น trigger คงค่าเดิมไว้เงียบ ๆ
+  assert.ok(later.indexOf("set_config('qlass.allow_room_identity_change', 'on', true)") < later.indexOf("update public.rooms set type = 'N'"));
+  assert.match(later, /<> 35 then\s+raise exception 'expected 35 beds to become N01'/);
+  // ตรัง/อยุธยา ตั้งล็อกให้ (room_procedures มี Realtime แท็บเก่าจึงเห็น)
+  assert.match(later, /insert into public\.room_procedures \(room_id, procedure_id\)/);
+  const service = readFileSync(new URL("../src/utils/supabaseService.js", import.meta.url), "utf8");
+  assert.match(service, /if \(procedure\.roomType !== undefined\) payload\.room_type = procedure\.roomType;/);
+  const app = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  assert.match(app, /original && original\.roomType === data\.roomType \? \{ \.\.\.data, roomType: undefined \} : data/);
+});

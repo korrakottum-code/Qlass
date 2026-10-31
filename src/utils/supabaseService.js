@@ -97,14 +97,16 @@ export async function createProcedure(procedure) {
 }
 
 export async function updateProcedure(id, procedure) {
+  const payload = {
+    name: procedure.name,
+    blocks: procedure.blocks,
+    category: procedure.category,
+  };
+  // roomType ไม่ส่งมา = ผู้ใช้ไม่ได้เปลี่ยนประเภทห้อง อย่าเขียนทับ (ดู saveProcedure ใน App.jsx)
+  if (procedure.roomType !== undefined) payload.room_type = procedure.roomType;
   const { data, error } = await supabase
     .from("procedures")
-    .update({
-      name: procedure.name,
-      blocks: procedure.blocks,
-      category: procedure.category,
-      room_type: procedure.roomType,
-    })
+    .update(payload)
     .eq("id", id)
     .select()
     .single();

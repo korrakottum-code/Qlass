@@ -177,7 +177,11 @@ export async function updateBranch(id, b) { return upsert(DB.branches, { ...DB.b
 export async function deleteBranch(id) { remove(DB.branches, id); }
 export async function fetchProcedures() { await delay(); return clone(DB.procedures); }
 export async function createProcedure(p) { return upsert(DB.procedures, { ...p, id: uid("p") }); }
-export async function updateProcedure(id, p) { return upsert(DB.procedures, { ...DB.procedures.find((x) => x.id === id), ...p, id }); }
+export async function updateProcedure(id, p) {
+  // ช่องที่เป็น undefined = ไม่ได้ส่งมา (เหมือนของจริง) อย่าเขียนทับ
+  const defined = Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined));
+  return upsert(DB.procedures, { ...DB.procedures.find((x) => x.id === id), ...defined, id });
+}
 export async function deleteProcedure(id) { remove(DB.procedures, id); }
 export async function fetchPromos() { await delay(); return clone(DB.promos); }
 export async function createPromo(p) { return upsert(DB.promos, { active: true, sortOrder: DB.promos.length, ...p, id: uid("pr") }); }

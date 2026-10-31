@@ -14,6 +14,7 @@
 -- 3. create_queue_v1: เทียบประเภทห้องแบบ "ห้องนี้อยู่ในรายการที่หัตถการรับ" แทน "เท่ากันเป๊ะ"
 --    หัตถการประเภทเดียวได้ผลเหมือนเดิมทุกกรณี (เงื่อนไขเดิมยังอยู่ แค่เพิ่มทางผ่าน)
 -- 4. booking_api_candidate_rooms_v1 (Booking API ของน้องคลาส) ใช้กติกาเดียวกัน
+-- 5. trigger rooms_keep_identity: ประเภทและชื่อเตียงเปลี่ยนไม่ได้หลังสร้าง (กันแท็บเก่าเขียนทับ)
 --
 -- ไฟล์นี้ไม่แก้ข้อมูลแถวไหนเลย (แค่ขยายกติกา + ฟังก์ชัน) จึงลงหลังเว็บเวอร์ชันใหม่ขึ้นได้อย่างปลอดภัย
 -- การแก้ข้อมูล (หัตถการเป็น MN + เปลี่ยนเตียงพยาบาลเป็น N) แยกไว้ที่ 20261031120100 ต้องลง "หลัง" เว็บใหม่ขึ้นแล้วเท่านั้น
@@ -45,6 +46,34 @@ alter table public.rooms
 
 comment on column public.rooms.type is
   'ประเภทห้อง: M = ห้องฉีด, T = ห้องเครื่อง/ทรีตเมนต์, N = ห้องพยาบาล';
+
+-- ═══ กันหน้าเว็บที่เปิดค้างเขียนทับประเภท/ชื่อเตียง ═══
+-- หน้าเว็บโหลดตาราง rooms ครั้งเดียวตอนเปิด (ไม่มี Realtime ของ rooms) และฟอร์มแก้ห้องส่ง name + type
+-- กลับไปทุกครั้งแม้ล็อกไว้ไม่ให้แก้ ถ้าแท็บที่เปิดไว้ก่อนเปลี่ยนเตียงพยาบาลเป็น N01 กดแก้เวลา/หมายเหตุของเตียงนั้น
+-- จะเขียนกลับเป็น M / M03 เงียบ ๆ
+-- กติกาของแอปอยู่แล้ว: ประเภทและชื่อเตียงเปลี่ยนไม่ได้หลังสร้าง → บังคับที่ฐานข้อมูลด้วย โดย "คงค่าเดิมไว้"
+-- (ไม่ raise เพื่อให้การแก้เวลา/หมายเหตุจากแท็บเก่ายังบันทึกได้ และหน้าเว็บได้ค่าจริงกลับไปจาก .select())
+-- ทางเดียวที่เปลี่ยนได้: ตั้ง qlass.allow_room_identity_change = 'on' ใน transaction เดียวกัน (ใช้ใน migration)
+create or replace function public.rooms_keep_identity()
+returns trigger
+language plpgsql
+set search_path = ''
+as $fn$
+begin
+  if coalesce(current_setting('qlass.allow_room_identity_change', true), '') <> 'on' then
+    new.type := old.type;
+    new.name := old.name;
+  end if;
+  return new;
+end
+$fn$;
+
+revoke all on function public.rooms_keep_identity() from public, anon, authenticated;
+
+drop trigger if exists rooms_keep_identity on public.rooms;
+create trigger rooms_keep_identity
+  before update on public.rooms
+  for each row execute function public.rooms_keep_identity();
 
 create or replace function public.create_queue_v1(
   p_actor_staff_id uuid,

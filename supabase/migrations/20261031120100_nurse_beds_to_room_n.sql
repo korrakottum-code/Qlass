@@ -21,10 +21,16 @@
 -- เหตุผล: หน้าเว็บเวอร์ชันเก่าเทียบ procedure.roomType === room.type ตรง ๆ ถ้าใครโหลดเว็บเก่า
 -- หลังจากไฟล์นี้ลงไป หัตถการที่เป็น 'MN' จะหายจากเตียง M ที่ยังไม่ล็อก (78 เตียง)
 -- และค้างอยู่อย่างนั้นจนกว่าจะรีเฟรช เพราะแอปไม่มีระบบรีโหลดเอง
--- (ตาราง rooms ส่ง Realtime ให้หน้าเว็บเก่าด้วย เว็บเก่าจะเห็นเตียงเป็น N แต่ระบายสีแบบ T — แค่หน้าตา)
+-- หน้าเว็บโหลด rooms / procedures ครั้งเดียวตอนเปิด (ไม่มี Realtime ของสองตารางนี้) แท็บที่เปิดค้างจะยังเห็นค่าเดิม
+-- จนกว่าจะรีเฟรช — กันไว้แล้วดังนี้:
+--   - แท็บเก่ากดแก้เตียงจะเขียนประเภท/ชื่อกลับไม่ได้ (trigger rooms_keep_identity ใน 20261031120000)
+--   - ตรัง/อยุธยา M03 ตั้งล็อกให้ด้วย (room_procedures มี Realtime) แท็บเก่าจึงเห็นรายการหัตถการตรงกับเซิร์ฟเวอร์
+--   - หัตถการ: แท็บเก่าที่กดแก้หัตถการในชุดนี้อาจเขียน room_type กลับเป็น M — เช็คซ้ำหลังปล่อย
 --
 -- เพิ่มเติมตามที่เจ้าของระบุเอง (31 ต.ค. 2569): Class ตรัง M03 และ Class อยุธยา M03 เป็นห้อง N ด้วย
 -- (สองสาขานี้ยังไม่ได้ตั้งล็อกเตียง กติกาข้างบนจึงจับไม่ได้; คิวล่วงหน้ามีแค่วิตามินผิว ตรวจแล้ว)
+-- ตั้งล็อกให้เหมือนเตียงพยาบาลสาขา Class ทั่วไป: วิตามินผิว, ปากกาลดน้ำหนัก, Influencer, ปรึกษาทั่วไป, โปรประจำเดือน
+-- (ผลเท่ากับเตียง N ที่ไม่ล็อก ยกเว้น Go-ดริปผิว ซึ่งเป็นของสาขา Class Go เท่านั้น)
 -- Class ปลวกแดง เจ้าของสั่งไม่แตะ (มีเตียง M 2 เตียงที่ใช้ปนทั้งงานหมอและดริป)
 --
 -- ชื่อเตียง: เจ้าของให้เปลี่ยนเป็น N01 (ทุกสาขามีเตียงพยาบาลเตียงเดียว ตรวจแล้วไม่มีสาขาไหนได้ 2 เตียง
@@ -104,6 +110,35 @@ begin
     raise exception 'a branch already has a bed named N01';
   end if;
 
+  -- ทุกหัตถการที่ล็อกไว้บนเตียงเป้าหมายต้องลงห้อง N ได้แล้ว (หลังขั้น 1) ไม่งั้นเตียง N จะรับคิวในล็อกตัวเองไม่ได้
+  if exists (
+    select 1 from public.room_procedures rp
+    join public.procedures p on p.id = rp.procedure_id
+    where rp.room_id = any (v_ids)
+      and coalesce(strpos(p.room_type, 'N'), 0) = 0
+  ) then
+    raise exception 'a locked procedure on a nurse bed cannot go in room N';
+  end if;
+
+  insert into public.room_procedures (room_id, procedure_id)
+  select r.id, p.id
+  from unnest(v_owner_named) as r(id)
+  cross join public.procedures p
+  where p.name in ('วิตามินผิว', 'ปากกาลดน้ำหนัก', 'Influencer', 'ปรึกษาทั่วไป', 'โปรประจำเดือน')
+    and coalesce(strpos(p.room_type, 'N'), 0) > 0
+  on conflict do nothing;
+
+  if (select count(*) from public.room_procedures where room_id = any (v_owner_named)) <> 10 then
+    raise exception 'owner-named nurse bed locks: expected 10 rows';
+  end if;
+
+  -- trigger rooms_keep_identity คงประเภท/ชื่อเตียงไว้ ต้องเปิดสิทธิ์เฉพาะใน transaction นี้
+  perform set_config('qlass.allow_room_identity_change', 'on', true);
   update public.rooms set type = 'N', name = 'N01' where id = any (v_ids || v_owner_named);
+  perform set_config('qlass.allow_room_identity_change', 'off', true);
+
+  if (select count(*) from public.rooms where id = any (v_ids || v_owner_named) and type = 'N' and name = 'N01') <> 35 then
+    raise exception 'expected 35 beds to become N01';
+  end if;
 end
 $$;
