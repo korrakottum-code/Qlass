@@ -148,5 +148,31 @@ test("ไฟล์หลักไม่แก้ข้อมูล การเ�
   // เปลี่ยนเฉพาะเตียงที่ทุกหัตถการในล็อกเป็นงานพยาบาล และหยุดทั้งไฟล์ถ้าจำนวนไม่ใช่ 33
   assert.match(later, /not \(p\.name = any \(v_nurse_set\)\)/);
   assert.match(later, /array_length\(v_ids, 1\), 0\) <> 33 then\s+raise exception/);
-  assert.doesNotMatch(later, /set name\s*=/, "ไฟล์นี้ไม่เปลี่ยนชื่อเตียง");
+  // เจ้าของให้เปลี่ยนชื่อเป็น N01 — สาขาละเตียงเดียว และหยุดถ้าสาขามี N01 อยู่แล้ว
+  assert.match(later, /set type = 'N', name = 'N01' where id = any \(v_ids \|\| v_owner_named\)/);
+  assert.match(later, /having count\(\*\) > 1/);
+  // เตียงที่เจ้าของระบุเอง: ตรัง M03, อยุธยา M03 — ปลวกแดงไม่แตะ
+  assert.match(later, /'c8ed446a-db7b-48b6-8e6a-53ae04867cef'::uuid/);
+  assert.match(later, /'3ada52d1-07c1-49eb-b1fc-c42d1d5cd906'::uuid/);
+  assert.match(later, /if v_owner_ok <> 2 then\s+raise exception/);
+  assert.doesNotMatch(later, /ปลวกแดง'/);
+});
+
+test("ชื่อเตียงใหม่ใช้เลขสูงสุด + 1 ไม่ซ้ำแม้เลขกลางหายไป", async () => {
+  const { nextRoomName } = await import("../src/utils/roomNaming.js");
+  const rooms = [
+    { branchId: "b1", type: "M", name: "M01" },
+    { branchId: "b1", type: "M", name: "M02" },
+    { branchId: "b1", type: "M", name: "M04" },
+    { branchId: "b1", type: "N", name: "N01" },
+    { branchId: "b1", type: "T", name: "T01" },
+    { branchId: "b2", type: "M", name: "M09" },
+  ];
+  assert.equal(nextRoomName(rooms, "b1", "M"), "M05"); // เดิมนับจำนวน = M04 ซ้ำ
+  assert.equal(nextRoomName(rooms, "b1", "N"), "N02");
+  assert.equal(nextRoomName(rooms, "b1", "T"), "T02");
+  assert.equal(nextRoomName(rooms, "b3", "N"), "N01");
+  assert.equal(nextRoomName(rooms, "", "M"), "");
+  // ไม่มีเลขกลางหาย = ผลเหมือนวิธีเดิม
+  assert.equal(nextRoomName(rooms.slice(0, 2), "b1", "M"), "M03");
 });

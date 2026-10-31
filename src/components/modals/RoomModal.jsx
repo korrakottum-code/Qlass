@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
 import { ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK, roomTypeMeta } from "../../utils/constants";
 import { blockToTime } from "../../utils/helpers";
+import { nextRoomName } from "../../utils/roomNaming";
 import { ALWAYS_ALLOWED_PROCEDURE_NAMES, noteMentionsOutsideSelection, roomLockLabel, buildRoomProcedureIndex, procedureFitsRoomType } from "../../utils/roomProcedures";
 
 // index.css ตั้ง input { width:100% } กับทุก input — checkbox ที่ไม่บอกความกว้างเองจะยืดเต็ม
@@ -14,13 +15,8 @@ function sameSet(a, b) {
   return b.every((id) => set.has(id));
 }
 
-// คำนวณชื่อห้องถัดไป เช่น M01, M02, T03
-function getNextRoomName(rooms, branchId, type) {
-  if (!branchId || !type) return "";
-  const existing = rooms.filter((r) => r.branchId === branchId && r.type === type);
-  const next = existing.length + 1;
-  return `${type}${String(next).padStart(2, "0")}`;
-}
+// คำนวณชื่อห้องถัดไป เช่น M01, M02, T03 — กติกาอยู่ใน roomNaming.js
+const getNextRoomName = nextRoomName;
 
 // Spinner +/- 30 นาที (6 บล็อค) แบบเดียวกับ ScheduleModal
 function TimeSpinner({ label, value, onChange, min, max }) {
@@ -225,7 +221,6 @@ export default function RoomModal({
               }}>
                 {branches.filter((b) => b.name && b.name.trim()).map((b) => {
                   const checked = selectedBranchIds.includes(b.id);
-                  const existingCount = rooms.filter((r) => r.branchId === b.id && r.type === type).length;
                   return (
                     <label
                       key={b.id}
@@ -244,7 +239,7 @@ export default function RoomModal({
                       />
                       {b.name}
                       <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text3)", fontFamily: "var(--mono)" }}>
-                        → {type}{String(existingCount + 1).padStart(2, "0")}
+                        → {getNextRoomName(rooms, b.id, type)}
                       </span>
                     </label>
                   );

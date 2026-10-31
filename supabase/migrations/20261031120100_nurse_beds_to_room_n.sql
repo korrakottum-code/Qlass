@@ -23,7 +23,13 @@
 -- และค้างอยู่อย่างนั้นจนกว่าจะรีเฟรช เพราะแอปไม่มีระบบรีโหลดเอง
 -- (ตาราง rooms ส่ง Realtime ให้หน้าเว็บเก่าด้วย เว็บเก่าจะเห็นเตียงเป็น N แต่ระบายสีแบบ T — แค่หน้าตา)
 --
--- ชื่อเตียง (M03 ฯลฯ) ไม่เปลี่ยนในไฟล์นี้
+-- เพิ่มเติมตามที่เจ้าของระบุเอง (31 ต.ค. 2569): Class ตรัง M03 และ Class อยุธยา M03 เป็นห้อง N ด้วย
+-- (สองสาขานี้ยังไม่ได้ตั้งล็อกเตียง กติกาข้างบนจึงจับไม่ได้; คิวล่วงหน้ามีแค่วิตามินผิว ตรวจแล้ว)
+-- Class ปลวกแดง เจ้าของสั่งไม่แตะ (มีเตียง M 2 เตียงที่ใช้ปนทั้งงานหมอและดริป)
+--
+-- ชื่อเตียง: เจ้าของให้เปลี่ยนเป็น N01 (ทุกสาขามีเตียงพยาบาลเตียงเดียว ตรวจแล้วไม่มีสาขาไหนได้ 2 เตียง
+-- และยังไม่มีเตียงไหนชื่อขึ้นต้นด้วย N) — คิวเก่ายังเก็บป้าย '[M] M03' ไว้ใน room_label_snapshot ตามเดิม
+-- เตียง M ที่เหลือมีเลขกระโดด (เช่น M01, M02, M04) ตัวตั้งชื่อในหน้าเว็บ (roomNaming.js) ใช้เลขสูงสุด + 1 จึงไม่ซ้ำ
 
 set local lock_timeout = '3s';
 
@@ -45,6 +51,12 @@ declare
     'Influencer', 'ปรึกษาทั่วไป', 'โปรประจำเดือน'
   ];
   v_ids uuid[];
+  -- เตียงที่เจ้าของระบุเอง: Class ตรัง M03, Class อยุธยา M03
+  v_owner_named uuid[] := array[
+    'c8ed446a-db7b-48b6-8e6a-53ae04867cef'::uuid,
+    '3ada52d1-07c1-49eb-b1fc-c42d1d5cd906'::uuid
+  ];
+  v_owner_ok integer;
 begin
   select coalesce(array_agg(r.id), '{}') into v_ids
   from public.rooms r
@@ -65,6 +77,33 @@ begin
     raise exception 'nurse bed count changed: expected 33, found %', coalesce(array_length(v_ids, 1), 0);
   end if;
 
-  update public.rooms set type = 'N' where id = any (v_ids);
+  -- เตียงที่เจ้าของระบุ ต้องยังเป็น M, ชื่อ M03 และอยู่สาขาตรัง/อยุธยา ตามที่ตรวจไว้ ไม่งั้นหยุดทั้งไฟล์
+  select count(*) into v_owner_ok
+  from public.rooms r
+  join public.branches b on b.id = r.branch_id
+  where r.id = any (v_owner_named)
+    and r.type = 'M'
+    and r.name = 'M03'
+    and b.name in ('Class ตรัง', 'Class อยุธยา');
+  if v_owner_ok <> 2 then
+    raise exception 'owner-named nurse beds changed: expected 2, found %', v_owner_ok;
+  end if;
+
+  -- สาขาละไม่เกิน 1 เตียง ไม่งั้นชื่อ N01 จะซ้ำในสาขา
+  if exists (
+    select 1 from public.rooms r where r.id = any (v_ids || v_owner_named)
+    group by r.branch_id having count(*) > 1
+  ) then
+    raise exception 'a branch has more than one nurse bed; N01 would repeat';
+  end if;
+  if exists (
+    select 1 from public.rooms r
+    where r.branch_id in (select branch_id from public.rooms where id = any (v_ids || v_owner_named))
+      and upper(r.name) = 'N01'
+  ) then
+    raise exception 'a branch already has a bed named N01';
+  end if;
+
+  update public.rooms set type = 'N', name = 'N01' where id = any (v_ids || v_owner_named);
 end
 $$;
