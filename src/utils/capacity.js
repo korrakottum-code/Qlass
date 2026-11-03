@@ -91,6 +91,25 @@ export function daysUntilEndOfMonth(startDate) {
 }
 
 /**
+ * วันที่ของปุ่ม "ช่วงเวลา" ในหน้าคิวว่าง
+ *   "7d"    → วันนี้ + 6 วันข้างหน้า
+ *   "eom"   → วันนี้ถึงสิ้นเดือน
+ *   "past7" → 7 วันที่ผ่านมา (เมื่อวานย้อนไป 7 วัน ไม่รวมวันนี้ เพราะวันนี้ยังไม่จบ)
+ * ข้อมูล 7 วันย้อนหลังอยู่ในชุดที่โหลดตอนเปิดแอปอยู่แล้ว (30 วัน) และหน้านี้ขอ 4 สัปดาห์ไว้ให้แถบ "เทียบกับปกติ" อยู่แล้ว
+ */
+export const PAST_RANGE_DAYS = 7;
+export function capacityRangeDates(range, today) {
+  if (range === "past7") {
+    const [y, m, d] = String(today).split("-").map(Number);
+    const start = new Date(y, m - 1, d - PAST_RANGE_DAYS);
+    const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;
+    return listDates(startStr, PAST_RANGE_DAYS);
+  }
+  if (range === "eom") return listDates(today, daysUntilEndOfMonth(today));
+  return listDates(today, 7);
+}
+
+/**
  * สรุปความจุ/จอง/ว่าง ต่อวัน ต่อสาขา ต่อประเภทห้อง (M/T/N)
  * คืนค่า:
  * {
