@@ -1,6 +1,6 @@
 import { supabase } from "./supabaseClient";
 import { searchWords } from "./queueSearch";
-import { fetchAllByUuidRanges, HISTORY_PAGE_SIZE } from "./queueHistoryPagination";
+import { fetchAllByUuidRanges, HISTORY_PAGE_SIZE, fetchAllByDateSegments, buildDateSegments } from "./queueHistoryPagination";
 import { getServerSessionToken } from "./sessionAuth";
 import { buildQueueStatusUpdate } from "./queueStatusUpdate";
 import { lookupHnCustomers } from "./hnLookup";
@@ -799,6 +799,32 @@ export function mapQueueRow(q) {
   };
 }
 
+// เกินนี้ = ช่วงใหญ่ → keyset ตามวัน (เปิดแอป 30 วัน ≈ 58,600 แถว ณ 4 พ.ย. 2569 ยังอยู่ใต้เส้นนี้)
+const LARGE_RANGE_ROWS = 70000;
+
+async function fetchQueuesByDateKeyset(sinceDate, untilDate, expectedCount) {
+  // ขอบจริงของข้อมูลในช่วง (index date — เร็ว) จะได้ไม่แตกช่วงว่างจาก "2000-01-01" หรือขอบบนที่ไม่จำกัด
+  const edge = async (ascending) => {
+    let q = supabase.from("queues").select("date").gte("date", sinceDate);
+    if (untilDate) q = q.lte("date", untilDate);
+    const { data, error } = await q.order("date", { ascending }).limit(1);
+    if (error) throw error;
+    return data?.[0]?.date ?? null;
+  };
+  const [first, last] = await Promise.all([edge(true), edge(false)]);
+  if (!first || !last) return { rows: [], complete: true, errors: [] };
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const fetchPage = async ({ from, to, cursor, pageSize }) => {
+    let q = supabase.from("queues").select("*").gte("date", from).lte("date", cursor ? cursor.date : to);
+    if (cursor) q = q.or(`date.lt.${cursor.date},id.gt.${cursor.id}`);
+    const { data, error } = await q.order("date", { ascending: false }).order("id", { ascending: true }).limit(pageSize);
+    if (error) throw error;
+    return data || [];
+  };
+  return fetchAllByDateSegments(fetchPage, buildDateSegments(first, last, { today }), { expectedCount });
+}
+
 export async function fetchQueues(opts = {}) {
   // sinceDate / untilDate: "YYYY-MM-DD" — โหลดเฉพาะคิวที่ sinceDate <= date <= untilDate
   //   (ตอนเปิดแอป: 30 วันล่าสุด; หน้าที่ต้องการข้อมูลเก่ากว่านั้นเรียกเพิ่มเฉพาะช่วงที่ยังไม่มี)
@@ -821,6 +847,16 @@ export async function fetchQueues(opts = {}) {
     const { count, error: countError } = await countQ;
     if (countError) throw countError;
     if (!count) { report({ complete: true, errors: [], rowCount: 0 }); return []; }
+    if (count > LARGE_RANGE_ROWS) {
+      // ช่วงใหญ่ (ย้อนหลังหลายเดือน) — OFFSET ลึก + ยิงทุกหน้าพร้อมกันทำ statement timeout (3 พ.ย. 2569)
+      // เดิน keyset ตาม (date desc, id) ทีละช่วง 7 วัน พร้อมกันไม่เกิน 4 ช่วง ดู queueHistoryPagination.js
+      ({ rows, complete, errors } = await fetchQueuesByDateKeyset(sinceDate, untilDate, count));
+      if (!complete && !allowPartial) {
+        report({ complete, errors, rowCount: rows.length });
+        throw errors[0];
+      }
+    } else {
+    // ช่วงเล็ก (เปิดแอป 30 วัน ~59 หน้า) ใช้ทางเดิมที่ใช้มาตลอดและไม่เคย timeout — จำนวนหน้าถูกจำกัดด้วย LARGE_RANGE_ROWS
     const numPages = Math.ceil(count / PAGE_SIZE);
     const results = await Promise.all(Array.from({ length: numPages }, (_, i) => {
       let q = supabase.from("queues").select("*").gte("date", sinceDate);
@@ -839,6 +875,7 @@ export async function fetchQueues(opts = {}) {
       if (data) for (const r of data) byId.set(r.id, r);
     }
     rows = Array.from(byId.values());
+    }
   } else {
     // ─── Phase 2b: ทั้งตาราง → keyset บน id แบ่ง 4 ช่วงเดินขนาน (ดู queueHistoryPagination.js) ───
     // count(*) ไว้เทียบว่าได้ครบจริง (กัน server ตัดหน้าสั้นกว่า pageSize แล้วเข้าใจผิดว่าหมด)
