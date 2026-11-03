@@ -125,3 +125,11 @@ test("ที่อยู่ลูกค้า: เปิดได้แค่ห
   assert.ok(root.includes("const bookingOnly = isBookingHost(window.location.hostname);"));
   assert.ok(root.includes("if (bookingOnly) return undefined;"));
 });
+
+test("สาขา Class Go จองโปรปกติได้ โปรหมวด Class Go ยังจำกัดเฉพาะสาขา Go", () => {
+  const m = read("supabase/migrations/20261103180000_online_booking_go_branches_regular_promos.sql");
+  assert.ok(m.includes("if coalesce(v_cat, '') = 'Class Go' and v_bname not like 'Class Go %' then raise exception 'INVALID_SERVICE'; end if;"));
+  assert.ok(m.includes("and (coalesce(pc.category, '') <> 'Class Go' or b.name like 'Class Go %')"));
+  assert.ok(m.includes("booking_api_candidate_rooms_v1(ob.branch_id, pc.id)"));
+  assert.match(m, /from public, anon, authenticated;\s*grant execute[\s\S]*to service_role;/);
+});
