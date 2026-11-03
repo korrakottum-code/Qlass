@@ -54,6 +54,7 @@ const S = {
   }),
   error: { background: "var(--red-soft)", color: "var(--red)", borderRadius: 10, padding: "10px 12px", fontSize: 14, marginBottom: 12 },
   muted: { color: "var(--text3)", fontSize: 13 },
+  hint: { background: "var(--accent-soft)", color: "var(--text)", borderRadius: 10, padding: "10px 12px", fontSize: 14, lineHeight: 1.6 },
 };
 
 export default function PublicBookingPage() {
@@ -150,6 +151,7 @@ export default function PublicBookingPage() {
           <div style={{ ...S.card, textAlign: "center", padding: 24 }}>
             <div style={{ fontSize: 44 }}>✅</div>
             <div style={S.h1}>จองคิวสำเร็จ</div>
+            <div style={{ ...S.hint, fontWeight: 700, margin: "10px 0 14px" }}>📸 กรุณาแคปหน้าจอนี้เก็บไว้ แล้วแสดงให้พนักงานดูเมื่อมาถึงคลินิก</div>
             <div style={{ ...S.sub, marginBottom: 16 }}>เลขที่การจอง <b style={{ fontFamily: "var(--mono)", color: "var(--text)" }}>{done.booking_ref}</b></div>
             <div style={{ textAlign: "left", fontSize: 15, lineHeight: 1.9 }}>
               <div>📍 {done.branch}</div>
@@ -197,6 +199,7 @@ export default function PublicBookingPage() {
                 </div>
               </button>
             ))}
+            {services && <div style={{ ...S.hint, marginTop: 4 }}>💬 หาโปรที่ต้องการไม่เจอ? ทักแชทแอดมินได้เลย แอดมินจะช่วยจองให้</div>}
           </div>
         )}
 
