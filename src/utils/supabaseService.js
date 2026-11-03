@@ -799,7 +799,8 @@ export function mapQueueRow(q) {
   };
 }
 
-// เกินนี้ = ช่วงใหญ่ → keyset ตามวัน (เปิดแอป 30 วัน ≈ 58,600 แถว ณ 4 พ.ย. 2569 ยังอยู่ใต้เส้นนี้)
+// เกินนี้ = ช่วงใหญ่ → keyset ตามวัน (เปิดแอป 30 วัน+ล่วงหน้า ≈ 67,000 แถว ณ 4 พ.ย. 2569 ยังอยู่ใต้เส้นนี้;
+// ข้ามเส้นเมื่อไหร่ก็ใช้ keyset แทน — วัดแล้วได้แถวตรงกันทุกแถว ช้ากว่าเดิม ~0.5s)
 const LARGE_RANGE_ROWS = 70000;
 
 async function fetchQueuesByDateKeyset(sinceDate, untilDate, expectedCount) {
@@ -849,14 +850,14 @@ export async function fetchQueues(opts = {}) {
     if (!count) { report({ complete: true, errors: [], rowCount: 0 }); return []; }
     if (count > LARGE_RANGE_ROWS) {
       // ช่วงใหญ่ (ย้อนหลังหลายเดือน) — OFFSET ลึก + ยิงทุกหน้าพร้อมกันทำ statement timeout (3 พ.ย. 2569)
-      // เดิน keyset ตาม (date desc, id) ทีละช่วง 7 วัน พร้อมกันไม่เกิน 4 ช่วง ดู queueHistoryPagination.js
+      // เดิน keyset ตาม (date desc, id) ทีละช่วง 2 วัน พร้อมกันไม่เกิน 8 ช่วง ดู queueHistoryPagination.js
       ({ rows, complete, errors } = await fetchQueuesByDateKeyset(sinceDate, untilDate, count));
       if (!complete && !allowPartial) {
         report({ complete, errors, rowCount: rows.length });
         throw errors[0];
       }
     } else {
-    // ช่วงเล็ก (เปิดแอป 30 วัน ~59 หน้า) ใช้ทางเดิมที่ใช้มาตลอดและไม่เคย timeout — จำนวนหน้าถูกจำกัดด้วย LARGE_RANGE_ROWS
+    // ช่วงเล็ก (เปิดแอป 30 วัน ~67 หน้า) ใช้ทางเดิมที่ใช้มาตลอดและไม่เคย timeout — จำนวนหน้าถูกจำกัดด้วย LARGE_RANGE_ROWS
     const numPages = Math.ceil(count / PAGE_SIZE);
     const results = await Promise.all(Array.from({ length: numPages }, (_, i) => {
       let q = supabase.from("queues").select("*").gte("date", sinceDate);
