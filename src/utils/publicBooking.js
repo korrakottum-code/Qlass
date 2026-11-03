@@ -34,3 +34,23 @@ export function isValidMobile(value) {
 export function isPublicBookingHash(hash) {
   return /^#book(\/|$)/.test(hash || "");
 }
+
+// ค้นหาในหน้าจอง: ไม่สนตัวพิมพ์เล็ก/ใหญ่และช่องว่าง ("class หอ" เจอ "Class หอกาญ", "ivdrip" เจอ "IV drip")
+function searchKey(value) {
+  return String(value || "").toLowerCase().replace(/\s+/g, "");
+}
+export function matchesSearch(query, ...fields) {
+  const q = searchKey(query);
+  return !q || fields.some((f) => searchKey(f).includes(q));
+}
+
+// โปรจัดกลุ่มตามบริการ (หัตถการ) เรียงตามลำดับที่เซิร์ฟเวอร์ส่งมา — โปรเป็นร้อยจะได้ไม่ยาวเป็นแถวเดียว
+export function groupServices(services) {
+  const groups = new Map();
+  for (const s of services || []) {
+    const key = s.service || "อื่น ๆ";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
+  }
+  return [...groups].map(([service, items]) => ({ service, items }));
+}
