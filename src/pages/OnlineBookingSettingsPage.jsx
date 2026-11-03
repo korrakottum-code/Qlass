@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { getServerSessionToken, fetchOnlineBookingSettings, saveOnlineBookingSettings } from "../utils/onlineBookingApi";
+import { customerBookingLink } from "../utils/publicBooking";
 
 // ตั้งค่า "ลูกค้าจองเอง" (/#book): เปิด/ปิดทีละสาขา + เลือกบริการ (โปร) ที่ให้ลูกค้าจองได้
 // ข้อมูลอยู่ในตาราง online_booking_* (ปิดจากคีย์หน้าเว็บ) อ่าน/เขียนผ่าน staff-session เท่านั้น — superadmin / head_admin
 // โปรของ Class Go จองได้เฉพาะสาขา Class Go และกลับกัน (เซิร์ฟเวอร์กรองให้เอง เลือกรวมกันได้)
 
+// ลิงก์แจกลูกค้าใช้ที่อยู่ลูกค้าเสมอ (ไม่ใช่ที่อยู่ระบบพนักงาน) — เว้นโหมดเดโม/เครื่องนักพัฒนาที่ใช้ที่อยู่ตัวเอง
 function bookingLink(branchId) {
-  const base = `${window.location.origin}${window.location.pathname}`;
-  return branchId ? `${base}#book/${branchId}` : `${base}#book`;
+  if (/^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)) {
+    const base = `${window.location.origin}${window.location.pathname}`;
+    return branchId ? `${base}#book/${branchId}` : `${base}#book`;
+  }
+  return customerBookingLink(branchId);
 }
 
 // การล็อกอินหมดอายุ (ครบ 8 ชม.) ตอบ 401 invalid_session — ต้องบอกให้ออกแล้วเข้าใหม่ ไม่ใช่ "ลองอีกครั้ง" (กดซ้ำก็ไม่ผ่าน)

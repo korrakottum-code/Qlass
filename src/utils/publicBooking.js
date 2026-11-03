@@ -30,6 +30,17 @@ export function isValidMobile(value) {
   return /^0[689]\d{8}$/.test(digits) && !/^(.)\1+$/.test(digits.slice(2));
 }
 
+// ที่อยู่สำหรับลูกค้า (ไม่ให้ลูกค้าเห็นที่อยู่ของระบบพนักงาน) — เปิดที่นี่ได้แค่หน้าจอง ไม่มีหน้าล็อกอินพนักงาน
+// ต้องตรงกับ BOOKING_ORIGINS ใน supabase/functions/public-booking และโดเมนที่ผูกไว้ในโปรเจกต์ Vercel
+export const BOOKING_HOST = "classclinic-booking.vercel.app";
+export function isBookingHost(hostname) {
+  return String(hostname || "").toLowerCase() === BOOKING_HOST;
+}
+// ลิงก์ที่แจกลูกค้า: ทั้งหมด หรือเฉพาะสาขา (#book/<id> ใช้ได้ทั้งที่อยู่ลูกค้าและที่อยู่ระบบ)
+export function customerBookingLink(branchId) {
+  return branchId ? `https://${BOOKING_HOST}/#book/${branchId}` : `https://${BOOKING_HOST}/`;
+}
+
 // /#book หรือ /#book/<branchId> = หน้าลูกค้าจองเอง (Root.jsx แยกออกจากแอปพนักงาน)
 export function isPublicBookingHash(hash) {
   return /^#book(\/|$)/.test(hash || "");

@@ -20,7 +20,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("QLASS_SUPABASE_SECRET_KEY")
   ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const allowedOrigins = [Deno.env.get("QLASS_ALLOWED_ORIGIN") ?? "", ...(Deno.env.get("QLASS_ALLOWED_ORIGINS") ?? "").split(",")]
+// ที่อยู่สำหรับลูกค้า (BOOKING_HOST ใน src/utils/publicBooking.js) — ใส่ในโค้ดตรงนี้ ไม่เพิ่มใน QLASS_ALLOWED_ORIGINS
+// เพราะชุดนั้นใช้ร่วมกับ staff-session; ที่อยู่ลูกค้าต้องเรียกได้แค่ฟังก์ชันจองนี้
+const BOOKING_ORIGINS = ["https://classclinic-booking.vercel.app"];
+const allowedOrigins = [...BOOKING_ORIGINS, Deno.env.get("QLASS_ALLOWED_ORIGIN") ?? "", ...(Deno.env.get("QLASS_ALLOWED_ORIGINS") ?? "").split(",")]
   .map((value) => value.trim()).filter(Boolean);
 function isAllowedOrigin(origin: string | null): origin is string {
   return typeof origin === "string" && allowedOrigins.includes(origin);
