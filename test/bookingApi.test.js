@@ -141,7 +141,7 @@ test("booking-api (edge): fail closed, คีย์ constant-time, ไม่ม�
 });
 
 test("staff-session: บัญชีบอท Saifa AI แก้/ลบจากหน้าจัดการพนักงานไม่ได้", () => {
-  assert.match(staffSession, /const protectedStaffIds = new Set\(\["1f43d7fe-19a3-4a17-a5c7-f68a89087345"\]\)/);
+  assert.match(staffSession, /const protectedStaffIds = new Set\(\["1f43d7fe-19a3-4a17-a5c7-f68a89087345"[^\]]*\]\)/);
   const update = staffSession.slice(staffSession.indexOf('body.action === "staff_update"'));
   assert.ok(update.slice(0, update.indexOf("staff_delete")).includes("protectedStaffIds.has(body.staffId)"));
   const del = staffSession.slice(staffSession.indexOf('body?.action === "staff_delete"'));

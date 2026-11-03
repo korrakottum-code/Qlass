@@ -137,6 +137,7 @@ export const NAV_ITEMS = [
   { id: "export",        label: "Export ข้อมูล",       icon: "📥" },
   { id: "tickets",       label: "แจ้งปัญหาระบบ",       icon: "🎫" },
   { id: "coupons",       label: "คูปอง",                icon: "🎟️" },
+  { id: "online-booking", label: "จองออนไลน์ (ลูกค้า)", icon: "🌐" },
   { section: "ตั้งค่าระบบ" },
   { id: "branches",      label: "จัดการสาขา",          icon: "🏢" },
   { id: "procedures",    label: "จัดการหัตถการ",        icon: "💉" },
@@ -166,7 +167,7 @@ const ROLE_DEFS = [
     branchScope: "all",
     color: "#dc2626",
     bg: "rgba(220,38,38,0.1)",
-    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","coupons","branches","procedures","promos","rooms","room-schedule","staff","activity-log","manual"],
+    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","coupons","online-booking","branches","procedures","promos","rooms","room-schedule","staff","activity-log","manual"],
   },
   {
     value: "head_admin",
@@ -174,7 +175,7 @@ const ROLE_DEFS = [
     branchScope: "all",
     color: "#7c3aed",
     bg: "rgba(124,58,237,0.1)",
-    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","coupons","procedures","promos","rooms","room-schedule","staff","activity-log","manual"],
+    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","coupons","online-booking","procedures","promos","rooms","room-schedule","staff","activity-log","manual"],
   },
   {
     value: "admin",

@@ -10,6 +10,7 @@ const PAGE_TITLES = {
   export: "📥 Export ข้อมูล",
   tickets: "🎫 แจ้งปัญหาระบบ",
   coupons: "🎟️ คูปอง",
+  "online-booking": "🌐 จองออนไลน์ (ลูกค้า)",
   "activity-log": "🔍 ประวัติการลบ",
   branches: "🏢 จัดการสาขา",
   procedures: "💉 จัดการหัตถการ",

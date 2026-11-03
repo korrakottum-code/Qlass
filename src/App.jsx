@@ -82,6 +82,8 @@ import CeoDashboardPage from "./pages/CeoDashboardPage";
 import ManualPage from "./pages/ManualPage";
 // หน้าคูปองโหลดเมื่อเปิดเมนูเท่านั้น และไม่เก็บข้อมูลคูปองใน state ของ App (ค้นจากเซิร์ฟเวอร์เป็นรายใบ)
 const CouponPage = lazy(() => import("./pages/CouponPage"));
+// ตั้งค่าลูกค้าจองเอง (/#book): สาขาที่เปิด + บริการที่ให้จอง — ข้อมูลอยู่ฝั่งเซิร์ฟเวอร์ (staff-session online_booking_*)
+const OnlineBookingSettingsPage = lazy(() => import("./pages/OnlineBookingSettingsPage"));
 
 export default function App() {
 
@@ -2064,6 +2066,12 @@ export default function App() {
             {page === "coupons" && (
               <Suspense fallback={<div style={{ padding: 24 }}>กำลังโหลด…</div>}>
                 <CouponPage branches={filteredBranches} currentUser={currentUser} onToast={showToast} />
+              </Suspense>
+            )}
+
+            {page === "online-booking" && (
+              <Suspense fallback={<div style={{ padding: 24 }}>กำลังโหลด…</div>}>
+                <OnlineBookingSettingsPage branches={branches} promos={promos} procedures={procedures} rooms={rooms} onToast={showToast} />
               </Suspense>
             )}
 

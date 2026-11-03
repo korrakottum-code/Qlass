@@ -1,0 +1,41 @@
+// ทางเข้าเดียวของ "ลูกค้าจองเอง" ที่คุยกับเซิร์ฟเวอร์ — โหมดเดโมคู่มือ (scripts/screenshot) สลับไฟล์นี้เป็นตัวจำลองในหน่วยความจำ
+//   หน้าลูกค้า (/#book): edge function public-booking (ไม่ต้องล็อกอิน)
+//   หน้าตั้งค่า (เมนู "จองออนไลน์"): staff-session online_booking_* (superadmin / head_admin)
+import { supabase } from "./supabaseClient";
+import { getServerSessionToken, useServerSession, fetchOnlineBookingSettings, saveOnlineBookingSettings } from "./sessionAuth";
+
+export const onlineBookingSettingsAvailable = useServerSession;
+export { getServerSessionToken, fetchOnlineBookingSettings, saveOnlineBookingSettings };
+
+// คำตอบที่ไม่ใช่ 2xx มาเป็น FunctionsHttpError — รหัสเหตุผลจริงอยู่ใน body (error หรือ error_code)
+async function callPublic(body) {
+  const { data, error } = await supabase.functions.invoke("public-booking", { body });
+  if (!error) return data;
+  let code = null;
+  const res = error?.context;
+  if (res && typeof res.json === "function") {
+    try {
+      const parsed = typeof res.clone === "function" ? await res.clone().json() : await res.json();
+      code = parsed?.error_code || parsed?.error || null;
+    } catch { /* ไม่ใช่ JSON */ }
+  }
+  const err = new Error(code || "NETWORK_ERROR");
+  err.code = code || "NETWORK_ERROR";
+  throw err;
+}
+
+export async function fetchPublicBranches() {
+  return (await callPublic({ action: "branches" })).branches || [];
+}
+
+export async function fetchPublicServices(branchId) {
+  return (await callPublic({ action: "catalog", branchId })).services || [];
+}
+
+export async function fetchPublicSlots(branchId, promoId, date) {
+  return (await callPublic({ action: "slots", branchId, promoId, date })).slots || [];
+}
+
+export function bookPublic(booking) {
+  return callPublic({ action: "book", ...booking });
+}
