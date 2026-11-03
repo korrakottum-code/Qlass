@@ -49,7 +49,7 @@ test("คำแนะนำว่าฝั่งไหนว่างกว่�
 
 test("เลือกประเภทเดียวอยู่ ต้องไม่โชว์การ์ดคู่และคำแนะนำที่เทียบสองฝั่ง", () => {
   assert.match(page, /\{typeFilter === "all" && \(\s*<TypeSplitCard/);
-  assert.match(page, /\{summary\.totals\.capacity > 0 && typeFilter === "all" && \(/);
+  assert.match(page, /\{summary\.totals\.capacity > 0 && typeFilter === "all" && (!isPast && )?\(/);
   // ปุ่มแยกสองแถวใช้ไม่ได้ถ้ากรองเหลือประเภทเดียว — ต้องปิดผลของมัน ไม่ใช่ปล่อยให้ตารางว่างครึ่งหนึ่ง
   assert.match(page, /const splitRows = splitByType && typeFilter === "all";/);
 });

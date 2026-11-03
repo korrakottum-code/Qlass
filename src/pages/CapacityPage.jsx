@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, Fragment } from "react";
 import { addDays } from "../utils/queueRanges";
 import { getTodayStr, formatThaiDate } from "../utils/helpers";
 import {
-  computeCapacitySummary, listDates, daysUntilEndOfMonth,
+  computeCapacitySummary, capacityRangeDates,
   blocksToHours, freePercent, averageFreePercentByBranch, computeWeeklyPace, PACE_LOOKBACK_WEEKS,
   findTreatmentProcedure, computeFreeProgramReadiness, CAPACITY_ROOM_TYPES, capacityRoomType,
 } from "../utils/capacity";
@@ -190,7 +190,9 @@ function FreeProgramWeekCard({ readiness, branches, treatmentName }) {
 }
 
 export default function CapacityPage({ rooms, roomSchedules, queues, branches, procedures, roomProcedureIndex, onRangeNeeded }) {
-  const [range, setRange] = useState("7d"); // 7d | eom
+  const [range, setRange] = useState("7d"); // 7d | eom | past7
+  // ดูย้อนหลัง: ช่องที่ไม่มา/ยกเลิก/เลื่อนออก นับเป็นว่าง (กติกาเดิมของ computeCapacitySummary) = ช่องที่ไม่ได้ใช้จริง
+  const isPast = range === "past7";
   const [filterBranch, setFilterBranch] = useState("all");
   const [splitByType, setSplitByType] = useState(false);
   // "ทั้งหมด" = รวมสองประเภทเข้าด้วยกันเหมือนเดิม, "M"/"T" = ดูประเภทเดียวทั้งหน้า
@@ -201,9 +203,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
   const today = getTodayStr();
   // computeWeeklyPace ใช้ baseline ย้อนหลัง PACE_LOOKBACK_WEEKS สัปดาห์ (เกิน 30 วันที่โหลดตอนเปิดแอป)
   useEffect(() => { onRangeNeeded?.(addDays(today, -PACE_LOOKBACK_WEEKS * 7), today); }, [today, onRangeNeeded]);
-  const dates = useMemo(() => (
-    range === "7d" ? listDates(today, 7) : listDates(today, daysUntilEndOfMonth(today))
-  ), [range, today]);
+  const dates = useMemo(() => capacityRangeDates(range, today), [range, today]);
 
   const visibleRooms = useMemo(() => rooms.filter((r) => (
     (filterBranch === "all" || r.branchId === filterBranch)
@@ -273,7 +273,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label className="form-label">ช่วงเวลา</label>
           <div style={{ display: "flex", gap: 6 }}>
-            {[["7d", "7 วันข้างหน้า"], ["eom", "วันนี้–สิ้นเดือน"]].map(([v, l]) => (
+            {[["7d", "7 วันข้างหน้า"], ["eom", "วันนี้–สิ้นเดือน"], ["past7", "7 วันที่ผ่านมา"]].map(([v, l]) => (
               <button key={v} onClick={() => { setRange(v); setSelected(null); }} style={{
                 padding: "7px 14px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700,
                 border: range === v ? "1.5px solid var(--accent)" : "1.5px solid var(--border)",
@@ -327,7 +327,17 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
       {/* คำเตือนพฤติกรรมการจอง — ตรวจกับฐานข้อมูลจริงแล้ว (2569-08-11): ลูกค้า ~55-60% จองภายใน
           0-2 วันก่อนวันนัดเสมอมา (เช็คทั้งเดือนมิ.ย.และส.ค. ได้ผลใกล้กัน) ดังนั้นวันที่ไกลออกไป
           จะ "ว่างเกินจริง" เสมอ เพราะคิวส่วนใหญ่ของวันนั้นยังไม่ถูกจองเข้ามา ไม่ใช่เพราะสาขาซบเซา —
-          กันคนอ่านตัวเลขผิดว่า "ว่างเยอะ = ธุรกิจไม่ดี" */}
+          กันคนอ่านตัวเลขผิดว่า "ว่างเยอะ = ธุรกิจไม่ดี"
+          ดูย้อนหลังข้อความนี้ใช้ไม่ได้ (วันจบไปแล้ว) — บอกแทนว่าตัวเลขย้อนหลังนับอะไรเป็นว่าง */}
+      {isPast ? (
+        <div style={{
+          marginBottom: 10, padding: "8px 14px", borderRadius: 10, fontSize: 12,
+          background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text2)",
+        }}>
+          🕘 ดูย้อนหลัง 7 วัน (ไม่รวมวันนี้) — คิวที่ไม่มา / ยกเลิก / เลื่อนออก นับเป็นช่องว่าง
+          ส่วนคิวรอที่กด “มาแล้ว” โดยไม่ได้เรียกเข้า (ไม่มีห้อง/เวลา) ไม่ถูกนับ ตัวเลขว่างจึงอาจสูงกว่าจริงเล็กน้อย
+        </div>
+      ) : (
       <div style={{
         marginBottom: 10, padding: "8px 14px", borderRadius: 10, fontSize: 12,
         background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text2)",
@@ -335,6 +345,7 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
         ℹ️ ลูกค้าส่วนใหญ่ (~55-60%) จองล่วงหน้าแค่ 0-2 วันก่อนวันนัด — วันที่ไกลออกไปจึงมักโชว์ "ว่าง" เกินจริง
         เพราะยังไม่ถึงจังหวะที่คนจอง ไม่ใช่สัญญาณว่าสาขานั้นซบเซา ยิ่งใกล้วันจริงตัวเลขจะยิ่งน่าเชื่อถือ
       </div>
+      )}
 
       <PaceStrip weeklyPace={weeklyPace} />
 
@@ -345,8 +356,8 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
           {/* ปัดเศษทศนิยมทิ้งเฉพาะการ์ดนี้ — ความจุระดับพันชั่วโมง เศษ .5 ไม่มีความหมาย แต่ทำให้ตัวเลข
               ยาวเกินการ์ดบนจอมือถือจนถูกตัดเป็น "3,691.5 ..." */}
           <StatCard label="ความจุรวม" value={`${Math.round(blocksToHours(summary.totals.capacity)).toLocaleString()} ชม.`} sub={`${dates.length} วัน · ${visibleRooms.length} ${typeShortLabel}`} />
-          <StatCard label="จองแล้ว" value={totalPct === null ? "—" : `${100 - totalPct}%`} sub={`${blocksToHours(summary.totals.booked).toLocaleString()} ชม.`} color="var(--blue)" />
-          <StatCard label="ยังว่าง (รับเพิ่มได้)" value={totalPct === null ? "—" : `${totalPct}%`} sub={`${blocksToHours(summary.totals.free).toLocaleString()} ชม.`} color="var(--green)" />
+          <StatCard label={isPast ? "มีคิว" : "จองแล้ว"} value={totalPct === null ? "—" : `${100 - totalPct}%`} sub={`${blocksToHours(summary.totals.booked).toLocaleString()} ชม.`} color="var(--blue)" />
+          <StatCard label={isPast ? "ว่าง (ไม่ได้ใช้)" : "ยังว่าง (รับเพิ่มได้)"} value={totalPct === null ? "—" : `${totalPct}%`} sub={`${blocksToHours(summary.totals.free).toLocaleString()} ชม.`} color="var(--green)" />
         </div>
         {/* เลือกดูประเภทเดียวอยู่ การ์ดคู่จะซ้ำกับการ์ด "ยังว่าง" ด้านบนเป๊ะ ๆ (อีกฝั่งเป็น 0 เสมอ) */}
         {typeFilter === "all" && (
@@ -357,7 +368,8 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
       {/* คำแนะนำฝั่งการตลาด — บอกแค่ว่าห้องประเภทไหนว่างกว่า ไม่แจงชื่อโปร (เดิมสุ่มเอา 6 โปรแรก
           ที่ตรงประเภทห้องมาโชว์ ไม่มีเกณฑ์คัดจริง ทำให้ดูเหมือนระบบเลือกเอง — เอาออกดีกว่าใส่
           ข้อมูลที่อธิบายไม่ได้ว่าทำไมถูกเลือก) */}
-      {summary.totals.capacity > 0 && typeFilter === "all" && (
+      {/* ดูย้อนหลังไม่โชว์ — คำแนะนำนี้มีไว้วางแคมเปญล่วงหน้า วันที่ผ่านไปแล้วทำโปรเพิ่มไม่ได้ */}
+      {summary.totals.capacity > 0 && typeFilter === "all" && !isPast && (
         <div style={{
           marginBottom: 14, padding: "10px 14px", borderRadius: 10, fontSize: 13,
           background: "var(--surface2)", border: "1px solid var(--border)",
