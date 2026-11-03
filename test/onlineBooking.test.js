@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { bookingDates, thaiDateLabel, normalizePhone, isValidMobile, isPublicBookingHash, bangkokToday, MAX_DAYS_AHEAD, BOOKING_HOST, isBookingHost, customerBookingLink } from "../src/utils/publicBooking.js";
+import { bookingDates, thaiDateLabel, normalizePhone, isValidMobile, isPublicBookingHash, bangkokToday, MAX_DAYS_AHEAD, matchesSearch, groupServices, BOOKING_HOST, isBookingHost, customerBookingLink } from "../src/utils/publicBooking.js";
 import { ALL_ROLES } from "../src/utils/constants.js";
 
 const read = (p) => fs.readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
@@ -94,6 +94,21 @@ test("โหมดเดโมสลับ onlineBookingApi เป็นตั�
   const demo = read("scripts/screenshot/vite.config.js");
   assert.ok(demo.includes("utils\\/onlineBookingApi"));
   assert.ok(fs.existsSync(new URL("../scripts/screenshot/mockOnlineBookingApi.js", import.meta.url)));
+});
+
+test("ค้นหาสาขา/โปร: ไม่สนตัวพิมพ์และช่องว่าง ค้นได้หลายช่อง", () => {
+  assert.ok(matchesSearch("class หอ", "Class หอกาญ"));
+  assert.ok(matchesSearch("ivdrip", "Live IV drip 89฿"));
+  assert.ok(matchesSearch("Diode", "LIVE รักแร้ 89฿", "Diode Laser"));
+  assert.ok(matchesSearch("", "อะไรก็ได้"));
+  assert.ok(!matchesSearch("ขอนแก่น", "Class อุดร"));
+});
+
+test("จัดกลุ่มโปรตามบริการ ตามลำดับเดิม", () => {
+  const g = groupServices([
+    { id: 1, service: "Botox" }, { id: 2, service: "Filler" }, { id: 3, service: "Botox" }, { id: 4 },
+  ]);
+  assert.deepEqual(g.map((x) => [x.service, x.items.map((i) => i.id)]), [["Botox", [1, 3]], ["Filler", [2]], ["อื่น ๆ", [4]]]);
 });
 
 test("ที่อยู่ลูกค้า: เปิดได้แค่หน้าจอง, ลิงก์แจกลูกค้าไม่มีที่อยู่ระบบพนักงาน, ฟังก์ชันจองรับ origin นี้", () => {
