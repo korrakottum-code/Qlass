@@ -10,6 +10,12 @@ function bookingLink(branchId) {
   return branchId ? `${base}#book/${branchId}` : `${base}#book`;
 }
 
+// การล็อกอินหมดอายุ (ครบ 8 ชม.) ตอบ 401 invalid_session — ต้องบอกให้ออกแล้วเข้าใหม่ ไม่ใช่ "ลองอีกครั้ง" (กดซ้ำก็ไม่ผ่าน)
+const EXPIRED_TEXT = "การเข้าสู่ระบบหมดอายุ — ออกจากระบบแล้วเข้าใหม่ แล้วค่อยตั้งค่าอีกครั้ง";
+function isSessionExpired(err) {
+  return err?.context?.status === 401 || err?.message === "invalid_session";
+}
+
 export default function OnlineBookingSettingsPage({ branches, promos, procedures, rooms, onToast }) {
   const [loaded, setLoaded] = useState(null); // { branches: Map(id → active), promoIds: Set }
   const [branchActive, setBranchActive] = useState({});
@@ -30,7 +36,7 @@ export default function OnlineBookingSettingsPage({ branches, promos, procedures
         setBranchActive(map);
         setSelected(new Set(data.promoIds || []));
       })
-      .catch(() => { if (!cancelled) setLoadError("โหลดการตั้งค่าไม่สำเร็จ ลองรีเฟรชหน้า"); });
+      .catch((err) => { if (!cancelled) setLoadError(isSessionExpired(err) ? EXPIRED_TEXT : "โหลดการตั้งค่าไม่สำเร็จ ลองรีเฟรชหน้า"); });
     return () => { cancelled = true; };
   }, []);
 
@@ -88,8 +94,8 @@ export default function OnlineBookingSettingsPage({ branches, promos, procedures
       setBranchActive(map);
       setSelected(new Set(data.promoIds || []));
       onToast?.("success", "บันทึกการตั้งค่าจองออนไลน์แล้ว");
-    } catch {
-      onToast?.("error", "บันทึกไม่สำเร็จ ลองอีกครั้ง");
+    } catch (err) {
+      onToast?.("error", isSessionExpired(err) ? EXPIRED_TEXT : "บันทึกไม่สำเร็จ ลองอีกครั้ง");
     } finally {
       setSaving(false);
     }
