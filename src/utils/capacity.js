@@ -121,6 +121,12 @@ export function capacityRangeDates(range, today) {
  *             byType: { M: {capacity, booked, free}, T: {...}, N: {...} } }
  * }
  * หน่วยทั้งหมดเป็น block (1 block = 5 นาที) — แปลงเป็นชั่วโมงด้วย blocksToHours
+ *
+ * countOriginalBookings (ใช้ตอนดูย้อนหลัง): นับตามที่จองไว้เดิม — คิว "ไม่มา" และ "ยกเลิก" ยังนับเป็นช่องที่ถูกจอง
+ *   เจ้าของ 3 พ.ย. 2569: ดูย้อนหลังเพื่อวางแผนห้อง ต้องเห็นว่าที่ไหนแน่นตามข้อมูลเดิม ไม่ใช่ว่างขึ้นเพราะเปลี่ยนสถานะ
+ *   ทุก cell มี noShow / cancelled = block ที่มีแต่คิวไม่มา / ยกเลิก (ไม่ทับคิวที่มาจริง) รวมอยู่ใน booked แล้ว
+ *   นับเป็นเซ็ตของ block ต่อเตียง — ยกเลิกแล้วมีคนจองแทนช่องเดิม ไม่ถูกนับซ้ำ
+ *   "เลื่อนออก" ไม่นับ เพราะคิวที่เลื่อนไปถูกนับในวันใหม่อยู่แล้ว
  */
 // ประเภทห้องที่ใช้นับความจุ — ห้องที่ไม่ได้ตั้งประเภท (หรือค่าแปลก) นับเป็น T เหมือนที่ผ่านมา
 export const CAPACITY_ROOM_TYPES = ["M", "T", "N"];
@@ -128,22 +134,29 @@ export function capacityRoomType(room) {
   return room?.type === "M" || room?.type === "N" ? room.type : "T";
 }
 
-export function computeCapacitySummary({ rooms, roomSchedules, queues, procedures, dates }) {
+export function computeCapacitySummary({ rooms, roomSchedules, queues, procedures, dates, countOriginalBookings = false }) {
   const scheduleIndex = buildScheduleIndex(roomSchedules);
   const procById = {};
   (procedures || []).forEach((p) => { procById[p.id] = p; });
 
   // คิว active ที่มีห้อง+เวลา จัดกลุ่มตาม roomId+date
   const queuesByRoomDay = {};
+  const lostByRoomDay = {}; // คิวไม่มา/ยกเลิก — ใช้เมื่อ countOriginalBookings
   (queues || []).forEach((q) => {
     if (!q.roomId || q.timeBlock === null || q.timeBlock === undefined) return;
-    if (INACTIVE_STATUSES.includes(q.status || "pending")) return;
+    const status = q.status || "pending";
     const key = `${q.roomId}|${q.date}`;
+    if (countOriginalBookings && (status === "no_show" || status === "cancelled")) {
+      if (!lostByRoomDay[key]) lostByRoomDay[key] = [];
+      lostByRoomDay[key].push(q);
+      return;
+    }
+    if (INACTIVE_STATUSES.includes(status)) return;
     if (!queuesByRoomDay[key]) queuesByRoomDay[key] = [];
     queuesByRoomDay[key].push(q);
   });
 
-  const emptyCell = () => ({ capacity: 0, booked: 0, free: 0 });
+  const emptyCell = () => ({ capacity: 0, booked: 0, free: 0, noShow: 0, cancelled: 0 });
   const emptyByType = () => ({ M: emptyCell(), T: emptyCell(), N: emptyCell() });
   const totals = { ...emptyCell(), byType: emptyByType() };
   const days = [];
@@ -163,6 +176,21 @@ export function computeCapacitySummary({ rooms, roomSchedules, queues, procedure
         for (let i = 0; i < dur; i++) {
           const b = q.timeBlock + i;
           if (openSet.has(b)) bookedSet.add(b);
+        }
+      });
+      // ช่องที่มีแต่คิวไม่มา/ยกเลิก (countOriginalBookings) — นับเข้า booked ด้วย แต่เก็บยอดแยกไว้โชว์
+      // ไม่มาก่อนยกเลิก: block ที่ทับกันทั้งสองแบบนับเป็นไม่มา (คนไม่มาคือช่องที่เสียไปจริงในวันนั้น)
+      let noShow = 0;
+      let cancelled = 0;
+      const lost = (lostByRoomDay[`${room.id}|${date}`] || [])
+        .slice().sort((a, b) => (a.status === "no_show" ? 0 : 1) - (b.status === "no_show" ? 0 : 1));
+      lost.forEach((q) => {
+        const dur = q.durationBlocks ?? procById[q.procedureId]?.blocks ?? 1;
+        for (let i = 0; i < dur; i++) {
+          const b = q.timeBlock + i;
+          if (!openSet.has(b) || bookedSet.has(b)) continue;
+          bookedSet.add(b);
+          if (q.status === "no_show") noShow += 1; else cancelled += 1;
         }
       });
 
@@ -185,8 +213,9 @@ export function computeCapacitySummary({ rooms, roomSchedules, queues, procedure
       const booked = bookedSet.size;
       const free = cap - booked;
 
-      cell.capacity += cap; cell.booked += booked; cell.free += free;
+      cell.capacity += cap; cell.booked += booked; cell.free += free; cell.noShow += noShow; cell.cancelled += cancelled;
       cell.byType[type].capacity += cap; cell.byType[type].booked += booked; cell.byType[type].free += free;
+      cell.byType[type].noShow += noShow; cell.byType[type].cancelled += cancelled;
       open.forEach((b) => {
         const seg = cell.bySegment[segmentOfBlock(b)];
         seg.capacity += 1;
@@ -194,8 +223,9 @@ export function computeCapacitySummary({ rooms, roomSchedules, queues, procedure
       });
 
       day.capacity += cap; day.booked += booked; day.free += free;
-      totals.capacity += cap; totals.booked += booked; totals.free += free;
+      totals.capacity += cap; totals.booked += booked; totals.free += free; totals.noShow += noShow; totals.cancelled += cancelled;
       totals.byType[type].capacity += cap; totals.byType[type].booked += booked; totals.byType[type].free += free;
+      totals.byType[type].noShow += noShow; totals.byType[type].cancelled += cancelled;
     }
 
     days.push(day);

@@ -191,7 +191,8 @@ function FreeProgramWeekCard({ readiness, branches, treatmentName }) {
 
 export default function CapacityPage({ rooms, roomSchedules, queues, branches, procedures, roomProcedureIndex, onRangeNeeded }) {
   const [range, setRange] = useState("7d"); // 7d | eom | past7
-  // ดูย้อนหลัง: ช่องที่ไม่มา/ยกเลิก/เลื่อนออก นับเป็นว่าง (กติกาเดิมของ computeCapacitySummary) = ช่องที่ไม่ได้ใช้จริง
+  // ดูย้อนหลัง: นับตามที่จองไว้เดิม — ไม่มา/ยกเลิก ยังนับเป็นช่องที่ถูกจอง (countOriginalBookings)
+  // ใช้ดูว่าที่ไหนแน่น/ว่างเพื่อวางแผนห้อง (เจ้าของ 3 พ.ย. 2569)
   const isPast = range === "past7";
   const [filterBranch, setFilterBranch] = useState("all");
   const [splitByType, setSplitByType] = useState(false);
@@ -223,8 +224,8 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
   }, [treatmentProcedure, roomProcedureIndex, rooms, roomSchedules, queues, procedures, today]);
 
   const summary = useMemo(() => computeCapacitySummary({
-    rooms: visibleRooms, roomSchedules, queues, procedures, dates,
-  }), [visibleRooms, roomSchedules, queues, procedures, dates]);
+    rooms: visibleRooms, roomSchedules, queues, procedures, dates, countOriginalBookings: isPast,
+  }), [visibleRooms, roomSchedules, queues, procedures, dates, isPast]);
 
   const branchAverages = useMemo(() => averageFreePercentByBranch(summary), [summary]);
 
@@ -334,8 +335,9 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
           marginBottom: 10, padding: "8px 14px", borderRadius: 10, fontSize: 12,
           background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text2)",
         }}>
-          🕘 ดูย้อนหลัง 7 วัน (ไม่รวมวันนี้) — คิวที่ไม่มา / ยกเลิก / เลื่อนออก นับเป็นช่องว่าง
-          ส่วนคิวรอที่กด “มาแล้ว” โดยไม่ได้เรียกเข้า (ไม่มีห้อง/เวลา) ไม่ถูกนับ ตัวเลขว่างจึงอาจสูงกว่าจริงเล็กน้อย
+          🕘 ดูย้อนหลัง 7 วัน (ไม่รวมวันนี้) — นับตามที่จองไว้เดิม: คิวที่ <b>ไม่มา</b> และ <b>ยกเลิก</b> ยังนับเป็นช่องที่ถูกจอง
+          จึงเห็นได้ว่าที่ไหนแน่น ที่ไหนว่าง ไม่ว่างขึ้นเพราะเปลี่ยนสถานะ · คิวที่เลื่อนออกไม่นับ (นับในวันใหม่แทน)
+          · คิวรอที่กด “มาแล้ว” โดยไม่ได้เรียกเข้า (ไม่มีห้อง/เวลา) ไม่ถูกนับ
         </div>
       ) : (
       <div style={{
@@ -356,8 +358,12 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
           {/* ปัดเศษทศนิยมทิ้งเฉพาะการ์ดนี้ — ความจุระดับพันชั่วโมง เศษ .5 ไม่มีความหมาย แต่ทำให้ตัวเลข
               ยาวเกินการ์ดบนจอมือถือจนถูกตัดเป็น "3,691.5 ..." */}
           <StatCard label="ความจุรวม" value={`${Math.round(blocksToHours(summary.totals.capacity)).toLocaleString()} ชม.`} sub={`${dates.length} วัน · ${visibleRooms.length} ${typeShortLabel}`} />
-          <StatCard label={isPast ? "มีคิว" : "จองแล้ว"} value={totalPct === null ? "—" : `${100 - totalPct}%`} sub={`${blocksToHours(summary.totals.booked).toLocaleString()} ชม.`} color="var(--blue)" />
-          <StatCard label={isPast ? "ว่าง (ไม่ได้ใช้)" : "ยังว่าง (รับเพิ่มได้)"} value={totalPct === null ? "—" : `${totalPct}%`} sub={`${blocksToHours(summary.totals.free).toLocaleString()} ชม.`} color="var(--green)" />
+          <StatCard label={isPast ? "ถูกจอง (ตามที่จองเดิม)" : "จองแล้ว"} value={totalPct === null ? "—" : `${100 - totalPct}%`}
+            sub={isPast
+              ? `${blocksToHours(summary.totals.booked).toLocaleString()} ชม. · ไม่มา ${blocksToHours(summary.totals.noShow).toLocaleString()} · ยกเลิก ${blocksToHours(summary.totals.cancelled).toLocaleString()}`
+              : `${blocksToHours(summary.totals.booked).toLocaleString()} ชม.`}
+            color="var(--blue)" />
+          <StatCard label={isPast ? "ว่าง (ไม่มีคนจอง)" : "ยังว่าง (รับเพิ่มได้)"} value={totalPct === null ? "—" : `${totalPct}%`} sub={`${blocksToHours(summary.totals.free).toLocaleString()} ชม.`} color="var(--green)" />
         </div>
         {/* เลือกดูประเภทเดียวอยู่ การ์ดคู่จะซ้ำกับการ์ด "ยังว่าง" ด้านบนเป๊ะ ๆ (อีกฝั่งเป็น 0 เสมอ) */}
         {typeFilter === "all" && (
@@ -547,6 +553,12 @@ export default function CapacityPage({ rooms, roomSchedules, queues, branches, p
                 <div style={{ fontWeight: 700, marginBottom: 6 }}>ภาพรวม</div>
                 {/* % มาก่อนชั่วโมง — อ่านแล้วรู้ทันทีว่าว่างมากหรือน้อย ส่วนชั่วโมงเก็บไว้ให้ดูว่าเหลือกี่ชั่วโมงจริง */}
                 <div>ว่าง <b style={{ color: "var(--green)" }}>{freePercent(selectedCell)}%</b> ({blocksToHours(selectedCell.free)} จาก {blocksToHours(selectedCell.capacity)} ชม.)</div>
+                {/* ย้อนหลัง: ช่องไม่มา/ยกเลิกนับเป็นถูกจองแล้ว — บอกว่าในนั้นเป็นเท่าไหร่ */}
+                {isPast && (selectedCell.noShow > 0 || selectedCell.cancelled > 0) && (
+                  <div style={{ marginTop: 4, color: "var(--text2)" }}>
+                    ในเวลาที่ถูกจอง: ไม่มา {blocksToHours(selectedCell.noShow)} ชม. · ยกเลิก {blocksToHours(selectedCell.cancelled)} ชม.
+                  </div>
+                )}
                 {/* เดิมบรรทัดนี้เป็นชั่วโมงล้วน เทียบสองฝั่งไม่ได้เพราะความจุไม่เท่ากัน — ใช้ % ว่างให้ตรงกับการ์ดด้านบน
                     และถ้ากำลังเลือกดูประเภทเดียวอยู่ ไม่ต้องโชว์ เพราะอีกฝั่งถูกกรองออกไปแล้วจะขึ้นเป็น "—%" ชวนงง */}
                 {typeFilter === "all" && (
