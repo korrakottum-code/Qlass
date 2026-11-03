@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchPublicBranches, fetchPublicServices, fetchPublicSlots, bookPublic } from "../utils/onlineBookingApi";
-import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile } from "../utils/publicBooking";
+import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile, matchesSearch, groupServices } from "../utils/publicBooking";
 
 // หน้าลูกค้าจองคิวเอง (/#book หรือ /#book/<branchId>) — ไม่ต้องล็อกอิน เปิดจากลิงก์ในไลน์/เพจ ใช้บนมือถือเป็นหลัก
 // เปิดเฉพาะสาขา/บริการที่ตั้งไว้ในเมนู "จองออนไลน์" กติกาเตียงและเวลาอยู่ฝั่งเซิร์ฟเวอร์ (online_booking_*_v1) ทั้งหมด
@@ -28,6 +28,10 @@ function LineLink({ children }) {
     <a href={LINE_URL} target="_blank" rel="noopener noreferrer"
       style={{ color: "#06C755", fontWeight: 700, textDecoration: "underline" }}>{children}</a>
   );
+}
+
+function serviceDetail(sv) {
+  return `${Number(sv.price) > 0 ? `${Number(sv.price).toLocaleString()} บาท · ` : ""}ประมาณ ${sv.duration_minutes} นาที`;
 }
 
 function branchIdFromHash() {
@@ -65,6 +69,16 @@ const S = {
   }),
   error: { background: "var(--red-soft)", color: "var(--red)", borderRadius: 10, padding: "10px 12px", fontSize: 14, marginBottom: 12 },
   muted: { color: "var(--text3)", fontSize: 13 },
+  chosen: {
+    display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 10,
+    border: "1.5px solid var(--accent)", background: "var(--accent-soft)",
+  },
+  change: { flex: "0 0 auto", border: "none", background: "none", color: "var(--accent)", fontFamily: "var(--font)", fontSize: 14, fontWeight: 700, cursor: "pointer", padding: 4 },
+  groupHead: (open) => ({
+    display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", padding: "12px 14px", marginBottom: 8, borderRadius: 10,
+    border: "1.5px solid var(--border)", background: open ? "var(--surface2)" : "var(--surface)", cursor: "pointer",
+    fontFamily: "var(--font)", fontSize: 15, fontWeight: 700, color: "var(--text)", textAlign: "left",
+  }),
   hint: { background: "var(--accent-soft)", color: "var(--text)", borderRadius: 10, padding: "10px 12px", fontSize: 14, lineHeight: 1.6 },
 };
 
@@ -73,6 +87,12 @@ export default function PublicBookingPage() {
   const [branchId, setBranchId] = useState("");
   const [services, setServices] = useState(null);
   const [promoId, setPromoId] = useState("");
+  // ค้นหา/เปลี่ยน — สาขา 30 แห่ง โปรเป็นร้อย จะได้ไม่ยาวเป็นพรืด เลือกแล้วหุบเหลือบรรทัดเดียว
+  const [branchQuery, setBranchQuery] = useState("");
+  const [pickBranch, setPickBranch] = useState(true);
+  const [serviceQuery, setServiceQuery] = useState("");
+  const [pickService, setPickService] = useState(true);
+  const [openGroup, setOpenGroup] = useState("");
   const today = useMemo(() => bangkokToday(), []);
   const dates = useMemo(() => bookingDates(today), [today]);
   const [date, setDate] = useState(today);
@@ -99,8 +119,8 @@ export default function PublicBookingPage() {
         if (cancelled) return;
         setBranches(list);
         const fromHash = branchIdFromHash();
-        if (fromHash && list.some((b) => b.id === fromHash)) setBranchId(fromHash);
-        else if (list.length === 1) setBranchId(list[0].id);
+        if (fromHash && list.some((b) => b.id === fromHash)) { setBranchId(fromHash); setPickBranch(false); }
+        else if (list.length === 1) { setBranchId(list[0].id); setPickBranch(false); }
       })
       .catch((err) => { if (!cancelled) setLoadError(errorText(err.code)); });
     return () => { cancelled = true; document.title = prevTitle; };
@@ -110,6 +130,7 @@ export default function PublicBookingPage() {
     if (!branchId) return undefined;
     let cancelled = false;
     setServices(null); setPromoId(""); setSlots(null); setStartTime("");
+    setPickService(true); setServiceQuery(""); setOpenGroup("");
     fetchPublicServices(branchId)
       .then((list) => { if (!cancelled) setServices(list); })
       .catch((err) => { if (!cancelled) setLoadError(errorText(err.code)); });
@@ -191,9 +212,28 @@ export default function PublicBookingPage() {
         {branches && branches.length > 0 && (
           <div style={S.card}>
             <div style={S.label}>1. สาขา</div>
-            {branches.map((b) => (
-              <button key={b.id} type="button" style={S.option(b.id === branchId)} onClick={() => setBranchId(b.id)}>{b.name}</button>
-            ))}
+            {branch && !pickBranch ? (
+              <div style={S.chosen}>
+                <div style={{ flex: 1, fontWeight: 600 }}>📍 {branch.name}</div>
+                {branches.length > 1 && <button type="button" style={S.change} onClick={() => setPickBranch(true)}>เปลี่ยน</button>}
+              </div>
+            ) : (
+              <>
+                {branches.length > 5 && (
+                  <input style={{ ...S.input, marginBottom: 10 }} type="search" placeholder="🔍 พิมพ์ชื่อสาขา เช่น ขอนแก่น"
+                    value={branchQuery} onChange={(e) => setBranchQuery(e.target.value)} />
+                )}
+                {/* สาขาเยอะ = 2 คอลัมน์ ครึ่งความยาว */}
+                <div style={branches.length > 5 ? { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 8px" } : undefined}>
+                  {branches.filter((b) => matchesSearch(branchQuery, b.name)).map((b) => (
+                    <button key={b.id} type="button"
+                      style={branches.length > 5 ? { ...S.option(b.id === branchId), padding: "10px 10px", fontSize: 14 } : S.option(b.id === branchId)}
+                      onClick={() => { setBranchId(b.id); setPickBranch(false); setBranchQuery(""); }}>{b.name}</button>
+                  ))}
+                </div>
+                {!branches.some((b) => matchesSearch(branchQuery, b.name)) && <span style={S.muted}>ไม่พบสาขาที่ค้นหา</span>}
+              </>
+            )}
           </div>
         )}
 
@@ -202,15 +242,51 @@ export default function PublicBookingPage() {
             <div style={S.label}>2. บริการ</div>
             {services === null && <span style={S.muted}>กำลังโหลด…</span>}
             {services && services.length === 0 && <span style={S.muted}>สาขานี้ยังไม่มีบริการที่จองออนไลน์ได้</span>}
-            {services && services.map((s) => (
-              <button key={s.id} type="button" style={S.option(s.id === promoId)} onClick={() => setPromoId(s.id)}>
-                <div style={{ fontWeight: 600 }}>{s.name}</div>
-                <div style={{ ...S.muted, marginTop: 2 }}>
-                  {Number(s.price) > 0 ? `${Number(s.price).toLocaleString()} บาท · ` : ""}ประมาณ {s.duration_minutes} นาที
+            {service && !pickService ? (
+              <div style={S.chosen}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600 }}>{service.name}</div>
+                  <div style={{ ...S.muted, marginTop: 2 }}>{serviceDetail(service)}</div>
                 </div>
-              </button>
-            ))}
-            {services && <div style={{ ...S.hint, marginTop: 4 }}>💬 หาโปรที่ต้องการไม่เจอ? ทักแอดมินทาง LINE <LineLink>{LINE_ID}</LineLink> แอดมินจะช่วยจองให้</div>}
+                <button type="button" style={S.change} onClick={() => setPickService(true)}>เปลี่ยน</button>
+              </div>
+            ) : services && services.length > 0 && (
+              <>
+                {services.length > 6 && (
+                  <input style={{ ...S.input, marginBottom: 10 }} type="search" placeholder="🔍 พิมพ์ชื่อโปร เช่น Botox"
+                    value={serviceQuery} onChange={(e) => setServiceQuery(e.target.value)} />
+                )}
+                {(() => {
+                  const choose = (id) => { setPromoId(id); setPickService(false); setServiceQuery(""); };
+                  const option = (sv) => (
+                    <button key={sv.id} type="button" style={S.option(sv.id === promoId)} onClick={() => choose(sv.id)}>
+                      <div style={{ fontWeight: 600 }}>{sv.name}</div>
+                      <div style={{ ...S.muted, marginTop: 2 }}>{serviceDetail(sv)}</div>
+                    </button>
+                  );
+                  // ค้นหาอยู่ หรือโปรไม่เยอะ = แสดงเรียงเลย; โปรเยอะ = จัดกลุ่มตามบริการ กดเปิดทีละกลุ่ม
+                  if (serviceQuery.trim() || services.length <= 8) {
+                    const found = services.filter((sv) => matchesSearch(serviceQuery, sv.name, sv.service));
+                    return found.length ? found.map(option) : <div style={{ ...S.muted, marginBottom: 8 }}>ไม่พบโปรที่ค้นหา</div>;
+                  }
+                  return groupServices(services).map((g) => {
+                    const open = openGroup === g.service;
+                    return (
+                      <div key={g.service}>
+                        <button type="button" style={S.groupHead(open)} onClick={() => setOpenGroup(open ? "" : g.service)}>
+                          <span>{g.service} <span style={{ ...S.muted, fontWeight: 400 }}>({g.items.length})</span></span>
+                          <span style={{ color: "var(--text3)" }}>{open ? "▲" : "▼"}</span>
+                        </button>
+                        {open && <div style={{ paddingLeft: 8 }}>{g.items.map(option)}</div>}
+                      </div>
+                    );
+                  });
+                })()}
+              </>
+            )}
+            {services && (pickService || !service) && (
+              <div style={{ ...S.hint, marginTop: 4 }}>💬 หาโปรที่ต้องการไม่เจอ? ทักแอดมินทาง LINE <LineLink>{LINE_ID}</LineLink> แอดมินจะช่วยจองให้</div>
+            )}
           </div>
         )}
 
