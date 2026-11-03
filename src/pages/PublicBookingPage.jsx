@@ -7,9 +7,9 @@ import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobil
 
 const ERROR_TEXT = {
   SLOT_UNAVAILABLE: "เวลานี้เพิ่งถูกจองไป กรุณาเลือกเวลาอื่น",
-  TOO_MANY_BOOKINGS: "เบอร์นี้มีคิวจองออนไลน์ค้างอยู่ 2 คิวแล้ว หากต้องการจองเพิ่มหรือเปลี่ยนเวลา กรุณาทักแชทคลินิก",
+  TOO_MANY_BOOKINGS: "เบอร์นี้มีคิวจองออนไลน์ค้างอยู่ 2 คิวแล้ว หากต้องการจองเพิ่มหรือเปลี่ยนเวลา กรุณาทัก LINE @classclinic",
   OUTSIDE_BOOKING_WINDOW: "ต้องจองก่อนเวลานัดอย่างน้อย 2 ชั่วโมง และล่วงหน้าได้ไม่เกิน 14 วัน",
-  BRANCH_NOT_ACCEPTING: "สาขานี้ปิดรับจองออนไลน์ชั่วคราว กรุณาทักแชทคลินิก",
+  BRANCH_NOT_ACCEPTING: "สาขานี้ปิดรับจองออนไลน์ชั่วคราว กรุณาทัก LINE @classclinic",
   INVALID_CUSTOMER: "กรุณาตรวจชื่อและเบอร์มือถืออีกครั้ง",
   INVALID_SERVICE: "บริการนี้ปิดรับจองออนไลน์แล้ว กรุณาเลือกบริการอื่น",
   INVALID_BRANCH: "สาขานี้ปิดรับจองออนไลน์แล้ว",
@@ -17,6 +17,17 @@ const ERROR_TEXT = {
 };
 function errorText(code) {
   return ERROR_TEXT[code] || "ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง";
+}
+
+// LINE OA ของคลินิก — ลิงก์เพิ่มเพื่อนแล้วเปิดแชทได้เลย
+const LINE_ID = "@classclinic";
+const LINE_URL = "https://line.me/R/ti/p/%40classclinic";
+
+function LineLink({ children }) {
+  return (
+    <a href={LINE_URL} target="_blank" rel="noopener noreferrer"
+      style={{ color: "#06C755", fontWeight: 700, textDecoration: "underline" }}>{children}</a>
+  );
 }
 
 function branchIdFromHash() {
@@ -158,7 +169,7 @@ export default function PublicBookingPage() {
               <div>💆 {done.service}</div>
               <div>📅 {thaiDateLabel(done.date)} เวลา {done.time} น.</div>
             </div>
-            <div style={{ ...S.muted, marginTop: 16 }}>กรุณามาก่อนเวลานัด 10–15 นาที หากต้องการเลื่อนหรือยกเลิก กรุณาทักแชทคลินิก</div>
+            <div style={{ ...S.muted, marginTop: 16 }}>กรุณามาก่อนเวลานัด 10–15 นาที หากต้องการเลื่อนหรือยกเลิก กรุณาทัก LINE <LineLink>{LINE_ID}</LineLink></div>
           </div>
         </div>
       </div>
@@ -174,7 +185,7 @@ export default function PublicBookingPage() {
 
         {branches === null && !loadError && <div style={S.card}><span style={S.muted}>กำลังโหลด…</span></div>}
         {branches && branches.length === 0 && (
-          <div style={S.card}>ขณะนี้ยังไม่เปิดรับจองออนไลน์ กรุณาทักแชทคลินิกเพื่อจองคิว</div>
+          <div style={S.card}>ขณะนี้ยังไม่เปิดรับจองออนไลน์ กรุณาทัก LINE <LineLink>{LINE_ID}</LineLink> เพื่อจองคิว</div>
         )}
 
         {branches && branches.length > 0 && (
@@ -199,7 +210,7 @@ export default function PublicBookingPage() {
                 </div>
               </button>
             ))}
-            {services && <div style={{ ...S.hint, marginTop: 4 }}>💬 หาโปรที่ต้องการไม่เจอ? ทักแชทแอดมินได้เลย แอดมินจะช่วยจองให้</div>}
+            {services && <div style={{ ...S.hint, marginTop: 4 }}>💬 หาโปรที่ต้องการไม่เจอ? ทักแอดมินทาง LINE <LineLink>{LINE_ID}</LineLink> แอดมินจะช่วยจองให้</div>}
           </div>
         )}
 
