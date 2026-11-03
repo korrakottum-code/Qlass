@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { bookingDates, thaiDateLabel, normalizePhone, isValidMobile, isPublicBookingHash, bangkokToday, MAX_DAYS_AHEAD, matchesSearch, groupServices } from "../src/utils/publicBooking.js";
+import { bookingDates, thaiDateLabel, normalizePhone, isValidMobile, isPublicBookingHash, bangkokToday, MAX_DAYS_AHEAD, matchesSearch, groupServices, BOOKING_HOST, isBookingHost, customerBookingLink } from "../src/utils/publicBooking.js";
 import { ALL_ROLES } from "../src/utils/constants.js";
 
 const read = (p) => fs.readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
@@ -109,4 +109,19 @@ test("จัดกลุ่มโปรตามบริการ ตามล�
     { id: 1, service: "Botox" }, { id: 2, service: "Filler" }, { id: 3, service: "Botox" }, { id: 4 },
   ]);
   assert.deepEqual(g.map((x) => [x.service, x.items.map((i) => i.id)]), [["Botox", [1, 3]], ["Filler", [2]], ["อื่น ๆ", [4]]]);
+});
+
+test("ที่อยู่ลูกค้า: เปิดได้แค่หน้าจอง, ลิงก์แจกลูกค้าไม่มีที่อยู่ระบบพนักงาน, ฟังก์ชันจองรับ origin นี้", () => {
+  assert.ok(isBookingHost("classclinic-booking.vercel.app"));
+  assert.ok(isBookingHost("CLASSCLINIC-BOOKING.vercel.app"));
+  assert.ok(!isBookingHost("qlass-gray.vercel.app"));
+  assert.equal(customerBookingLink(""), `https://${BOOKING_HOST}/`);
+  assert.equal(customerBookingLink("abc"), `https://${BOOKING_HOST}/#book/abc`);
+  assert.ok(!customerBookingLink("abc").includes("qlass"));
+  assert.ok(publicFn.includes(`const BOOKING_ORIGINS = ["https://${BOOKING_HOST}"];`));
+  // ห้ามใส่ที่อยู่ลูกค้าให้ staff-session (เรียกฟังก์ชันพนักงานจากที่อยู่ลูกค้าไม่ได้)
+  assert.ok(!staffSession.includes(BOOKING_HOST));
+  const root = read("src/Root.jsx");
+  assert.ok(root.includes("const bookingOnly = isBookingHost(window.location.hostname);"));
+  assert.ok(root.includes("if (bookingOnly) return undefined;"));
 });
