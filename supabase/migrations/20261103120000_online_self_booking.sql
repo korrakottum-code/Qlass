@@ -230,8 +230,8 @@ begin
   if v_ref !~ '^[A-Za-z0-9_-]{8,64}$' then raise exception 'INVALID_REFERENCE'; end if;
   if length(v_name) < 2 or length(v_name) > 100 or v_type not in ('new', 'old') then raise exception 'INVALID_CUSTOMER'; end if;
   if v_digits ~ '^66[0-9]{9}$' then v_digits := '0' || substr(v_digits, 3); end if;
-  -- มือถือไทยเท่านั้น (06/08/09 + 8 หลัก) — ไม่รับเลขซ้ำทั้งเบอร์ เช่น 0000000000 / 0999999999
-  if v_digits !~ '^0[689][0-9]{8}$' or substr(v_digits, 2) ~ '^(.)\1+$' then raise exception 'INVALID_CUSTOMER'; end if;
+  -- มือถือไทยเท่านั้น (06/08/09 + 8 หลัก) — ไม่รับเบอร์ที่ 8 หลักท้ายเป็นเลขเดียวกันหมด เช่น 0899999999 / 0811111111
+  if v_digits !~ '^0[689][0-9]{8}$' or substr(v_digits, 3) ~ '^(.)\1+$' then raise exception 'INVALID_CUSTOMER'; end if;
   if p_start is null or extract(second from v_local) <> 0 or mod(extract(minute from v_local)::int, 5) <> 0 then
     raise exception 'INVALID_TIME';
   end if;

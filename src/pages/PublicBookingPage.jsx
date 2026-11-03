@@ -79,6 +79,7 @@ export default function PublicBookingPage() {
   const slotRequest = useRef(0);
 
   useEffect(() => {
+    const prevTitle = document.title;
     document.title = "จองคิวออนไลน์ — Class Clinic";
     let cancelled = false;
     fetchPublicBranches()
@@ -90,7 +91,7 @@ export default function PublicBookingPage() {
         else if (list.length === 1) setBranchId(list[0].id);
       })
       .catch((err) => { if (!cancelled) setLoadError(errorText(err.code)); });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; document.title = prevTitle; };
   }, []);
 
   useEffect(() => {

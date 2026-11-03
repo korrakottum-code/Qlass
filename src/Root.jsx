@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import App from "./App.jsx";
 import { isPublicBookingHash } from "./utils/publicBooking";
 
@@ -6,7 +6,16 @@ import { isPublicBookingHash } from "./utils/publicBooking";
 const PublicBookingPage = lazy(() => import("./pages/PublicBookingPage.jsx"));
 
 export default function Root() {
-  if (isPublicBookingHash(window.location.hash)) {
+  const [isBooking, setIsBooking] = useState(() => isPublicBookingHash(window.location.hash));
+
+  // วางลิงก์ #book ในแท็บที่เปิดระบบอยู่ (เปลี่ยนแค่ hash ไม่โหลดหน้าใหม่) ต้องสลับไปหน้าลูกค้าด้วย — และกลับกัน
+  useEffect(() => {
+    const onHash = () => setIsBooking(isPublicBookingHash(window.location.hash));
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  if (isBooking) {
     return (
       <Suspense fallback={null}>
         <PublicBookingPage />

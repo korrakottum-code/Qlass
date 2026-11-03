@@ -33,6 +33,9 @@ test("เบอร์มือถือ: รับ 06/08/09 10 หลัก, +66
   assert.ok(!isValidMobile("021234567"));
   assert.ok(!isValidMobile("0000000000"));
   assert.ok(!isValidMobile("0999999999"));
+  assert.ok(!isValidMobile("0899999999"));
+  assert.ok(!isValidMobile("0811111111"));
+  assert.ok(isValidMobile("0811111112"));
   assert.ok(!isValidMobile("08123"));
 });
 

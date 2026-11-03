@@ -27,7 +27,7 @@ export function normalizePhone(value) {
 }
 export function isValidMobile(value) {
   const digits = normalizePhone(value);
-  return /^0[689]\d{8}$/.test(digits) && !/^(.)\1+$/.test(digits.slice(1));
+  return /^0[689]\d{8}$/.test(digits) && !/^(.)\1+$/.test(digits.slice(2));
 }
 
 // /#book หรือ /#book/<branchId> = หน้าลูกค้าจองเอง (Root.jsx แยกออกจากแอปพนักงาน)
