@@ -69,7 +69,12 @@ const branchManagementRoles = new Set(["superadmin"]);
 
 // บัญชีบอท Saifa AI (พนักงาน role admin ที่ลงคิวผ่าน booking-api): แก้/ลบจากหน้าจัดการพนักงานไม่ได้ กันเผลอกด "ใช้งาน" ให้ไปโผล่
 // ในรายชื่อหน้าล็อกอิน หรือลบจนคิวที่บอทลงไม่มีชื่อผู้บันทึก — เปลี่ยนสถานะ/PIN ของบอททำที่ฐานข้อมูลโดยผู้ดูแลเท่านั้น
-const protectedStaffIds = new Set(["1f43d7fe-19a3-4a17-a5c7-f68a89087345"]);
+// บัญชี "จองออนไลน์ (ลูกค้าจองเอง)" (migration 20261103120000) ก็ห้ามแก้/ลบเช่นกัน — คิวที่ลูกค้าจองเองผูกกับบัญชีนี้
+const protectedStaffIds = new Set(["1f43d7fe-19a3-4a17-a5c7-f68a89087345", "0b0c1a55-5e1f-4b00-8000-000000000001"]);
+
+// ลูกค้าจองเอง (/#book): ตั้งค่าว่าสาขาไหนเปิด และบริการ (โปร) ไหนให้จอง — ตาราง online_booking_* ปิดจากคีย์หน้าเว็บ
+const onlineBookingRoles = new Set(["superadmin", "head_admin"]);
+const MAX_ONLINE_PROMOS = 500;
 
 // คูปอง: ออกล็อต/ยกเลิกได้เฉพาะระดับหัวหน้าขึ้นไป, ตัดใช้ได้ทุกบทบาทที่ลงคิว (CEO ดูอย่างเดียว ไม่มีเมนู)
 const couponManageRoles = new Set(["superadmin", "head_admin"]);
@@ -636,6 +641,57 @@ Deno.serve(async (req) => {
       }
 
       return response({ error: "invalid_coupon_payload" }, 400, origin);
+    }
+
+    if (body?.action === "online_booking_settings" || body?.action === "online_booking_save") {
+      const current = await findSession(body.token);
+      if (!current) return response({ error: "invalid_session" }, 401, origin);
+      if (!onlineBookingRoles.has(String(current.user.role ?? ""))) return response({ error: "forbidden" }, 403, origin);
+
+      if (body.action === "online_booking_save") {
+        const isUuid = (v: unknown) => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+        const branches = Array.isArray(body.branches) ? body.branches : null;
+        const promoIds = Array.isArray(body.promoIds) ? body.promoIds : null;
+        if (!branches || !promoIds || promoIds.length > MAX_ONLINE_PROMOS
+          || !branches.every((b: Record<string, unknown>) => b && isUuid(b.branchId) && typeof b.active === "boolean")
+          || !promoIds.every(isUuid)) {
+          return response({ error: "invalid_online_booking_payload" }, 400, origin);
+        }
+        // สาขา: ส่งมาเฉพาะสาขาที่แก้ (upsert ทีละแถว) — สาขาที่ไม่ได้ส่งมาไม่ถูกแตะ
+        if (branches.length > 0) {
+          const { error } = await supabase.from("online_booking_branches").upsert(
+            branches.map((b: Record<string, unknown>) => ({ branch_id: b.branchId, active: b.active, updated_at: new Date().toISOString() })),
+            { onConflict: "branch_id" },
+          );
+          if (error) throw error;
+        }
+        // บริการ: ส่งมาทั้งรายการ = รายการใหม่ทั้งหมด (เพิ่มที่ขาด ลบที่ไม่อยู่ในรายการ)
+        const wanted = [...new Set(promoIds as string[])];
+        const { data: existing, error: readError } = await supabase.from("online_booking_promos").select("promo_id");
+        if (readError) throw readError;
+        const have = new Set((existing ?? []).map((row) => String(row.promo_id)));
+        const toAdd = wanted.filter((id) => !have.has(id));
+        const toRemove = [...have].filter((id) => !wanted.includes(id));
+        if (toAdd.length > 0) {
+          const { error } = await supabase.from("online_booking_promos").insert(toAdd.map((id) => ({ promo_id: id })));
+          if (error) throw error;
+        }
+        if (toRemove.length > 0) {
+          const { error } = await supabase.from("online_booking_promos").delete().in("promo_id", toRemove);
+          if (error) throw error;
+        }
+      }
+
+      const [{ data: branchRows, error: branchError }, { data: promoRows, error: promoError }] = await Promise.all([
+        supabase.from("online_booking_branches").select("branch_id,active"),
+        supabase.from("online_booking_promos").select("promo_id"),
+      ]);
+      if (branchError) throw branchError;
+      if (promoError) throw promoError;
+      return response({
+        branches: (branchRows ?? []).map((row) => ({ branchId: row.branch_id, active: row.active === true })),
+        promoIds: (promoRows ?? []).map((row) => row.promo_id),
+      }, 200, origin);
     }
 
     if (body?.action === "session") {

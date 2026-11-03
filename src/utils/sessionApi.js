@@ -63,6 +63,13 @@ export function createSessionApi(invoke) {
       const data = await callSessionFunction({ action: "branch_booking_list", token });
       return data.codes || [];
     },
+    // ลูกค้าจองเอง: สาขาที่เปิด + บริการที่ให้จอง (ตาราง online_booking_* ปิดจากคีย์หน้าเว็บ) — คืน { branches, promoIds }
+    fetchOnlineBookingSettings(token) {
+      return callSessionFunction({ action: "online_booking_settings", token });
+    },
+    saveOnlineBookingSettings(token, branches, promoIds) {
+      return callSessionFunction({ action: "online_booking_save", token, branches, promoIds });
+    },
     // คูปอง: ทุกการอ่าน/เขียนผ่าน staff-session (ตารางปิดจากคีย์หน้าเว็บ) — คืน { coupon } หรือ { total, coupons }
     async lookupCoupon(token, code) {
       return (await callSessionFunction({ action: "coupon_lookup", token, code })).coupon;
