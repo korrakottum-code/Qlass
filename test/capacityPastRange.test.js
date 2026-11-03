@@ -24,7 +24,7 @@ test("ช่วงเดิม 7 วันข้างหน้า / ถึง�
   assert.equal(e.length, 28);
 });
 
-test("ย้อนหลัง: คิวไม่มา/ยกเลิก นับเป็นว่าง คิวที่มาแล้วนับเป็นมีคิว", () => {
+test("โหมดปกติ (วันข้างหน้า): คิวไม่มา/ยกเลิก นับเป็นว่างเหมือนเดิม", () => {
   const room = { id: "r1", branchId: "b1", type: "M", openBlock: 132, closeBlock: 240 };
   const day = "2026-11-01";
   const q = (status, timeBlock) => ({ id: status + timeBlock, roomId: "r1", branchId: "b1", date: day, timeBlock, durationBlocks: 12, status });
@@ -42,4 +42,33 @@ test("หน้าคิวว่างมีปุ่ม 7 วันที่�
   assert.match(page, /\["past7", "7 วันที่ผ่านมา"\]/);
   assert.match(page, /capacityRangeDates\(range, today\)/);
   assert.match(page, /typeFilter === "all" && !isPast && \(/);
+});
+
+test("ย้อนหลัง: นับตามที่จองเดิม — ไม่มา/ยกเลิกเป็นช่องที่ถูกจอง แยกยอดไว้ เลื่อนออกไม่นับ", () => {
+  const room = { id: "r1", branchId: "b1", type: "M", openBlock: 132, closeBlock: 240 };
+  const day = "2026-11-01";
+  const q = (status, timeBlock, dur = 12) => ({ id: status + timeBlock, roomId: "r1", branchId: "b1", date: day, timeBlock, durationBlocks: dur, status });
+  const s = computeCapacitySummary({
+    rooms: [room], roomSchedules: [], procedures: [], dates: [day], countOriginalBookings: true,
+    queues: [
+      q("done", 132), q("no_show", 144), q("cancelled", 156), q("rescheduled", 168),
+      q("done", 180), q("cancelled", 180), // ยกเลิกแล้วมีคนจองแทนช่องเดิม — ไม่นับซ้ำ
+      q("no_show", 192, 6), q("cancelled", 192, 12), // ทับกัน — ส่วนที่ทับนับเป็นไม่มา
+    ],
+  });
+  assert.equal(s.totals.capacity, 108);
+  assert.equal(s.totals.noShow, 12 + 6);
+  assert.equal(s.totals.cancelled, 12 + 6);
+  assert.equal(s.totals.booked, 12 + 12 + 12 + 12 + 6 + 6); // done×2, ไม่มา, ยกเลิก, ไม่มา(ทับ), ยกเลิกส่วนที่เหลือ
+  assert.equal(s.totals.free, 108 - s.totals.booked);
+  const cell = s.days[0].byBranch.b1;
+  assert.equal(cell.noShow, 18);
+  assert.equal(cell.cancelled, 18);
+  assert.equal(cell.byType.M.booked, s.totals.booked);
+});
+
+test("หน้าคิวว่างส่ง countOriginalBookings เฉพาะตอนดูย้อนหลัง", () => {
+  const page = readFileSync(new URL("../src/pages/CapacityPage.jsx", import.meta.url), "utf8");
+  assert.match(page, /countOriginalBookings: isPast/);
+  assert.match(page, /const isPast = range === "past7";/);
 });
