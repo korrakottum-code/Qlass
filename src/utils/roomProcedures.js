@@ -56,6 +56,31 @@ export function encodeProcedureRoomTypes(types) {
   return PROCEDURE_ROOM_TYPE_VALUES.filter((type) => set.has(type)).join("");
 }
 
+// ─── หัตถการที่ต้อง "ติ๊กรายเตียง" (เจ้าของสั่ง 5 พ.ย. 2569) ───
+// ดริป/ปากกาลดน้ำหนักลงได้ทั้งห้อง M และ N แต่เตียง M ต้องระบุว่าเตียงไหนทำได้
+// procedure.optInRoomTypes = ประเภทห้องที่ต้องติ๊ก (เช่น "M"), room.optInProcedureIds = ที่เตียงนี้ติ๊ก
+// แยกจาก room_procedures โดยตั้งใจ: แถวใน room_procedures ทำให้เตียง "ตั้งค่าแล้ว" = รับแค่ที่ติ๊ก
+// ติ๊กดริปเตียง M จะบล็อกงานหมอทุกตัวบนเตียงนั้น (และแท็บเก่าได้แถวผ่าน Realtime ทันที)
+
+/** หัตถการนี้ต้องติ๊กรายเตียงไหม บนเตียงประเภทนี้ */
+export function procedureNeedsBedOptIn(procedure, roomType) {
+  const value = procedure?.optInRoomTypes;
+  return typeof value === "string" && !!roomType && value.includes(roomType);
+}
+
+/** เตียงนี้ติ๊กหัตถการนี้ไว้ไหม */
+export function isBedOptedIn(room, procedure) {
+  const ids = room?.optInProcedureIds;
+  return Array.isArray(ids) && !!procedure?.id && ids.includes(procedure.id);
+}
+
+/** หัตถการที่เตียงประเภทนี้ต้องติ๊กเอง — ใช้สร้างช่องติ๊กในหน้าแก้ไขเตียง */
+export function bedOptInProcedures(procedures, roomType) {
+  return (procedures || []).filter(
+    (p) => procedureNeedsBedOptIn(p, roomType) && procedureFitsRoomType(p, roomType)
+  );
+}
+
 /**
  * links: [{ roomId, procedureId }] จาก DB
  * คืน Map<roomId, Set<procedureId>> — เตียงที่ไม่มี key = ยังไม่ตั้งค่า
@@ -88,6 +113,9 @@ export function isRoomConfigured(index, roomId) {
  */
 export function isProcedureAllowedInRoom(index, room, procedure) {
   if (!room || !procedure) return false;
+
+  // หัตถการที่ต้องติ๊กรายเตียง (เช่น ดริป/ปากกาบนเตียง M) — ข้อห้ามเพิ่ม ไม่เปิดทางใหม่
+  if (procedureNeedsBedOptIn(procedure, room.type) && !isBedOptedIn(room, procedure)) return false;
 
   // ตั้งค่าแล้ว → ยึดตามที่ตั้ง (ล็อกจริง)
   if (isRoomConfigured(index, room.id)) {

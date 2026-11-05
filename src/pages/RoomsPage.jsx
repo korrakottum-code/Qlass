@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { blockToTime } from "../utils/helpers";
-import { isRoomConfigured, unservedProcedures } from "../utils/roomProcedures";
+import { isRoomConfigured, unservedProcedures, bedOptInProcedures, isBedOptedIn } from "../utils/roomProcedures";
 import { ROOM_TYPES, roomTypeMeta } from "../utils/constants";
 
 export default function RoomsPage({
@@ -162,6 +162,17 @@ export default function RoomsPage({
                         )}
                       </td>
                       <td>
+                        {(() => {
+                          // หัตถการที่ต้องติ๊กรายเตียง (ดริป/ปากกาบนเตียง M) — โชว์ใต้สถานะล็อก
+                          const optIn = bedOptInProcedures(procedures, r.type);
+                          if (optIn.length === 0) return null;
+                          const on = optIn.filter((p) => isBedOptedIn(r, p)).map((p) => p.name);
+                          return (
+                            <div style={{ fontSize: 11, marginBottom: 3, color: on.length ? "var(--accent)" : "var(--text3)", fontWeight: on.length ? 700 : 400 }}>
+                              {on.length ? `💧 รับ ${on.join(", ")}` : "💧 ไม่รับดริป/ปากกา"}
+                            </div>
+                          );
+                        })()}
                         {(() => {
                           const set = roomProcedureIndex.get(r.id);
                           if (!set || set.size === 0) {
