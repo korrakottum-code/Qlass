@@ -3,7 +3,7 @@ import { ModalHeader, ModalBody, ModalFooter } from "../Modal";
 import { ROOM_TYPES, WORK_START_BLOCK, WORK_END_BLOCK, roomTypeMeta } from "../../utils/constants";
 import { blockToTime } from "../../utils/helpers";
 import { nextRoomName } from "../../utils/roomNaming";
-import { ALWAYS_ALLOWED_PROCEDURE_NAMES, noteMentionsOutsideSelection, roomLockLabel, buildRoomProcedureIndex, procedureFitsRoomType } from "../../utils/roomProcedures";
+import { ALWAYS_ALLOWED_PROCEDURE_NAMES, noteMentionsOutsideSelection, roomLockLabel, buildRoomProcedureIndex, procedureFitsRoomType, bedOptInProcedures } from "../../utils/roomProcedures";
 
 // index.css ตั้ง input { width:100% } กับทุก input — checkbox ที่ไม่บอกความกว้างเองจะยืดเต็ม
 // แถวแล้วดันข้อความไปชิดขวา ต้องล็อกขนาดกลับให้เท่ากล่องติ๊กจริง
@@ -62,9 +62,21 @@ export default function RoomModal({
   const [closeBlock, setCloseBlock] = useState(data?.closeBlock ?? WORK_END_BLOCK);
 
   // หัตถการที่เลือกได้ = หัตถการที่ประเภทห้องรวมประเภทเตียงนี้ (M/T/N) — ข้ามฝั่งไม่มีทางถูก
+  // หัตถการที่ต้องติ๊กรายเตียงบนเตียงประเภทนี้ (เช่น ดริป/ปากกาบนเตียง M) — มีช่องติ๊กของตัวเอง
+  // แยกจากรายการล็อกเตียงข้างล่าง (กติกาอยู่ใน roomProcedures.js)
+  const optInProcs = useMemo(() => bedOptInProcedures(procedures, type), [procedures, type]);
+  const optInProcIds = useMemo(() => new Set(optInProcs.map((p) => p.id)), [optInProcs]);
+  const initialOptInIds = useMemo(
+    () => (data?.optInProcedureIds || []).filter((id) => optInProcIds.has(id)),
+    [data, optInProcIds]
+  );
+  const [optInIds, setOptInIds] = useState(initialOptInIds);
+
+  // ตัวที่ต้องติ๊กรายเตียงไม่อยู่ในรายการล็อก — ถ้าเตียงนี้ถูกล็อก จะเติมให้อัตโนมัติตอนบันทึก
+  // (ไม่งั้นล็อกจะห้ามซ้อนกับช่องติ๊ก ติ๊กดริปแล้วก็ยังลงไม่ได้)
   const selectableProcs = useMemo(
-    () => procedures.filter((p) => procedureFitsRoomType(p, type)),
-    [procedures, type]
+    () => procedures.filter((p) => procedureFitsRoomType(p, type) && !optInProcIds.has(p.id)),
+    [procedures, type, optInProcIds]
   );
 
   // หัตถการกลาง (ปิดคิว ฯลฯ) ลงได้ทุกเตียงเสมอ — ติ๊กให้อัตโนมัติตอนบันทึก ผู้ใช้เอาออกไม่ได้
@@ -83,7 +95,7 @@ export default function RoomModal({
   }, [isEdit, data, roomProcedureIndex]);
 
   // state เก็บเฉพาะตัวที่ผู้ใช้เลือกเอง — หัตถการกลางถูกเติมกลับให้ตอนบันทึก
-  const [procIds, setProcIds] = useState(() => (currentIds || []).filter((id) => !genericIds.has(id)));
+  const [procIds, setProcIds] = useState(() => (currentIds || []).filter((id) => !genericIds.has(id) && !optInProcIds.has(id)));
   const configuredAtOpen = (currentIds || []).length > 0;
 
   // โน้ตรายวันของเตียงนี้ตั้งแต่วันนี้ไป — หน้าร้านเห็นอันนี้ในหัวคอลัมน์ Timeline บ่อยกว่า
@@ -168,8 +180,15 @@ export default function RoomModal({
           // ติ๊กออกหมด = ล้างการตั้งค่า (กลับกติกาเดิม) จึงห้าม union หัตถการกลางในเคสนั้น
           procedureIds: (() => {
             if (!isEdit || !currentIds) return undefined;
-            const chosen = procIds.length > 0 ? [...new Set([...procIds, ...genericIds])] : [];
+            const chosen = procIds.length > 0 ? [...new Set([...procIds, ...genericIds, ...optInProcIds])] : [];
             return sameSet(currentIds, chosen) ? undefined : chosen;
+          })(),
+          // เตียงที่ติ๊กดริป/ปากกา — ส่งเฉพาะตอนแก้ไขและติ๊กเปลี่ยนจริง undefined = ไม่แตะของเดิม
+          optInProcedureIds: (() => {
+            if (!isEdit || optInProcs.length === 0) return undefined;
+            const keepOther = (data?.optInProcedureIds || []).filter((id) => !optInProcIds.has(id));
+            const next = [...new Set([...keepOther, ...optInIds])];
+            return sameSet(data?.optInProcedureIds || [], next) ? undefined : next;
           })(),
         });
       }
@@ -383,6 +402,43 @@ export default function RoomModal({
               กำหนดเวลาทำการปกติของห้องนี้ — ใช้ "ตารางห้อง/เครื่อง" สำหรับวันพิเศษ
             </span>
           </div>
+
+          {/* หัตถการที่ต้องติ๊กรายเตียง (เช่น ดริป/ปากกาบนเตียง M) */}
+          {isEdit && optInProcs.length > 0 && (
+            <div className="form-group full">
+              <label className="form-label">💧 เตียง {autoName} ทำหัตถการเหล่านี้ได้ไหม</label>
+              <div style={{
+                border: "1px solid var(--border)", borderRadius: "var(--radius-sm)",
+                padding: 8, display: "flex", flexDirection: "column", gap: 2,
+              }}>
+                {optInProcs.map((p) => {
+                  const checked = optInIds.includes(p.id);
+                  return (
+                    <label
+                      key={p.id}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "6px 10px", borderRadius: 6, cursor: "pointer",
+                        background: checked ? "var(--accent-soft)" : "transparent",
+                        fontSize: 13, fontWeight: checked ? 600 : 400,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => setOptInIds((prev) => (prev.includes(p.id) ? prev.filter((x) => x !== p.id) : [...prev, p.id]))}
+                        style={CHECKBOX_STYLE}
+                      />
+                      {p.name}
+                    </label>
+                  );
+                })}
+              </div>
+              <span style={{ fontSize: 11, color: "var(--text3)" }}>
+                ติ๊ก = ลงคิวหัตถการนี้ที่เตียงนี้ได้ / ไม่ติ๊ก = ลงไม่ได้ (คิวเดิมที่อยู่บนเตียงนี้แล้วไม่ถูกแตะ)
+              </span>
+            </div>
+          )}
 
           {/* หัตถการที่เตียงนี้รับ */}
           {isEdit && currentIds && (

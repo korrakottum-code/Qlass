@@ -71,6 +71,8 @@ export async function fetchProcedures() {
     blocks: p.blocks,
     category: p.category || "",
     roomType: p.room_type,
+    // ประเภทห้องที่ต้องติ๊กรายเตียง (ดู roomProcedures.js) — ไม่มีคอลัมน์ = '' = ไม่ต้องติ๊ก
+    optInRoomTypes: p.opt_in_room_types || "",
   }));
 }
 
@@ -93,6 +95,7 @@ export async function createProcedure(procedure) {
     blocks: data.blocks,
     category: data.category || "",
     roomType: data.room_type,
+    optInRoomTypes: data.opt_in_room_types || "",
   };
 }
 
@@ -118,6 +121,7 @@ export async function updateProcedure(id, procedure) {
     blocks: data.blocks,
     category: data.category || "",
     roomType: data.room_type,
+    optInRoomTypes: data.opt_in_room_types || "",
   };
 }
 
@@ -395,6 +399,8 @@ export async function fetchRooms() {
     openBlock: r.open_block,
     closeBlock: r.close_block,
     sortOrder: r.sort_order ?? 0,
+    // หัตถการที่เตียงนี้ติ๊กให้ (เช่น ดริป/ปากกาบนเตียง M) — ไม่มีคอลัมน์ = ว่าง
+    optInProcedureIds: Array.isArray(r.opt_in_procedure_ids) ? r.opt_in_procedure_ids : [],
   }));
 }
 
@@ -423,6 +429,7 @@ export async function createRoom(room) {
     openBlock: data.open_block,
     closeBlock: data.close_block,
     sortOrder: data.sort_order ?? 0,
+    optInProcedureIds: Array.isArray(data.opt_in_procedure_ids) ? data.opt_in_procedure_ids : [],
   };
 }
 
@@ -435,6 +442,8 @@ export async function updateRoom(id, room) {
   if (room.openBlock !== undefined) payload.open_block = room.openBlock;
   if (room.closeBlock !== undefined) payload.close_block = room.closeBlock;
   if (room.sortOrder !== undefined) payload.sort_order = room.sortOrder;
+  // ส่งเฉพาะตอนผู้ใช้เปลี่ยนการติ๊กจริง — undefined = ไม่แตะของเดิม
+  if (room.optInProcedureIds !== undefined) payload.opt_in_procedure_ids = room.optInProcedureIds;
 
   const { data, error } = await supabase
     .from("rooms")
@@ -453,6 +462,7 @@ export async function updateRoom(id, room) {
     openBlock: data.open_block,
     closeBlock: data.close_block,
     sortOrder: data.sort_order ?? 0,
+    optInProcedureIds: Array.isArray(data.opt_in_procedure_ids) ? data.opt_in_procedure_ids : [],
   };
 }
 
