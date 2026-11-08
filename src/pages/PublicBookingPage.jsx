@@ -334,8 +334,12 @@ export default function PublicBookingPage() {
               <button type="button" style={{ ...S.chip(customerType === "new", false), flex: 1 }} onClick={() => setCustomerType("new")}>ครั้งแรก</button>
               <button type="button" style={{ ...S.chip(customerType === "old", false), flex: 1 }} onClick={() => setCustomerType("old")}>เคยมาแล้ว</button>
             </div>
-            <textarea style={{ ...S.input, minHeight: 60, resize: "vertical" }} placeholder="หมายเหตุ (ถ้ามี)" value={note} maxLength={300}
+            <textarea style={{ ...S.input, minHeight: 60, resize: "vertical" }} placeholder="หมายเหตุ (ถ้ามี) เช่น ใช้คูปอง 2 ใบ: วิตามินผิว 1 ใบ + ปากกา 1 ใบ" value={note} maxLength={300}
               onChange={(e) => setNote(e.target.value)} />
+            {/* เจ้าของสั่ง 8 พ.ย. 2569 — ระบบจองเวลาให้ 1 บริการ หน้าร้านอ่านหมายเหตุแล้วจัดเวลาเพิ่มเอง */}
+            <div style={{ color: "var(--amber)", fontSize: 12.5, lineHeight: 1.6, marginTop: 6 }}>
+              หมายเหตุ (กรณีใช้คูปองมากกว่า 1 ใบ ให้ระบุรายละเอียดโปรแกรมและจำนวนคูปองที่ต้องการใช้บริการ หากไม่ระบุ จะสามารถทำได้แค่ 1 ใบเท่านั้น)
+            </div>
             {/* กับดักบอท: คนจริงมองไม่เห็นและไม่กรอก */}
             <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" value={website}
               onChange={(e) => setWebsite(e.target.value)} style={{ position: "absolute", left: -9999, width: 1, height: 1, opacity: 0 }} />
