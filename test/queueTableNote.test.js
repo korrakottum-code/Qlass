@@ -14,11 +14,17 @@ test("ตารางคิว: หมายเหตุอยู่ในช่
   assert.ok(nameCell.indexOf("💬") < nameCell.indexOf("📝"));
 });
 
-test("ตารางคิว: หมายเหตุยาวไม่ดันแถว (ตัด 2 บรรทัด + วางเมาส์อ่านเต็ม) และไม่พังเมื่อไม่มีค่า", () => {
+test("ตารางคิว: หมายเหตุยาวไม่ดันแถว (ตัด 2 บรรทัด) และไม่พังเมื่อไม่มีค่า", () => {
   assert.match(page, /typeof q\.note === "string" && q\.note\.trim\(\) &&/);
   assert.match(page, /WebkitLineClamp: 2/);
-  assert.match(page, /title=\{q\.note\}/);
   assert.match(page, /overflowWrap: "anywhere"/);
+});
+
+test("ตารางคิว: กดหมายเหตุเปิดหน้าต่างอ่านเต็ม มีปุ่มปิด (มือถือกดได้ ไม่ต้องวางเมาส์)", () => {
+  assert.match(page, /onClick=\{\(\) => setNoteView\(\{ name: q\.name, note: q\.note\.trim\(\) \}\)\}/);
+  assert.match(page, /e\.key === "Enter"/);
+  assert.match(page, /<Modal onClose=\{\(\) => setNoteView\(null\)\}>/);
+  assert.match(page, />ปิด<\/button>/);
 });
 
 test("ตารางคิว: แค่แสดงผล ไม่มีช่องแก้หรือบันทึกหมายเหตุในตาราง", () => {
