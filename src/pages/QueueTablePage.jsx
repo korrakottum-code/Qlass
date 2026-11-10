@@ -4,6 +4,7 @@ import { getTodayStr, formatThaiDate, blockToTime, formatRecorderLabel, getCusto
 import { pickDatePresets, daySpan } from "../utils/datePresets";
 import { isSearchable, matchesQueueSearch, sortSearchResults } from "../utils/queueSearch";
 import { buildStatusChips } from "../utils/statusChips";
+import Modal, { ModalHeader, ModalBody } from "../components/Modal";
 
 const ALL_ROOMS_TAB = "__all__";
 // แท็บคิวรอ อยู่แถวเดียวกับแท็บห้อง — คิวรอยังไม่มีห้อง/เวลา จึงเข้ากลุ่มห้องไหนไม่ได้
@@ -44,8 +45,21 @@ function QueueDataTable({
   items, showRoomCol, procedures, promos, staff, waitingMode = false, searchMode = false,
   onUpdateStatus, onEdit, onAskMove, onAskDelete, onJumpToDate,
 }) {
+  // กดหมายเหตุ → หน้าต่างอ่านเต็ม (แถวไม่ขยาย) — เจ้าของสั่ง 10 พ.ย. 2569: มือถือวางเมาส์ไม่ได้ กดแก้ไขก็ไม่สะดวก
+  const [noteView, setNoteView] = useState(null);
   return (
     <div style={{ overflowX: "auto" }}>
+      {noteView && (
+        <Modal onClose={() => setNoteView(null)}>
+          <ModalHeader title={`📝 หมายเหตุ — ${noteView.name || "ลูกค้า"}`} onClose={() => setNoteView(null)} />
+          <ModalBody>
+            <div style={{ fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-line", overflowWrap: "anywhere" }}>{noteView.note}</div>
+          </ModalBody>
+          <div className="modal-footer">
+            <button className="btn btn-secondary" onClick={() => setNoteView(null)}>ปิด</button>
+          </div>
+        </Modal>
+      )}
       <table className="data-table" style={{ tableLayout: "fixed", width: "100%" }}>
         <colgroup>
           <col style={{ width: 70 }} />
@@ -121,6 +135,25 @@ function QueueDataTable({
                   {q.statusNote && (
                     <div style={{ fontSize: 10, color: "var(--text3)", fontStyle: "italic", marginTop: 2 }}>
                       💬 {q.statusNote}
+                    </div>
+                  )}
+                  {/* หมายเหตุตอนลงคิว (รวมที่ลูกค้าพิมพ์ในจองออนไลน์ เช่น จำนวนคูปอง) — อ่านอย่างเดียว ตัดที่ 2 บรรทัด
+                      เพื่อไม่ให้แถวสูง กดเพื่อเปิดหน้าต่างอ่านเต็ม (เจ้าของสั่ง 10 พ.ย. 2569) */}
+                  {typeof q.note === "string" && q.note.trim() && (
+                    <div
+                      className="queue-note"
+                      role="button"
+                      tabIndex={0}
+                      title="กดเพื่ออ่านหมายเหตุเต็ม"
+                      onClick={() => setNoteView({ name: q.name, note: q.note.trim() })}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setNoteView({ name: q.name, note: q.note.trim() }); } }}
+                      style={{
+                        fontSize: 11, color: "var(--text2)", marginTop: 2, lineHeight: 1.4, cursor: "pointer",
+                        overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      📝 {q.note.trim()}
                     </div>
                   )}
                 </td>
