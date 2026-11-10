@@ -123,6 +123,21 @@ function QueueDataTable({
                       💬 {q.statusNote}
                     </div>
                   )}
+                  {/* หมายเหตุตอนลงคิว (รวมที่ลูกค้าพิมพ์ในจองออนไลน์ เช่น จำนวนคูปอง) — แสดงอย่างเดียว ตัดที่ 2 บรรทัด
+                      เพื่อไม่ให้แถวสูง วางเมาส์ดูเต็มได้ (เจ้าของสั่ง 10 พ.ย. 2569) */}
+                  {typeof q.note === "string" && q.note.trim() && (
+                    <div
+                      className="queue-note"
+                      title={q.note}
+                      style={{
+                        fontSize: 11, color: "var(--text2)", marginTop: 2, lineHeight: 1.4,
+                        overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      📝 {q.note.trim()}
+                    </div>
+                  )}
                 </td>
                 <td>
                   {/* บริเวณที่เลือก (ดู src/utils/procedureAreas.js) ต่อท้ายชื่อหัตถการ —
