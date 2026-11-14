@@ -1,5 +1,12 @@
 // ตัวช่วยของหน้าลูกค้าจองเอง (/#book) — แยกจากหน้าเพื่อให้เทสต์ได้โดยไม่ต้องเรนเดอร์
 export const MAX_DAYS_AHEAD = 14; // ตรงกับ c_max_days ใน online_booking_slots_v1
+// จำนวนคูปองต่อคิว (เจ้าของสั่ง 14 พ.ย. 2569) — ตรงกับ c_max_count ใน online_booking_*_v2; เกินนี้ทักแอดมิน
+export const MAX_COUPONS = 3;
+export const COUPON_COUNTS = Array.from({ length: MAX_COUPONS }, (_, i) => i + 1);
+// 1 ใบ = เวลาหัตถการเต็ม 1 รอบ (ไม่ลดเวลาใบถัดไป)
+export function couponMinutes(service, count) {
+  return (Number(service?.duration_minutes) || 0) * count;
+}
 const THAI_DAYS = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
 const THAI_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 

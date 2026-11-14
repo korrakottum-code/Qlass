@@ -6,8 +6,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
  * POST body { action, ... }
  *   branches                                    สาขาที่เปิดให้จองเอง
  *   catalog   { branchId }                      บริการที่จองได้ในสาขา
- *   slots     { branchId, promoId, date }       ทุกช่อง 30 นาทีของวัน พร้อมว่าง/ไม่ว่าง
- *   book      { referenceId, branchId, promoId, startTime, name, phone, customerType, note, website }
+ *   slots     { branchId, promoId, date, count? }  ทุกช่อง 30 นาทีของวัน พร้อมว่าง/ไม่ว่าง
+ *   book      { referenceId, branchId, promoId, startTime, name, phone, customerType, note, website, count? }
+ *
+ * count = จำนวนคูปอง 1–3 ใบ (14 พ.ย. 2569) ล็อกเวลา = เวลาหัตถการ × จำนวนใบ → online_booking_*_v2
+ * ไม่ส่ง count = หน้าจองเวอร์ชันเก่าที่ค้างในเครื่องลูกค้า → v1 เหมือนเดิม (1 ใบ)
  *
  * ปลอดภัยต่อระบบที่พนักงานใช้:
  * - logic ทั้งหมดอยู่ใน SQL (online_booking_*_v1, service_role เท่านั้น) — เปิดเฉพาะสาขา/บริการที่ตั้งไว้ในเมนู "จองออนไลน์"
@@ -103,7 +106,14 @@ function parseStart(value: unknown): string | null {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
 }
 
-const knownErrors = new Set(["INVALID_BRANCH", "INVALID_SERVICE", "INVALID_TIME", "INVALID_CUSTOMER", "INVALID_REFERENCE", "REFERENCE_ID_REUSED"]);
+const knownErrors = new Set(["INVALID_BRANCH", "INVALID_SERVICE", "INVALID_TIME", "INVALID_CUSTOMER", "INVALID_REFERENCE", "INVALID_COUNT", "REFERENCE_ID_REUSED"]);
+
+// จำนวนคูปอง: ไม่ส่งมา = null (ใช้ v1), ส่งมาต้องเป็นจำนวนเต็ม 1–3 ไม่งั้น "invalid"
+const MAX_COUPONS = 3;
+function parseCount(value: unknown): number | null | "invalid" {
+  if (value === undefined || value === null) return null;
+  return Number.isInteger(value) && (value as number) >= 1 && (value as number) <= MAX_COUPONS ? value as number : "invalid";
+}
 function rpcError(error: { message?: string }, origin: string | null) {
   const code = String(error?.message ?? "");
   if (knownErrors.has(code)) return respond({ error: code }, code === "REFERENCE_ID_REUSED" ? 409 : 422, origin);
@@ -150,11 +160,15 @@ Deno.serve(async (req) => {
       const branchId = String(body.branchId ?? "");
       const promoId = String(body.promoId ?? "");
       const day = parseDay(body.date);
+      const count = parseCount(body.count);
       if (!UUID.test(branchId)) res = respond({ error: "INVALID_BRANCH" }, 422, origin);
       else if (!UUID.test(promoId)) res = respond({ error: "INVALID_SERVICE" }, 422, origin);
       else if (!day) res = respond({ error: "INVALID_TIME" }, 422, origin);
+      else if (count === "invalid") res = respond({ error: "INVALID_COUNT" }, 422, origin);
       else {
-        const { data, error } = await supabase.rpc("online_booking_slots_v1", { p_branch_id: branchId, p_promo_id: promoId, p_date: day });
+        const { data, error } = count === null
+          ? await supabase.rpc("online_booking_slots_v1", { p_branch_id: branchId, p_promo_id: promoId, p_date: day })
+          : await supabase.rpc("online_booking_slots_v2", { p_branch_id: branchId, p_promo_id: promoId, p_date: day, p_count: count });
         res = error ? rpcError(error, origin) : respond(data, 200, origin);
       }
     } else {
@@ -163,6 +177,7 @@ Deno.serve(async (req) => {
       const promoId = String(body.promoId ?? "");
       const reference = typeof body.referenceId === "string" ? body.referenceId.trim() : "";
       const start = parseStart(body.startTime);
+      const count = parseCount(body.count);
       const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
       if (str(body.website, 200).trim() !== "") {
         detail = { honeypot: true };
@@ -171,15 +186,19 @@ Deno.serve(async (req) => {
       else if (!UUID.test(promoId)) res = respond({ error: "INVALID_SERVICE" }, 422, origin);
       else if (!/^[A-Za-z0-9_-]{8,64}$/.test(reference)) res = respond({ error: "INVALID_REFERENCE" }, 422, origin);
       else if (!start) res = respond({ error: "INVALID_TIME" }, 422, origin);
+      else if (count === "invalid") res = respond({ error: "INVALID_COUNT" }, 422, origin);
       else {
-        const { data, error } = await supabase.rpc("online_booking_create_v1", {
+        const args = {
           p_reference_id: reference, p_branch_id: branchId, p_promo_id: promoId, p_start: start,
           p_name: str(body.name, 200), p_phone: str(body.phone, 40), p_customer_type: str(body.customerType, 10),
           p_note: str(body.note, 600),
-        });
+        };
+        const { data, error } = count === null
+          ? await supabase.rpc("online_booking_create_v1", args)
+          : await supabase.rpc("online_booking_create_v2", { ...args, p_count: count });
         if (error) res = rpcError(error, origin);
         else if (data?.success === true) {
-          detail = { booking_ref: data.booking_ref };
+          detail = { booking_ref: data.booking_ref, count: count ?? 1 };
           res = respond(data, 201, origin);
         } else {
           detail = { error_code: data?.error_code ?? null };

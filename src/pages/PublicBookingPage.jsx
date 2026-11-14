@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchPublicBranches, fetchPublicServices, fetchPublicSlots, bookPublic } from "../utils/onlineBookingApi";
-import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile, matchesSearch, groupServices } from "../utils/publicBooking";
+import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile, matchesSearch, groupServices, COUPON_COUNTS, MAX_COUPONS, couponMinutes } from "../utils/publicBooking";
 
 // หน้าลูกค้าจองคิวเอง (/#book หรือ /#book/<branchId>) — ไม่ต้องล็อกอิน เปิดจากลิงก์ในไลน์/เพจ ใช้บนมือถือเป็นหลัก
 // เปิดเฉพาะสาขา/บริการที่ตั้งไว้ในเมนู "จองออนไลน์" กติกาเตียงและเวลาอยู่ฝั่งเซิร์ฟเวอร์ (online_booking_*_v1) ทั้งหมด
@@ -14,6 +14,7 @@ const ERROR_TEXT = {
   INVALID_SERVICE: "บริการนี้ปิดรับจองออนไลน์แล้ว กรุณาเลือกบริการอื่น",
   INVALID_BRANCH: "สาขานี้ปิดรับจองออนไลน์แล้ว",
   RATE_LIMITED: "ทำรายการถี่เกินไป กรุณารอสักครู่แล้วลองใหม่",
+  INVALID_COUNT: `จองออนไลน์ใช้คูปองได้ครั้งละ 1–${MAX_COUPONS} ใบ หากใช้มากกว่านี้ กรุณาทัก LINE @classclinic`,
 };
 function errorText(code) {
   return ERROR_TEXT[code] || "ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง";
@@ -87,6 +88,7 @@ export default function PublicBookingPage() {
   const [branchId, setBranchId] = useState("");
   const [services, setServices] = useState(null);
   const [promoId, setPromoId] = useState("");
+  const [couponCount, setCouponCount] = useState(1);
   // ค้นหา/เปลี่ยน — สาขา 30 แห่ง โปรเป็นร้อย จะได้ไม่ยาวเป็นพรืด เลือกแล้วหุบเหลือบรรทัดเดียว
   const [branchQuery, setBranchQuery] = useState("");
   const [pickBranch, setPickBranch] = useState(true);
@@ -129,7 +131,7 @@ export default function PublicBookingPage() {
   useEffect(() => {
     if (!branchId) return undefined;
     let cancelled = false;
-    setServices(null); setPromoId(""); setSlots(null); setStartTime("");
+    setServices(null); setPromoId(""); setCouponCount(1); setSlots(null); setStartTime("");
     setPickService(true); setServiceQuery(""); setOpenGroup("");
     fetchPublicServices(branchId)
       .then((list) => { if (!cancelled) setServices(list); })
@@ -142,10 +144,10 @@ export default function PublicBookingPage() {
     const id = ++slotRequest.current;
     setSlots(null);
     setLoadError("");
-    fetchPublicSlots(branchId, promoId, date)
+    fetchPublicSlots(branchId, promoId, date, couponCount)
       .then((list) => { if (id === slotRequest.current) setSlots(list); })
       .catch((err) => { if (id === slotRequest.current) { setSlots([]); setLoadError(errorText(err.code)); } });
-  }, [branchId, promoId, date]);
+  }, [branchId, promoId, date, couponCount]);
 
   useEffect(() => { setStartTime(""); loadSlots(); }, [loadSlots]);
 
@@ -161,6 +163,7 @@ export default function PublicBookingPage() {
     setSubmitting(true);
     const payload = {
       branchId, promoId, startTime, name: name.trim(), phone: normalizePhone(phone), customerType, note: note.trim(), website,
+      count: couponCount,
     };
     // กดซ้ำด้วยข้อมูลเดิม (เน็ตหลุด) ใช้รหัสอ้างอิงเดิม = เซิร์ฟเวอร์คืนผลเดิม ไม่สร้างคิวซ้ำ
     const signature = JSON.stringify(payload);
@@ -187,8 +190,8 @@ export default function PublicBookingPage() {
             <div style={{ ...S.sub, marginBottom: 16 }}>เลขที่การจอง <b style={{ fontFamily: "var(--mono)", color: "var(--text)" }}>{done.booking_ref}</b></div>
             <div style={{ textAlign: "left", fontSize: 15, lineHeight: 1.9 }}>
               <div>📍 {done.branch}</div>
-              <div>💆 {done.service}</div>
-              <div>📅 {thaiDateLabel(done.date)} เวลา {done.time} น.</div>
+              <div>💆 {done.service}{done.count > 1 ? ` · คูปอง ${done.count} ใบ` : ""}</div>
+              <div>📅 {thaiDateLabel(done.date)} เวลา {done.time}{done.end_time ? `–${done.end_time}` : ""} น.</div>
             </div>
             <div style={{ ...S.muted, marginTop: 16 }}>กรุณามาก่อนเวลานัด 10–15 นาที หากต้องการเลื่อนหรือยกเลิก กรุณาทัก LINE <LineLink>{LINE_ID}</LineLink></div>
           </div>
@@ -257,7 +260,7 @@ export default function PublicBookingPage() {
                     value={serviceQuery} onChange={(e) => setServiceQuery(e.target.value)} />
                 )}
                 {(() => {
-                  const choose = (id) => { setPromoId(id); setPickService(false); setServiceQuery(""); };
+                  const choose = (id) => { setPromoId(id); setCouponCount(1); setPickService(false); setServiceQuery(""); };
                   const option = (sv) => (
                     <button key={sv.id} type="button" style={S.option(sv.id === promoId)} onClick={() => choose(sv.id)}>
                       <div style={{ fontWeight: 600 }}>{sv.name}</div>
@@ -283,6 +286,23 @@ export default function PublicBookingPage() {
                   });
                 })()}
               </>
+            )}
+            {service && !pickService && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 14, marginBottom: 6 }}>ใช้คูปองกี่ใบ</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {COUPON_COUNTS.map((n) => (
+                    <button key={n} type="button" style={{ ...S.chip(n === couponCount, false), flex: 1, textAlign: "center" }}
+                      onClick={() => setCouponCount(n)}>
+                      <div style={{ fontWeight: 700 }}>{n} ใบ</div>
+                      <div style={{ fontSize: 12, opacity: 0.85 }}>{couponMinutes(service, n)} นาที</div>
+                    </button>
+                  ))}
+                </div>
+                <div style={{ ...S.muted, marginTop: 8, lineHeight: 1.6 }}>
+                  ระบบจะจองเวลาให้ตามจำนวนใบ · ใช้มากกว่า {MAX_COUPONS} ใบ กรุณาทัก LINE <LineLink>{LINE_ID}</LineLink> แอดมินจะจองให้
+                </div>
+              </div>
             )}
             {services && (pickService || !service) && (
               <div style={{ ...S.hint, marginTop: 4 }}>💬 หาโปรที่ต้องการไม่เจอ? ทักแอดมินทาง LINE <LineLink>{LINE_ID}</LineLink> แอดมินจะช่วยจองให้</div>
@@ -334,11 +354,11 @@ export default function PublicBookingPage() {
               <button type="button" style={{ ...S.chip(customerType === "new", false), flex: 1 }} onClick={() => setCustomerType("new")}>ครั้งแรก</button>
               <button type="button" style={{ ...S.chip(customerType === "old", false), flex: 1 }} onClick={() => setCustomerType("old")}>เคยมาแล้ว</button>
             </div>
-            <textarea style={{ ...S.input, minHeight: 60, resize: "vertical" }} placeholder="หมายเหตุ (ถ้ามี) เช่น ใช้คูปอง 2 ใบ: วิตามินผิว 1 ใบ + ปากกา 1 ใบ" value={note} maxLength={300}
+            <textarea style={{ ...S.input, minHeight: 60, resize: "vertical" }} placeholder="หมายเหตุ (ถ้ามี) เช่น ชื่อคูปองที่จะใช้" value={note} maxLength={300}
               onChange={(e) => setNote(e.target.value)} />
-            {/* เจ้าของสั่ง 8 พ.ย. 2569 — ระบบจองเวลาให้ 1 บริการ หน้าร้านอ่านหมายเหตุแล้วจัดเวลาเพิ่มเอง */}
+            {/* เจ้าของสั่ง 14 พ.ย. 2569 — จำนวนใบเลือกด้านบนแล้ว (ล็อกเวลาตามจริง); หัตถการอื่นในหมายเหตุไม่ได้จองเวลาไว้ ทำให้คิวหมอล้น */}
             <div style={{ color: "var(--amber)", fontSize: 12.5, lineHeight: 1.6, marginTop: 6 }}>
-              หมายเหตุ (กรณีใช้คูปองมากกว่า 1 ใบ ให้ระบุรายละเอียดโปรแกรมและจำนวนคูปองที่ต้องการใช้บริการ หากไม่ระบุ จะสามารถทำได้แค่ 1 ใบเท่านั้น)
+              หมายเหตุใช้แจ้งรายละเอียดเท่านั้น หัตถการอื่นที่เขียนในหมายเหตุ ระบบไม่ได้จองเวลาไว้ให้ กรุณาจองแยกอีกคิว หรือทัก LINE {LINE_ID}
             </div>
             {/* กับดักบอท: คนจริงมองไม่เห็นและไม่กรอก */}
             <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" value={website}
@@ -350,8 +370,8 @@ export default function PublicBookingPage() {
           <div style={S.card}>
             <div style={{ fontSize: 14, lineHeight: 1.8, marginBottom: 12 }}>
               <div>📍 {branch.name}</div>
-              <div>💆 {service.name}</div>
-              <div>📅 {thaiDateLabel(date)} เวลา {slot.time} น.</div>
+              <div>💆 {service.name}{couponCount > 1 ? ` · คูปอง ${couponCount} ใบ` : ""}</div>
+              <div>📅 {thaiDateLabel(date)} เวลา {slot.time} น. (ประมาณ {couponMinutes(service, couponCount)} นาที)</div>
             </div>
             {submitError && <div style={S.error}>{submitError}</div>}
             <button type="button" style={S.button(!formOk || submitting)} disabled={!formOk || submitting} onClick={submit}>

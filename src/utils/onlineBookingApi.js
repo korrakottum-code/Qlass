@@ -32,8 +32,9 @@ export async function fetchPublicServices(branchId) {
   return (await callPublic({ action: "catalog", branchId })).services || [];
 }
 
-export async function fetchPublicSlots(branchId, promoId, date) {
-  return (await callPublic({ action: "slots", branchId, promoId, date })).slots || [];
+// count = จำนวนคูปอง 1–3 ใบ (เซิร์ฟเวอร์ล็อกเวลา = เวลาหัตถการ × จำนวนใบ)
+export async function fetchPublicSlots(branchId, promoId, date, count) {
+  return (await callPublic({ action: "slots", branchId, promoId, date, count })).slots || [];
 }
 
 export function bookPublic(booking) {
