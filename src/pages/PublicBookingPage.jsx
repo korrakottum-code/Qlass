@@ -7,7 +7,7 @@ import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobil
 
 const ERROR_TEXT = {
   SLOT_UNAVAILABLE: "เวลานี้เพิ่งถูกจองไป กรุณาเลือกเวลาอื่น",
-  TOO_MANY_BOOKINGS: "เบอร์นี้มีคิวจองออนไลน์ค้างอยู่ 2 คิวแล้ว หากต้องการจองเพิ่มหรือเปลี่ยนเวลา กรุณาทัก LINE @classclinic",
+  TOO_MANY_BOOKINGS: "คุณลูกค้ามีคิวจองออนไลน์ค้างอยู่ 2 คิวแล้ว หากต้องการจองเพิ่มหรือเปลี่ยนเวลา กรุณาทัก LINE @classclinic",
   OUTSIDE_BOOKING_WINDOW: "ต้องจองก่อนเวลานัดอย่างน้อย 2 ชั่วโมง และล่วงหน้าได้ไม่เกิน 14 วัน",
   BRANCH_NOT_ACCEPTING: "สาขานี้ปิดรับจองออนไลน์ชั่วคราว กรุณาทัก LINE @classclinic",
   INVALID_CUSTOMER: "กรุณาตรวจชื่อและเบอร์มือถืออีกครั้ง",
@@ -16,11 +16,12 @@ const ERROR_TEXT = {
   RATE_LIMITED: "ทำรายการถี่เกินไป กรุณารอสักครู่แล้วลองใหม่",
   INVALID_COUNT: `จองออนไลน์ใช้คูปองได้ครั้งละ 1–${MAX_COUPONS} ใบ หากใช้มากกว่านี้ กรุณาทัก LINE @classclinic`,
 };
+// ห้ามบอกลูกค้าว่าตรวจจากเบอร์ (เจ้าของสั่ง 14 พ.ย. 2569) — ลูกค้าจะเปลี่ยนเบอร์มาจองหลบกติกา
 function errorText(code, conflict) {
   if (code === "CUSTOMER_TIME_CONFLICT") {
     const what = conflict?.service ? `คิว ${conflict.service}` : "คิวอื่น";
     const when = conflict?.time ? ` เวลา ${conflict.time}${conflict.end_time ? `–${conflict.end_time}` : ""} น.` : "";
-    return `เบอร์นี้มี${what}${when} ในวันเดียวกันอยู่แล้ว เวลาทับกัน กรุณาเลือกเวลาอื่นที่ไม่ทับคิวเดิม`;
+    return `คุณลูกค้ามี${what}${when} ในวันเดียวกันอยู่แล้ว เวลาทับกัน กรุณาเลือกเวลาอื่นที่ไม่ทับคิวเดิม`;
   }
   return ERROR_TEXT[code] || "ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง";
 }

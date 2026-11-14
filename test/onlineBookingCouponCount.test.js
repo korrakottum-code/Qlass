@@ -118,3 +118,9 @@ test("จองไม่ผ่านเพราะเวลา: เหตุผ
   assert.match(page, /\{submitError && !slot && <div style=\{S\.error\}>\{submitError\}<\/div>\}/);
   assert.match(page, /setStartTime\(s\.start_time\); setSubmitError\(""\);/);
 });
+
+test("ข้อความถึงลูกค้าไม่บอกว่าตรวจจากเบอร์ (กันเปลี่ยนเบอร์จองหลบ)", () => {
+  const messages = page.slice(page.indexOf("const ERROR_TEXT"), page.indexOf("// LINE OA"));
+  assert.ok(!messages.includes("เบอร์นี้"));
+  assert.ok(messages.includes("คุณลูกค้ามี"));
+});
