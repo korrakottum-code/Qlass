@@ -5,19 +5,20 @@ import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobil
 // หน้าลูกค้าจองคิวเอง (/#book หรือ /#book/<branchId>) — ไม่ต้องล็อกอิน เปิดจากลิงก์ในไลน์/เพจ ใช้บนมือถือเป็นหลัก
 // เปิดเฉพาะสาขา/บริการที่ตั้งไว้ในเมนู "จองออนไลน์" กติกาเตียงและเวลาอยู่ฝั่งเซิร์ฟเวอร์ (online_booking_*_v1) ทั้งหมด
 
+// ข้อความถึงลูกค้าใช้น้ำเสียงสุภาพ ลงท้าย ค่ะ/นะคะ ทั้งหน้า (เจ้าของสั่ง 15 พ.ย. 2569)
 const ERROR_TEXT = {
-  SLOT_UNAVAILABLE: "เวลานี้เพิ่งถูกจองไป กรุณาเลือกเวลาอื่น",
-  TOO_MANY_BOOKINGS: "คุณลูกค้ามีคิวจองออนไลน์ค้างอยู่ 2 คิวแล้ว หากต้องการจองเพิ่มหรือเปลี่ยนเวลา กรุณาทัก LINE @classclinic",
-  OUTSIDE_BOOKING_WINDOW: "ต้องจองก่อนเวลานัดอย่างน้อย 2 ชั่วโมง และล่วงหน้าได้ไม่เกิน 14 วัน",
-  BRANCH_NOT_ACCEPTING: "สาขานี้ปิดรับจองออนไลน์ชั่วคราว กรุณาทัก LINE @classclinic",
-  INVALID_CUSTOMER: "กรุณาตรวจชื่อและเบอร์มือถืออีกครั้ง",
-  INVALID_SERVICE: "บริการนี้ปิดรับจองออนไลน์แล้ว กรุณาเลือกบริการอื่น",
-  INVALID_BRANCH: "สาขานี้ปิดรับจองออนไลน์แล้ว",
-  RATE_LIMITED: "ทำรายการถี่เกินไป กรุณารอสักครู่แล้วลองใหม่",
-  INVALID_COUNT: `จองออนไลน์ใช้คูปองได้ครั้งละ 1–${MAX_COUPONS} ใบ หากใช้มากกว่านี้ กรุณาทัก LINE @classclinic`,
+  SLOT_UNAVAILABLE: "ขออภัยค่ะ เวลานี้เพิ่งมีผู้จองไป รบกวนเลือกเวลาอื่นนะคะ",
+  TOO_MANY_BOOKINGS: "คุณลูกค้ามีคิวจองออนไลน์ค้างอยู่ 2 คิวแล้วค่ะ หากต้องการจองเพิ่มหรือเปลี่ยนเวลา รบกวนทัก LINE @classclinic นะคะ",
+  OUTSIDE_BOOKING_WINDOW: "ขออภัยค่ะ จองออนไลน์ได้ก่อนเวลานัดอย่างน้อย 2 ชั่วโมง และล่วงหน้าได้ไม่เกิน 14 วันค่ะ",
+  BRANCH_NOT_ACCEPTING: "ขออภัยค่ะ สาขานี้ปิดรับจองออนไลน์ชั่วคราว รบกวนทัก LINE @classclinic นะคะ",
+  INVALID_CUSTOMER: "รบกวนตรวจสอบชื่อและเบอร์มือถืออีกครั้งนะคะ",
+  INVALID_SERVICE: "ขออภัยค่ะ บริการนี้ปิดรับจองออนไลน์แล้ว รบกวนเลือกบริการอื่นนะคะ",
+  INVALID_BRANCH: "ขออภัยค่ะ สาขานี้ปิดรับจองออนไลน์แล้วค่ะ",
+  RATE_LIMITED: "ทำรายการถี่เกินไปค่ะ รบกวนรอสักครู่แล้วลองใหม่อีกครั้งนะคะ",
+  INVALID_COUNT: `จองออนไลน์ใช้คูปองได้ครั้งละ 1–${MAX_COUPONS} ใบค่ะ หากต้องการใช้มากกว่านี้ รบกวนทัก LINE @classclinic นะคะ`,
   // เพดานใหม่ (20261115130000): ค้างได้ไม่เกิน 2 วัน วันละไม่เกิน 3 คิว
-  TOO_MANY_DAYS: "คุณลูกค้ามีคิวจองออนไลน์ล่วงหน้าครบ 2 วันแล้ว จองเพิ่มได้เฉพาะวันที่มีคิวอยู่แล้ว หากต้องการจองวันอื่นหรือเปลี่ยนเวลา กรุณาทัก LINE @classclinic",
-  TOO_MANY_SAME_DAY: "คุณลูกค้ามีคิวจองออนไลน์ในวันนี้ครบ 3 คิวแล้ว หากต้องการจองเพิ่ม กรุณาทัก LINE @classclinic",
+  TOO_MANY_DAYS: "คุณลูกค้ามีคิวจองออนไลน์ล่วงหน้าครบ 2 วันแล้วค่ะ จองเพิ่มได้เฉพาะวันที่มีคิวอยู่แล้ว หากต้องการจองวันอื่นหรือเปลี่ยนเวลา รบกวนทัก LINE @classclinic นะคะ",
+  TOO_MANY_SAME_DAY: "คุณลูกค้ามีคิวจองออนไลน์ในวันนั้นครบ 3 คิวแล้วค่ะ หากต้องการจองเพิ่ม รบกวนทัก LINE @classclinic นะคะ",
 };
 // ห้ามบอกลูกค้าว่าตรวจจากเบอร์ (เจ้าของสั่ง 14 พ.ย. 2569) — ลูกค้าจะเปลี่ยนเบอร์มาจองหลบกติกา
 // minutes = ความยาวคิวที่กำลังจอง (ใช้คำนวณ "เวลาเริ่มไม่เกิน" ตอนผิดลำดับหัตถการ)
@@ -30,22 +31,22 @@ function errorText(code, conflict, minutes, dayTimes) {
     if (conflict?.need === "start_from") {
       const earliest = conflict?.end_time ? ceilToSlot(conflict.end_time) : "";
       const noRoom = earliest && times.length > 0 && !times.some((t) => t >= earliest);
-      const from = noRoom ? "วันนั้นไม่มีเวลาหลังคิวนั้นแล้ว กรุณาเลือกวันอื่น"
-        : earliest ? `กรุณาเลือกเวลาตั้งแต่ ${earliest} น. เป็นต้นไป` : "กรุณาเลือกเวลาหลังคิวนั้น";
-      return `หัตถการฉีดต้องทำหลัง Pico/Hifu/Ultraformer คุณลูกค้ามี${what}${when} ในวันเดียวกันอยู่แล้ว ${from} หรือทัก LINE @classclinic`;
+      const from = noRoom ? "วันนั้นไม่มีเวลาหลังคิวนั้นแล้ว รบกวนเลือกวันอื่นนะคะ"
+        : earliest ? `รบกวนเลือกเวลาตั้งแต่ ${earliest} น. เป็นต้นไปนะคะ` : "รบกวนเลือกเวลาหลังคิวนั้นนะคะ";
+      return `หัตถการฉีดต้องทำหลัง Pico/Hifu/Ultraformer ค่ะ คุณลูกค้ามี${what}${when} ในวันเดียวกันอยู่แล้ว ${from} หรือทัก LINE @classclinic ให้แอดมินช่วยจัดเวลาได้ค่ะ`;
     }
     const latest = conflict?.time ? floorToSlot(addMinutes(conflict.time, -(Number(minutes) || 0))) : "";
     const noRoom = latest && times.length > 0 && !times.some((t) => t <= latest);
-    const by = noRoom ? "วันนั้นไม่มีเวลาพอให้ทำก่อนคิวนั้น กรุณาเลือกวันอื่น"
-      : latest ? `กรุณาเลือกเวลาเริ่มไม่เกิน ${latest} น.` : "กรุณาเลือกเวลาก่อนคิวนั้น";
-    return `Pico/Hifu/Ultraformer ต้องทำก่อนหัตถการฉีด คุณลูกค้ามี${what}${when} ในวันเดียวกันอยู่แล้ว ${by} หรือทัก LINE @classclinic`;
+    const by = noRoom ? "วันนั้นมีเวลาไม่พอให้ทำก่อนคิวนั้น รบกวนเลือกวันอื่นนะคะ"
+      : latest ? `รบกวนเลือกเวลาเริ่มไม่เกิน ${latest} น. นะคะ` : "รบกวนเลือกเวลาก่อนคิวนั้นนะคะ";
+    return `Pico/Hifu/Ultraformer ต้องทำก่อนหัตถการฉีดค่ะ คุณลูกค้ามี${what}${when} ในวันเดียวกันอยู่แล้ว ${by} หรือทัก LINE @classclinic ให้แอดมินช่วยจัดเวลาได้ค่ะ`;
   }
   if (code === "CUSTOMER_TIME_CONFLICT") {
     const what = conflict?.service ? `คิว ${conflict.service}` : "คิวอื่น";
     const when = conflict?.time ? ` เวลา ${conflict.time}${conflict.end_time ? `–${conflict.end_time}` : ""} น.` : "";
-    return `คุณลูกค้ามี${what}${when} ในวันเดียวกันอยู่แล้ว เวลาทับกัน กรุณาเลือกเวลาอื่นที่ไม่ทับคิวเดิม`;
+    return `คุณลูกค้ามี${what}${when} ในวันเดียวกันอยู่แล้วค่ะ เวลาทับกัน รบกวนเลือกเวลาอื่นที่ไม่ทับคิวเดิมนะคะ`;
   }
-  return ERROR_TEXT[code] || "ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง";
+  return ERROR_TEXT[code] || "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งนะคะ";
 }
 
 // LINE OA ของคลินิก — ลิงก์เพิ่มเพื่อนแล้วเปิดแชทได้เลย
@@ -213,15 +214,16 @@ export default function PublicBookingPage() {
         <div style={S.wrap}>
           <div style={{ ...S.card, textAlign: "center", padding: 24 }}>
             <div style={{ fontSize: 44 }}>✅</div>
-            <div style={S.h1}>จองคิวสำเร็จ</div>
-            <div style={{ ...S.hint, fontWeight: 700, margin: "10px 0 14px" }}>📸 กรุณาแคปหน้าจอนี้เก็บไว้ แล้วแสดงให้พนักงานดูเมื่อมาถึงคลินิก</div>
+            <div style={S.h1}>จองคิวสำเร็จแล้วค่ะ</div>
+            <div style={{ ...S.hint, fontWeight: 700, margin: "10px 0 14px" }}>📸 รบกวนแคปหน้าจอนี้เก็บไว้ และแสดงให้พนักงานดูเมื่อมาถึงคลินิกนะคะ</div>
             <div style={{ ...S.sub, marginBottom: 16 }}>เลขที่การจอง <b style={{ fontFamily: "var(--mono)", color: "var(--text)" }}>{done.booking_ref}</b></div>
             <div style={{ textAlign: "left", fontSize: 15, lineHeight: 1.9 }}>
               <div>📍 {done.branch}</div>
               <div>💆 {done.service}{done.count > 1 ? ` · คูปอง ${done.count} ใบ` : ""}</div>
               <div>📅 {thaiDateLabel(done.date)} เวลา {done.time}{done.end_time ? `–${done.end_time}` : ""} น.</div>
             </div>
-            <div style={{ ...S.muted, marginTop: 16 }}>กรุณามาก่อนเวลานัด 10–15 นาที หากต้องการเลื่อนหรือยกเลิก กรุณาทัก LINE <LineLink>{LINE_ID}</LineLink></div>
+            <div style={{ ...S.muted, marginTop: 16 }}>รบกวนมาก่อนเวลานัด 10–15 นาทีนะคะ หากต้องการเลื่อนหรือยกเลิก ทัก LINE <LineLink>{LINE_ID}</LineLink> ได้เลยค่ะ</div>
+            <div style={{ ...S.sub, marginTop: 10, marginBottom: 0 }}>ขอบคุณที่ไว้วางใจ Class Clinic ค่ะ 🙏</div>
           </div>
         </div>
       </div>
@@ -232,12 +234,21 @@ export default function PublicBookingPage() {
     <div style={S.page}>
       <div style={S.wrap}>
         <div style={S.h1}>จองคิวออนไลน์</div>
-        <div style={S.sub}>Class Clinic — เลือกสาขา บริการ และเวลาที่สะดวก</div>
+        <div style={S.sub}>Class Clinic — เลือกสาขา บริการ และเวลาที่สะดวกได้เลยค่ะ</div>
+        {/* ข้อแนะนำก่อนจอง (เจ้าของสั่ง 15 พ.ย. 2569) — เฉพาะที่ลูกค้าต้องรู้ สั้นๆ; ไม่บอกเพดานคิว/การตรวจจากเบอร์ */}
+        <div style={{ ...S.hint, marginBottom: 12, fontSize: 13.5 }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>📌 ข้อแนะนำก่อนจองคิวค่ะ</div>
+          <div>• หากต้องการทำหลายหัตถการ รบกวนจองแยกคิวละ 1 หัตถการนะคะ หัตถการที่เขียนไว้ในหมายเหตุ ระบบจะยังไม่ได้จองเวลาไว้ให้ค่ะ</div>
+          <div>• หากทำ Pico / Hifu / Ultraformer คู่กับหัตถการฉีด รบกวนเลือกเวลา Pico / Hifu / Ultraformer ไว้ก่อนเวลาฉีดนะคะ</div>
+          <div>• ใช้คูปองได้คิวละ 1–{MAX_COUPONS} ใบ หากต้องการใช้มากกว่านี้ ทักแอดมินทาง LINE <LineLink>{LINE_ID}</LineLink> ได้เลยค่ะ</div>
+          <div>• จองล่วงหน้าได้ตั้งแต่ 2 ชั่วโมงถึง 14 วันค่ะ หากต้องการเลื่อนหรือยกเลิก แจ้งทาง LINE <LineLink>{LINE_ID}</LineLink> ได้เลยค่ะ</div>
+          <div style={{ marginTop: 4 }}>ขอบคุณที่ไว้วางใจ Class Clinic ค่ะ 🙏</div>
+        </div>
         {loadError && <div style={S.error}>{loadError}</div>}
 
         {branches === null && !loadError && <div style={S.card}><span style={S.muted}>กำลังโหลด…</span></div>}
         {branches && branches.length === 0 && (
-          <div style={S.card}>ขณะนี้ยังไม่เปิดรับจองออนไลน์ กรุณาทัก LINE <LineLink>{LINE_ID}</LineLink> เพื่อจองคิว</div>
+          <div style={S.card}>ขณะนี้ยังไม่เปิดรับจองออนไลน์ค่ะ รบกวนทัก LINE <LineLink>{LINE_ID}</LineLink> เพื่อจองคิวนะคะ</div>
         )}
 
         {branches && branches.length > 0 && (
@@ -262,7 +273,7 @@ export default function PublicBookingPage() {
                       onClick={() => { setBranchId(b.id); setPickBranch(false); setBranchQuery(""); }}>{b.name}</button>
                   ))}
                 </div>
-                {!branches.some((b) => matchesSearch(branchQuery, b.name)) && <span style={S.muted}>ไม่พบสาขาที่ค้นหา</span>}
+                {!branches.some((b) => matchesSearch(branchQuery, b.name)) && <span style={S.muted}>ไม่พบสาขาที่ค้นหาค่ะ</span>}
               </>
             )}
           </div>
@@ -272,7 +283,7 @@ export default function PublicBookingPage() {
           <div style={S.card}>
             <div style={S.label}>2. บริการ</div>
             {services === null && <span style={S.muted}>กำลังโหลด…</span>}
-            {services && services.length === 0 && <span style={S.muted}>สาขานี้ยังไม่มีบริการที่จองออนไลน์ได้</span>}
+            {services && services.length === 0 && <span style={S.muted}>ขออภัยค่ะ สาขานี้ยังไม่มีบริการที่จองออนไลน์ได้</span>}
             {service && !pickService ? (
               <div style={S.chosen}>
                 <div style={{ flex: 1 }}>
@@ -298,7 +309,7 @@ export default function PublicBookingPage() {
                   // ค้นหาอยู่ หรือโปรไม่เยอะ = แสดงเรียงเลย; โปรเยอะ = จัดกลุ่มตามบริการ กดเปิดทีละกลุ่ม
                   if (serviceQuery.trim() || services.length <= 8) {
                     const found = services.filter((sv) => matchesSearch(serviceQuery, sv.name, sv.service));
-                    return found.length ? found.map(option) : <div style={{ ...S.muted, marginBottom: 8 }}>ไม่พบโปรที่ค้นหา</div>;
+                    return found.length ? found.map(option) : <div style={{ ...S.muted, marginBottom: 8 }}>ไม่พบโปรที่ค้นหาค่ะ</div>;
                   }
                   return groupServices(services).map((g) => {
                     const open = openGroup === g.service;
@@ -317,7 +328,7 @@ export default function PublicBookingPage() {
             )}
             {service && !pickService && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 14, marginBottom: 6 }}>ใช้คูปองกี่ใบ</div>
+                <div style={{ fontSize: 14, marginBottom: 6 }}>ใช้คูปองกี่ใบคะ</div>
                 <div style={{ display: "flex", gap: 8 }}>
                   {COUPON_COUNTS.map((n) => (
                     <button key={n} type="button" style={{ ...S.chip(n === couponCount, false), flex: 1, textAlign: "center" }}
@@ -328,12 +339,12 @@ export default function PublicBookingPage() {
                   ))}
                 </div>
                 <div style={{ ...S.muted, marginTop: 8, lineHeight: 1.6 }}>
-                  ระบบจะจองเวลาให้ตามจำนวนใบ · ใช้มากกว่า {MAX_COUPONS} ใบ กรุณาทัก LINE <LineLink>{LINE_ID}</LineLink> แอดมินจะจองให้
+                  ระบบจะจองเวลาให้ตามจำนวนใบค่ะ · หากใช้มากกว่า {MAX_COUPONS} ใบ ทัก LINE <LineLink>{LINE_ID}</LineLink> แอดมินยินดีช่วยจองให้ค่ะ
                 </div>
               </div>
             )}
             {services && (pickService || !service) && (
-              <div style={{ ...S.hint, marginTop: 4 }}>💬 หาโปรที่ต้องการไม่เจอ? ทักแอดมินทาง LINE <LineLink>{LINE_ID}</LineLink> แอดมินจะช่วยจองให้</div>
+              <div style={{ ...S.hint, marginTop: 4 }}>💬 หาโปรที่ต้องการไม่เจอใช่ไหมคะ ทักแอดมินทาง LINE <LineLink>{LINE_ID}</LineLink> แอดมินยินดีช่วยจองให้ค่ะ</div>
             )}
           </div>
         )}
@@ -345,7 +356,7 @@ export default function PublicBookingPage() {
             {submitError && !slot && <div style={S.error}>{submitError}</div>}
             {procedureOrderKind(service.service) && (
               <div style={{ ...S.hint, marginBottom: 8 }}>
-                💡 ถ้าจะทำ Pico/Hifu/Ultraformer และหัตถการฉีด (Botox/Filler/Meso) ในวันเดียวกัน ต้องจองเวลา Pico/Hifu/Ultraformer ให้อยู่ก่อนเวลาฉีด
+                💡 หากทำ Pico/Hifu/Ultraformer คู่กับหัตถการฉีด (Botox/Filler/Meso) ในวันเดียวกัน รบกวนเลือกเวลา Pico/Hifu/Ultraformer ไว้ก่อนเวลาฉีดนะคะ
               </div>
             )}
             <div style={S.chipRow}>
@@ -357,7 +368,7 @@ export default function PublicBookingPage() {
             </div>
             <div style={{ marginTop: 12 }}>
               {slots === null && <span style={S.muted}>กำลังดูเวลาว่าง…</span>}
-              {slots && slots.filter((s) => s.available).length === 0 && <span style={S.muted}>วันนี้ไม่มีเวลาว่าง ลองเลือกวันอื่น</span>}
+              {slots && slots.filter((s) => s.available).length === 0 && <span style={S.muted}>ขออภัยค่ะ วันที่เลือกเวลาเต็มแล้ว รบกวนเลือกวันอื่นนะคะ</span>}
               {slots && slots.some((s) => s.available) && (
                 <div style={S.grid}>
                   {slots.map((s) => (
@@ -374,7 +385,7 @@ export default function PublicBookingPage() {
                 </div>
               )}
               {slots && slots.some((s) => s.available) && !slot && (
-                <div style={{ ...S.muted, marginTop: 10 }}>เวลาบนปุ่มคือเวลาเริ่ม · ช่องที่ขีดฆ่า = ไม่ว่างพอสำหรับ {couponMinutes(service, couponCount)} นาที</div>
+                <div style={{ ...S.muted, marginTop: 10 }}>เวลาบนปุ่มคือเวลาเริ่ม · ช่องที่ขีดฆ่า = เวลาว่างไม่พอสำหรับ {couponMinutes(service, couponCount)} นาทีค่ะ</div>
               )}
             </div>
           </div>
@@ -391,8 +402,8 @@ export default function PublicBookingPage() {
               <input style={S.input} placeholder="เบอร์มือถือ เช่น 0812345678" value={phone} inputMode="tel" autoComplete="tel"
                 maxLength={15} onChange={(e) => setPhone(e.target.value)} />
             </div>
-            {phone && !phoneOk && <div style={{ color: "var(--red)", fontSize: 13, marginBottom: 6 }}>กรุณากรอกเบอร์มือถือ 10 หลัก</div>}
-            <div style={{ fontSize: 14, margin: "10px 0 6px" }}>เคยใช้บริการ Class Clinic มาก่อนไหม</div>
+            {phone && !phoneOk && <div style={{ color: "var(--red)", fontSize: 13, marginBottom: 6 }}>รบกวนกรอกเบอร์มือถือ 10 หลักนะคะ</div>}
+            <div style={{ fontSize: 14, margin: "10px 0 6px" }}>เคยใช้บริการ Class Clinic มาก่อนไหมคะ</div>
             <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
               <button type="button" style={{ ...S.chip(customerType === "new", false), flex: 1 }} onClick={() => setCustomerType("new")}>ครั้งแรก</button>
               <button type="button" style={{ ...S.chip(customerType === "old", false), flex: 1 }} onClick={() => setCustomerType("old")}>เคยมาแล้ว</button>
@@ -401,7 +412,7 @@ export default function PublicBookingPage() {
               onChange={(e) => setNote(e.target.value)} />
             {/* เจ้าของสั่ง 14 พ.ย. 2569 — จำนวนใบเลือกด้านบนแล้ว (ล็อกเวลาตามจริง); หัตถการอื่นในหมายเหตุไม่ได้จองเวลาไว้ ทำให้คิวหมอล้น */}
             <div style={{ color: "var(--amber)", fontSize: 12.5, lineHeight: 1.6, marginTop: 6 }}>
-              หมายเหตุใช้แจ้งรายละเอียดเท่านั้น หัตถการอื่นที่เขียนในหมายเหตุ ระบบไม่ได้จองเวลาไว้ให้ กรุณาจองแยกอีกคิว หรือทัก LINE {LINE_ID}
+              หมายเหตุใช้แจ้งรายละเอียดเท่านั้นนะคะ หัตถการอื่นที่เขียนในหมายเหตุ ระบบไม่ได้จองเวลาไว้ให้ รบกวนจองแยกอีกคิว หรือทัก LINE {LINE_ID} ค่ะ
             </div>
             {/* กับดักบอท: คนจริงมองไม่เห็นและไม่กรอก */}
             <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" value={website}
