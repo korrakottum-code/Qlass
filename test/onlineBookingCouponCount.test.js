@@ -124,3 +124,19 @@ test("ข้อความถึงลูกค้าไม่บอกว่�
   assert.ok(!messages.includes("เบอร์นี้"));
   assert.ok(messages.includes("คุณลูกค้ามี"));
 });
+
+test("เวลาจบ: บวกนาทีข้ามชั่วโมงถูก, ค่าเสียไม่พัง", async () => {
+  const { addMinutes } = await import("../src/utils/publicBooking.js");
+  assert.equal(addMinutes("15:00", 60), "16:00");
+  assert.equal(addMinutes("14:30", 90), "16:00");
+  assert.equal(addMinutes("19:30", 45), "20:15");
+  assert.equal(addMinutes("09:05", 0), "09:05");
+  assert.equal(addMinutes("", 30), "");
+  assert.equal(addMinutes(undefined, 30), "");
+});
+
+test("หน้าจอง: แสดงช่วงเวลาที่จอง (เริ่ม–จบ) ใต้ช่องเวลาและในสรุป", () => {
+  assert.match(page, /จองเวลา <b>\{slot\.time\}–\{addMinutes\(slot\.time, couponMinutes\(service, couponCount\)\)\} น\.<\/b>/);
+  assert.match(page, /เวลา \{slot\.time\}–\{addMinutes\(slot\.time, couponMinutes\(service, couponCount\)\)\} น\./);
+  assert.ok(page.includes("เวลาบนปุ่มคือเวลาเริ่ม"));
+});

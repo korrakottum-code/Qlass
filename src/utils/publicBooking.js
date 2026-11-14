@@ -7,6 +7,13 @@ export const COUPON_COUNTS = Array.from({ length: MAX_COUPONS }, (_, i) => i + 1
 export function couponMinutes(service, count) {
   return (Number(service?.duration_minutes) || 0) * count;
 }
+// "15:00" + 60 → "16:00" — เวลาจบที่ระบบจองไว้ (ปุ่มเวลาบอกแค่เวลาเริ่ม ลูกค้างงว่าทำไม 15:00 ได้แต่ 15:30 ไม่ได้)
+export function addMinutes(hhmm, minutes) {
+  const [h, m] = String(hhmm || "").split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return "";
+  const total = h * 60 + m + (Number(minutes) || 0);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
 const THAI_DAYS = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
 const THAI_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 
