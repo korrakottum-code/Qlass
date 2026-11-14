@@ -77,10 +77,19 @@ export async function bookPublic(b) {
   const maxDay = new Date(Date.parse(`${today}T00:00:00Z`) + MAX_DAYS_AHEAD * 86400_000).toISOString().slice(0, 10);
   if (startMs(date, block) < Date.now() + 2 * 3600_000 || date > maxDay) fail("OUTSIDE_BOOKING_WINDOW");
   if (booked.filter((q) => q.phone === b.phone && q.date >= today).length >= 2) fail("TOO_MANY_BOOKINGS");
+  const clash = [...DB.queues, ...booked].find((q) => q.phone === b.phone && q.date === date && q.timeBlock != null
+    && !["cancelled", "no_show", "rescheduled"].includes(q.status)
+    && block < q.timeBlock + (q.durationBlocks || 1) && q.timeBlock < block + dur);
+  if (clash) {
+    const hm = (x) => `${String(Math.floor(x / 12)).padStart(2, "0")}:${String((x % 12) * 5).padStart(2, "0")}`;
+    const e = new Error("CUSTOMER_TIME_CONFLICT"); e.code = "CUSTOMER_TIME_CONFLICT";
+    e.conflict = { service: clash.service || "", time: hm(clash.timeBlock), end_time: hm(clash.timeBlock + (clash.durationBlocks || 1)) };
+    throw e;
+  }
   const room = rooms.find((r) => roomFree(r, date, block, dur));
   if (!room) fail("SLOT_UNAVAILABLE");
   const ref = Math.random().toString(16).slice(2, 10).toUpperCase();
-  booked.push({ roomId: room.id, date, timeBlock: block, durationBlocks: dur, status: "pending", phone: b.phone });
+  booked.push({ roomId: room.id, date, timeBlock: block, durationBlocks: dur, status: "pending", phone: b.phone, service: proc.name });
   const end = block + dur;
   const endTime = `${String(Math.floor(end / 12)).padStart(2, "0")}:${String((end % 12) * 5).padStart(2, "0")}`;
   return { success: true, booking_ref: ref, date, time: b.startTime.slice(11, 16), end_time: endTime, count, branch: DB.branches.find((x) => x.id === b.branchId).name, service: promo.name };

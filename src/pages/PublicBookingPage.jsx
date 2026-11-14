@@ -16,7 +16,12 @@ const ERROR_TEXT = {
   RATE_LIMITED: "ทำรายการถี่เกินไป กรุณารอสักครู่แล้วลองใหม่",
   INVALID_COUNT: `จองออนไลน์ใช้คูปองได้ครั้งละ 1–${MAX_COUPONS} ใบ หากใช้มากกว่านี้ กรุณาทัก LINE @classclinic`,
 };
-function errorText(code) {
+function errorText(code, conflict) {
+  if (code === "CUSTOMER_TIME_CONFLICT") {
+    const what = conflict?.service ? `คิว ${conflict.service}` : "คิวอื่น";
+    const when = conflict?.time ? ` เวลา ${conflict.time}${conflict.end_time ? `–${conflict.end_time}` : ""} น.` : "";
+    return `เบอร์นี้มี${what}${when} ในวันเดียวกันอยู่แล้ว เวลาทับกัน กรุณาเลือกเวลาอื่นที่ไม่ทับคิวเดิม`;
+  }
   return ERROR_TEXT[code] || "ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง";
 }
 
@@ -172,8 +177,8 @@ export default function PublicBookingPage() {
       const result = await bookPublic({ ...payload, referenceId: refRef.current.reference });
       setDone(result);
     } catch (err) {
-      setSubmitError(errorText(err.code));
-      if (err.code === "SLOT_UNAVAILABLE") { setStartTime(""); loadSlots(); }
+      setSubmitError(errorText(err.code, err.conflict));
+      if (err.code === "SLOT_UNAVAILABLE" || err.code === "CUSTOMER_TIME_CONFLICT") { setStartTime(""); loadSlots(); }
     } finally {
       setSubmitting(false);
     }
@@ -313,6 +318,8 @@ export default function PublicBookingPage() {
         {service && (
           <div style={S.card}>
             <div style={S.label}>3. วันและเวลา</div>
+            {/* จองไม่ผ่านเพราะเวลา (ถูกจองไป/ทับคิวเดิมของลูกค้า) ระบบล้างเวลาที่เลือก → การ์ดยืนยันหาย จึงแสดงเหตุผลตรงนี้แทน */}
+            {submitError && !slot && <div style={S.error}>{submitError}</div>}
             <div style={S.chipRow}>
               {dates.map((d) => (
                 <button key={d} type="button" style={S.chip(d === date, false)} onClick={() => setDate(d)}>
@@ -327,7 +334,7 @@ export default function PublicBookingPage() {
                 <div style={S.grid}>
                   {slots.map((s) => (
                     <button key={s.start_time} type="button" disabled={!s.available}
-                      style={S.chip(s.start_time === startTime, !s.available)} onClick={() => setStartTime(s.start_time)}>
+                      style={S.chip(s.start_time === startTime, !s.available)} onClick={() => { setStartTime(s.start_time); setSubmitError(""); }}>
                       {s.time}
                     </button>
                   ))}

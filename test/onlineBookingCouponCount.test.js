@@ -94,3 +94,27 @@ test("โหมดเดโม: ตัวจำลองใช้เวลาต
   assert.match(mock, /const dur = proc\.blocks \* count;/);
   assert.match(mock, /fail\("INVALID_COUNT"\)/);
 });
+
+test("กันคนเดียวกันจองเวลาทับกันเอง (คนละเตียง) — ตรวจหลังล็อกเบอร์ ก่อนเลือกเตียง", () => {
+  const v2 = body(migration, "online_booking_create_v2");
+  const lockAt = v2.indexOf("'online-booking-phone:' || v_digits");
+  const clashAt = v2.indexOf("'CUSTOMER_TIME_CONFLICT'");
+  const roomAt = v2.indexOf("for v_cand in select");
+  assert.ok(lockAt > 0 && clashAt > lockAt && roomAt > clashAt);
+  assert.match(v2, /where q\.phone = v_digits and q\.date = v_date/);
+  assert.match(v2, /coalesce\(q\.status, 'pending'\) not in \('cancelled', 'no_show', 'rescheduled'\)/);
+  assert.match(v2, /v_block < q\.time_block \+ coalesce\(q\.duration_blocks, qp\.blocks, 1\)\s+and q\.time_block < v_block \+ v_dur/);
+  // ไม่ได้กรองเฉพาะคิวจองออนไลน์ — คิวที่หน้าร้านลงให้ก็นับ
+  const clashQuery = v2.slice(v2.indexOf("into v_clash"), clashAt);
+  assert.ok(!clashQuery.includes("recorded_by"));
+  assert.match(fn, /data\?\.error_code === "CUSTOMER_TIME_CONFLICT"/);
+  assert.match(api, /err\.conflict = conflict;/);
+  assert.match(page, /errorText\(err\.code, err\.conflict\)/);
+  assert.match(page, /err\.code === "CUSTOMER_TIME_CONFLICT"\) \{ setStartTime\(""\); loadSlots\(\); \}/);
+  assert.match(mock, /"CUSTOMER_TIME_CONFLICT"/);
+});
+
+test("จองไม่ผ่านเพราะเวลา: เหตุผลแสดงที่การ์ดวันและเวลา (การ์ดยืนยันหายเมื่อเวลาถูกล้าง)", () => {
+  assert.match(page, /\{submitError && !slot && <div style=\{S\.error\}>\{submitError\}<\/div>\}/);
+  assert.match(page, /setStartTime\(s\.start_time\); setSubmitError\(""\);/);
+});

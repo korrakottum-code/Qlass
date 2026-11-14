@@ -202,7 +202,11 @@ Deno.serve(async (req) => {
           res = respond(data, 201, origin);
         } else {
           detail = { error_code: data?.error_code ?? null };
-          res = respond({ success: false, error_code: String(data?.error_code ?? "INTERNAL_ERROR") }, 409, origin);
+          // เวลาทับกับคิวอื่นของลูกค้าคนเดียวกัน: ส่งชื่อหัตถการ+เวลาของคิวที่ชนไปบอกลูกค้า (ของเบอร์ที่ลูกค้าพิมพ์เอง)
+          const conflict = data?.error_code === "CUSTOMER_TIME_CONFLICT" && data?.conflict && typeof data.conflict === "object"
+            ? { service: String(data.conflict.service ?? ""), time: String(data.conflict.time ?? ""), end_time: String(data.conflict.end_time ?? "") }
+            : undefined;
+          res = respond({ success: false, error_code: String(data?.error_code ?? "INTERNAL_ERROR"), ...(conflict ? { conflict } : {}) }, 409, origin);
         }
       }
     }

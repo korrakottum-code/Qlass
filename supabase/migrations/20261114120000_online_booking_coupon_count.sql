@@ -7,6 +7,8 @@
 -- ปลอดภัยต่อระบบที่ใช้อยู่: เพิ่มฟังก์ชัน v2 ใหม่เท่านั้น ไม่แก้ v1 — หน้าจองเวอร์ชันเก่าที่ค้างในมือถือลูกค้ายังเรียก v1 (1 ใบ) ได้เหมือนเดิม
 -- v2 = v1 ทุกบรรทัด ต่างแค่ ความยาว = เวลาหัตถการ × จำนวนใบ, หมายเหตุขึ้นต้นด้วยจำนวนใบ, hash กันกดซ้ำรวมจำนวนใบ
 -- ราคาในคิว (price) ยังเป็นราคาโปร 1 ใบเหมือนคิวออนไลน์เดิม — ไม่เปลี่ยนตัวเลขรายงานรายได้/คอมมิชชั่น
+-- กันคนเดียวกันจองเวลาทับกันเอง (เช่น Diode 13:00 + Pico 13:00 คนละเตียง): เบอร์นี้มีคิววันเดียวกันที่เวลาทับ
+-- (ทุกคิว ทั้งจองเองและหน้าร้านลง ที่ยังไม่ยกเลิก/ไม่มา/เลื่อน) = ไม่ให้จอง ตอบ CUSTOMER_TIME_CONFLICT พร้อมคิวที่ชน
 --
 -- ย้อนกลับ: drop function online_booking_slots_v2 / online_booking_create_v2 (หน้าจองต้องย้อนก่อน)
 
@@ -79,6 +81,7 @@ declare
   v_queue_id uuid;
   v_request uuid;
   v_upcoming int;
+  v_clash record;
   v_resp jsonb;
 begin
   if v_ref !~ '^[A-Za-z0-9_-]{8,64}$' then raise exception 'INVALID_REFERENCE'; end if;
@@ -123,6 +126,25 @@ begin
      and coalesce(q.status, 'pending') not in ('cancelled', 'no_show', 'rescheduled', 'done');
   if v_upcoming >= c_max_upcoming then
     return jsonb_build_object('success', false, 'error_code', 'TOO_MANY_BOOKINGS');
+  end if;
+
+  -- คนเดียวกันอยู่ 2 เตียงพร้อมกันไม่ได้ (อยู่หลังล็อกเบอร์ = กดจอง 2 หน้าต่างพร้อมกันก็กันได้)
+  select q.time_block as tb, q.time_block + coalesce(q.duration_blocks, qp.blocks, 1) as te, coalesce(qp.name, '') as pname
+    into v_clash
+    from public.queues q
+    left join public.procedures qp on qp.id = q.procedure_id
+   where q.phone = v_digits and q.date = v_date
+     and q.time_block is not null and q.archived_at is null
+     and coalesce(q.status, 'pending') not in ('cancelled', 'no_show', 'rescheduled')
+     and v_block < q.time_block + coalesce(q.duration_blocks, qp.blocks, 1)
+     and q.time_block < v_block + v_dur
+   order by q.time_block
+   limit 1;
+  if found then
+    return jsonb_build_object('success', false, 'error_code', 'CUSTOMER_TIME_CONFLICT',
+      'conflict', jsonb_build_object('service', v_clash.pname,
+        'time', to_char(v_date::timestamp + v_clash.tb * interval '5 minutes', 'HH24:MI'),
+        'end_time', to_char(v_date::timestamp + v_clash.te * interval '5 minutes', 'HH24:MI')));
   end if;
 
   for v_cand in select c.room_id from public.booking_api_candidate_rooms_v1(p_branch_id, v_proc) c

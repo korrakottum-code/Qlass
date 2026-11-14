@@ -12,15 +12,18 @@ async function callPublic(body) {
   const { data, error } = await supabase.functions.invoke("public-booking", { body });
   if (!error) return data;
   let code = null;
+  let conflict = null;
   const res = error?.context;
   if (res && typeof res.json === "function") {
     try {
       const parsed = typeof res.clone === "function" ? await res.clone().json() : await res.json();
       code = parsed?.error_code || parsed?.error || null;
+      conflict = parsed?.conflict || null; // CUSTOMER_TIME_CONFLICT: คิวของลูกค้าเองที่เวลาทับ
     } catch { /* ไม่ใช่ JSON */ }
   }
   const err = new Error(code || "NETWORK_ERROR");
   err.code = code || "NETWORK_ERROR";
+  err.conflict = conflict;
   throw err;
 }
 
