@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { ORDER_FIRST, ORDER_INJECT, procedureOrderKind, addMinutes, floorToSlot } from "../src/utils/publicBooking.js";
+import { ORDER_FIRST, ORDER_INJECT, procedureOrderKind, addMinutes, floorToSlot, ceilToSlot } from "../src/utils/publicBooking.js";
 
 // จองออนไลน์ ขั้น 2 (เจ้าของสั่ง 15 พ.ย. 2569)
 //   ชิ้นที่ 1: Pico/Hifu/Ultraformer ต้องทำก่อนงานฉีด (Botox/Filler/Meso) — คนเดียวกัน = เบอร์+ชื่อเดียวกัน
@@ -111,9 +111,12 @@ test("public-booking: ส่งรายละเอียดคิวที่�
 test("หน้าจอง: ข้อความผิดลำดับบอกเวลาที่เลือกได้, ไม่บอกว่าตรวจจากเบอร์, ล้างเวลาแล้วโชว์ที่การ์ดเวลา", () => {
   assert.match(page, /PROCEDURE_ORDER/);
   assert.match(page, /กรุณาเลือกเวลาเริ่มไม่เกิน \$\{latest\} น\./);
-  assert.match(page, /กรุณาเลือกเวลาตั้งแต่ \$\{conflict\.end_time\} น\. เป็นต้นไป/);
+  assert.match(page, /กรุณาเลือกเวลาตั้งแต่ \$\{earliest\} น\. เป็นต้นไป/);
   assert.match(page, /err\.code === "PROCEDURE_ORDER"\) \{ setStartTime\(""\); loadSlots\(\); \}/);
-  assert.match(page, /errorText\(err\.code, err\.conflict, couponMinutes\(service, couponCount\)\)/);
+  assert.match(page, /errorText\(err\.code, err\.conflict, couponMinutes\(service, couponCount\), \(slots \|\| \[\]\)\.map\(\(s\) => s\.time\)\)/);
+  // เวลาที่ต้องเลือกอยู่นอกเวลาเปิดของวันนั้น → บอกให้เลือกวันอื่น (ไม่บอกเวลาที่ไม่มีปุ่ม)
+  assert.match(page, /วันนั้นไม่มีเวลาพอให้ทำก่อนคิวนั้น กรุณาเลือกวันอื่น/);
+  assert.match(page, /วันนั้นไม่มีเวลาหลังคิวนั้นแล้ว กรุณาเลือกวันอื่น/);
   assert.match(page, /TOO_MANY_DAYS: "คุณลูกค้ามีคิวจองออนไลน์ล่วงหน้าครบ 2 วันแล้ว/);
   assert.match(page, /TOO_MANY_SAME_DAY: "คุณลูกค้ามีคิวจองออนไลน์ในวันนี้ครบ 3 คิวแล้ว/);
   assert.match(page, /procedureOrderKind\(service\.service\) &&/);
@@ -128,6 +131,11 @@ test("หน้าจอง: ข้อความผิดลำดับบอ
   assert.equal(floorToSlot(addMinutes("15:00", -50)), "14:00");
   assert.equal(floorToSlot("13:30"), "13:30");
   assert.equal(floorToSlot(""), "");
+  // ปัดขึ้น: Hifu 18:30–19:20 → ฉีดได้ตั้งแต่ปุ่ม 19:30
+  assert.equal(ceilToSlot("19:20"), "19:30");
+  assert.equal(ceilToSlot("13:30"), "13:30");
+  assert.equal(ceilToSlot("13:31"), "14:00");
+  assert.equal(ceilToSlot(""), "");
   assert.match(page, /floorToSlot\(addMinutes\(conflict\.time/);
 });
 

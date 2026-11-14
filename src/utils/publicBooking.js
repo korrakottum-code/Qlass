@@ -22,6 +22,13 @@ export function floorToSlot(hhmm, step = 30) {
   const total = Math.floor((h * 60 + m) / step) * step;
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
+// ปัดขึ้นให้ตรงปุ่มเวลา — "ตั้งแต่ 19:20" ไม่มีปุ่ม บอกเป็น 19:30
+export function ceilToSlot(hhmm, step = 30) {
+  const [h, m] = String(hhmm || "").split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return "";
+  const total = Math.ceil((h * 60 + m) / step) * step;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
 // ลำดับหัตถการ (เจ้าของสั่ง 15 พ.ย. 2569) — ตรงกับรายชื่อใน online_booking_create_v2 (20261115120000)
 // คนเดียวกันวันเดียวกัน: กลุ่ม "ทำก่อน" ต้องจบก่อนกลุ่ม "ฉีด" เริ่ม
 export const ORDER_FIRST = ["Pico", "Hifu", "Ultraformer", "Go-Hifu"];
