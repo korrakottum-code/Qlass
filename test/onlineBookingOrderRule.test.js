@@ -110,15 +110,15 @@ test("public-booking: ส่งรายละเอียดคิวที่�
 
 test("หน้าจอง: ข้อความผิดลำดับบอกเวลาที่เลือกได้, ไม่บอกว่าตรวจจากเบอร์, ล้างเวลาแล้วโชว์ที่การ์ดเวลา", () => {
   assert.match(page, /PROCEDURE_ORDER/);
-  assert.match(page, /กรุณาเลือกเวลาเริ่มไม่เกิน \$\{latest\} น\./);
-  assert.match(page, /กรุณาเลือกเวลาตั้งแต่ \$\{earliest\} น\. เป็นต้นไป/);
+  assert.match(page, /รบกวนเลือกเวลาเริ่มไม่เกิน \$\{latest\} น\./);
+  assert.match(page, /รบกวนเลือกเวลาตั้งแต่ \$\{earliest\} น\. เป็นต้นไป/);
   assert.match(page, /err\.code === "PROCEDURE_ORDER"\) \{ setStartTime\(""\); loadSlots\(\); \}/);
   assert.match(page, /errorText\(err\.code, err\.conflict, couponMinutes\(service, couponCount\), \(slots \|\| \[\]\)\.map\(\(s\) => s\.time\)\)/);
   // เวลาที่ต้องเลือกอยู่นอกเวลาเปิดของวันนั้น → บอกให้เลือกวันอื่น (ไม่บอกเวลาที่ไม่มีปุ่ม)
-  assert.match(page, /วันนั้นไม่มีเวลาพอให้ทำก่อนคิวนั้น กรุณาเลือกวันอื่น/);
-  assert.match(page, /วันนั้นไม่มีเวลาหลังคิวนั้นแล้ว กรุณาเลือกวันอื่น/);
+  assert.match(page, /วันนั้นมีเวลาไม่พอให้ทำก่อนคิวนั้น รบกวนเลือกวันอื่น/);
+  assert.match(page, /วันนั้นไม่มีเวลาหลังคิวนั้นแล้ว รบกวนเลือกวันอื่น/);
   assert.match(page, /TOO_MANY_DAYS: "คุณลูกค้ามีคิวจองออนไลน์ล่วงหน้าครบ 2 วันแล้ว/);
-  assert.match(page, /TOO_MANY_SAME_DAY: "คุณลูกค้ามีคิวจองออนไลน์ในวันนี้ครบ 3 คิวแล้ว/);
+  assert.match(page, /TOO_MANY_SAME_DAY: "คุณลูกค้ามีคิวจองออนไลน์ในวันนั้นครบ 3 คิวแล้ว/);
   assert.match(page, /procedureOrderKind\(service\.service\) &&/);
   for (const m of page.matchAll(/"([^"\n]*คุณลูกค้า[^"\n]*)"|`([^`\n]*คุณลูกค้า[^`\n]*)`/g)) {
     assert.doesNotMatch(m[0], /เบอร์/, m[0]);
@@ -155,4 +155,17 @@ test("โหมดเดโม: ตัวจำลองทำกติกาเ
     assert.equal(hifu.conflict.need, "finish_by");
     assert.equal(hifu.conflict.time, "17:00");
   }
+});
+
+test("หน้าจอง: กล่องข้อแนะนำก่อนจอง สั้น อ่านง่าย และข้อความถึงลูกค้าสุภาพทั้งหน้า (ไม่มี 'กรุณา', ไม่บอกเพดาน/เบอร์)", () => {
+  assert.match(page, /📌 ข้อแนะนำก่อนจองค่ะ/);
+  assert.match(page, /ทำหลายหัตถการ จองแยกคิวละ 1 หัตถการนะคะ/);
+  assert.match(page, /ทำ Pico \/ Hifu \/ Ultraformer คู่กับงานฉีด จองเวลาให้อยู่ก่อนฉีดนะคะ/);
+  assert.match(page, /ใช้คูปองได้คิวละ 1–\$\{MAX_COUPONS\} ใบค่ะ/);
+  assert.match(page, /จองล่วงหน้าได้ 2 ชั่วโมง ถึง 14 วันค่ะ/);
+  assert.match(page, /เลื่อน ยกเลิก หรือสอบถาม ทัก LINE/);
+  // กล่องข้อแนะนำไม่บอกเพดานคิว และไม่พูดถึงการตรวจจากเบอร์
+  const box = page.slice(page.indexOf("📌 ข้อแนะนำก่อนจองค่ะ"), page.indexOf("{loadError && <div style={S.error}>"));
+  assert.doesNotMatch(box, /เบอร์|2 วัน|3 คิว/);
+  assert.doesNotMatch(page, /กรุณา/);
 });
