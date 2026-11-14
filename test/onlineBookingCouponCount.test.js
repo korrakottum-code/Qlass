@@ -109,8 +109,8 @@ test("กันคนเดียวกันจองเวลาทับก�
   assert.ok(!clashQuery.includes("recorded_by"));
   assert.match(fn, /data\?\.error_code === "CUSTOMER_TIME_CONFLICT"/);
   assert.match(api, /err\.conflict = conflict;/);
-  assert.match(page, /errorText\(err\.code, err\.conflict\)/);
-  assert.match(page, /err\.code === "CUSTOMER_TIME_CONFLICT"\) \{ setStartTime\(""\); loadSlots\(\); \}/);
+  assert.match(page, /errorText\(err\.code, err\.conflict[,)]/);
+  assert.match(page, /err\.code === "CUSTOMER_TIME_CONFLICT"( \|\| err\.code === "[A-Z_]+")*\) \{ setStartTime\(""\); loadSlots\(\); \}/);
   assert.match(mock, /"CUSTOMER_TIME_CONFLICT"/);
 });
 
