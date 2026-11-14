@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchPublicBranches, fetchPublicServices, fetchPublicSlots, bookPublic } from "../utils/onlineBookingApi";
-import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile, matchesSearch, groupServices, COUPON_COUNTS, MAX_COUPONS, couponMinutes } from "../utils/publicBooking";
+import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile, matchesSearch, groupServices, COUPON_COUNTS, MAX_COUPONS, couponMinutes, addMinutes } from "../utils/publicBooking";
 
 // หน้าลูกค้าจองคิวเอง (/#book หรือ /#book/<branchId>) — ไม่ต้องล็อกอิน เปิดจากลิงก์ในไลน์/เพจ ใช้บนมือถือเป็นหลัก
 // เปิดเฉพาะสาขา/บริการที่ตั้งไว้ในเมนู "จองออนไลน์" กติกาเตียงและเวลาอยู่ฝั่งเซิร์ฟเวอร์ (online_booking_*_v1) ทั้งหมด
@@ -341,6 +341,14 @@ export default function PublicBookingPage() {
                   ))}
                 </div>
               )}
+              {slot && (
+                <div style={{ ...S.hint, marginTop: 10 }}>
+                  🕒 จองเวลา <b>{slot.time}–{addMinutes(slot.time, couponMinutes(service, couponCount))} น.</b> ({couponMinutes(service, couponCount)} นาที{couponCount > 1 ? ` สำหรับ ${couponCount} ใบ` : ""})
+                </div>
+              )}
+              {slots && slots.some((s) => s.available) && !slot && (
+                <div style={{ ...S.muted, marginTop: 10 }}>เวลาบนปุ่มคือเวลาเริ่ม · ช่องที่ขีดฆ่า = ไม่ว่างพอสำหรับ {couponMinutes(service, couponCount)} นาที</div>
+              )}
             </div>
           </div>
         )}
@@ -379,7 +387,7 @@ export default function PublicBookingPage() {
             <div style={{ fontSize: 14, lineHeight: 1.8, marginBottom: 12 }}>
               <div>📍 {branch.name}</div>
               <div>💆 {service.name}{couponCount > 1 ? ` · คูปอง ${couponCount} ใบ` : ""}</div>
-              <div>📅 {thaiDateLabel(date)} เวลา {slot.time} น. (ประมาณ {couponMinutes(service, couponCount)} นาที)</div>
+              <div>📅 {thaiDateLabel(date)} เวลา {slot.time}–{addMinutes(slot.time, couponMinutes(service, couponCount))} น. ({couponMinutes(service, couponCount)} นาที)</div>
             </div>
             {submitError && <div style={S.error}>{submitError}</div>}
             <button type="button" style={S.button(!formOk || submitting)} disabled={!formOk || submitting} onClick={submit}>
