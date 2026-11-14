@@ -33,13 +33,13 @@ function errorText(code, conflict, minutes, dayTimes) {
       const noRoom = earliest && times.length > 0 && !times.some((t) => t >= earliest);
       const from = noRoom ? "วันนั้นไม่มีเวลาหลังคิวนั้นแล้ว รบกวนเลือกวันอื่นนะคะ"
         : earliest ? `รบกวนเลือกเวลาตั้งแต่ ${earliest} น. เป็นต้นไปนะคะ` : "รบกวนเลือกเวลาหลังคิวนั้นนะคะ";
-      return `หัตถการฉีดต้องทำหลัง Pico/Hifu/Ultraformer ค่ะ คุณลูกค้ามี${what}${when} ในวันเดียวกันอยู่แล้ว ${from} หรือทัก LINE @classclinic ให้แอดมินช่วยจัดเวลาได้ค่ะ`;
+      return `หัตถการฉีดต้องทำหลัง Pico/Hifu/Ultraformer ค่ะ คุณลูกค้ามี${what}${when} อยู่แล้ว ${from}`;
     }
     const latest = conflict?.time ? floorToSlot(addMinutes(conflict.time, -(Number(minutes) || 0))) : "";
     const noRoom = latest && times.length > 0 && !times.some((t) => t <= latest);
     const by = noRoom ? "วันนั้นมีเวลาไม่พอให้ทำก่อนคิวนั้น รบกวนเลือกวันอื่นนะคะ"
       : latest ? `รบกวนเลือกเวลาเริ่มไม่เกิน ${latest} น. นะคะ` : "รบกวนเลือกเวลาก่อนคิวนั้นนะคะ";
-    return `Pico/Hifu/Ultraformer ต้องทำก่อนหัตถการฉีดค่ะ คุณลูกค้ามี${what}${when} ในวันเดียวกันอยู่แล้ว ${by} หรือทัก LINE @classclinic ให้แอดมินช่วยจัดเวลาได้ค่ะ`;
+    return `Pico/Hifu/Ultraformer ต้องทำก่อนหัตถการฉีดค่ะ คุณลูกค้ามี${what}${when} อยู่แล้ว ${by}`;
   }
   if (code === "CUSTOMER_TIME_CONFLICT") {
     const what = conflict?.service ? `คิว ${conflict.service}` : "คิวอื่น";
@@ -236,13 +236,17 @@ export default function PublicBookingPage() {
         <div style={S.h1}>จองคิวออนไลน์</div>
         <div style={S.sub}>Class Clinic — เลือกสาขา บริการ และเวลาที่สะดวกได้เลยค่ะ</div>
         {/* ข้อแนะนำก่อนจอง (เจ้าของสั่ง 15 พ.ย. 2569) — เฉพาะที่ลูกค้าต้องรู้ สั้นๆ; ไม่บอกเพดานคิว/การตรวจจากเบอร์ */}
-        <div style={{ ...S.hint, marginBottom: 12, fontSize: 13.5 }}>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>📌 ข้อแนะนำก่อนจองคิวค่ะ</div>
-          <div>• หากต้องการทำหลายหัตถการ รบกวนจองแยกคิวละ 1 หัตถการนะคะ หัตถการที่เขียนไว้ในหมายเหตุ ระบบจะยังไม่ได้จองเวลาไว้ให้ค่ะ</div>
-          <div>• หากทำ Pico / Hifu / Ultraformer คู่กับหัตถการฉีด รบกวนเลือกเวลา Pico / Hifu / Ultraformer ไว้ก่อนเวลาฉีดนะคะ</div>
-          <div>• ใช้คูปองได้คิวละ 1–{MAX_COUPONS} ใบ หากต้องการใช้มากกว่านี้ ทักแอดมินทาง LINE <LineLink>{LINE_ID}</LineLink> ได้เลยค่ะ</div>
-          <div>• จองล่วงหน้าได้ตั้งแต่ 2 ชั่วโมงถึง 14 วันค่ะ หากต้องการเลื่อนหรือยกเลิก แจ้งทาง LINE <LineLink>{LINE_ID}</LineLink> ได้เลยค่ะ</div>
-          <div style={{ marginTop: 4 }}>ขอบคุณที่ไว้วางใจ Class Clinic ค่ะ 🙏</div>
+        <div style={{ ...S.hint, marginBottom: 12, fontSize: 14, lineHeight: 1.55 }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>📌 ข้อแนะนำก่อนจองค่ะ</div>
+          {[
+            "ทำหลายหัตถการ จองแยกคิวละ 1 หัตถการนะคะ",
+            "ทำ Pico / Hifu / Ultraformer คู่กับงานฉีด จองเวลาให้อยู่ก่อนฉีดนะคะ",
+            `ใช้คูปองได้คิวละ 1–${MAX_COUPONS} ใบค่ะ`,
+            "จองล่วงหน้าได้ 2 ชั่วโมง ถึง 14 วันค่ะ",
+          ].map((t) => (
+            <div key={t} style={{ display: "flex", gap: 6, marginBottom: 4 }}><span>•</span><span>{t}</span></div>
+          ))}
+          <div style={{ marginTop: 6, color: "var(--text2)" }}>เลื่อน ยกเลิก หรือสอบถาม ทัก LINE <LineLink>{LINE_ID}</LineLink> ค่ะ 🙏</div>
         </div>
         {loadError && <div style={S.error}>{loadError}</div>}
 
@@ -339,7 +343,7 @@ export default function PublicBookingPage() {
                   ))}
                 </div>
                 <div style={{ ...S.muted, marginTop: 8, lineHeight: 1.6 }}>
-                  ระบบจะจองเวลาให้ตามจำนวนใบค่ะ · หากใช้มากกว่า {MAX_COUPONS} ใบ ทัก LINE <LineLink>{LINE_ID}</LineLink> แอดมินยินดีช่วยจองให้ค่ะ
+                  ระบบจองเวลาให้ตามจำนวนใบค่ะ · มากกว่า {MAX_COUPONS} ใบ ทัก LINE <LineLink>{LINE_ID}</LineLink>
                 </div>
               </div>
             )}
@@ -356,7 +360,7 @@ export default function PublicBookingPage() {
             {submitError && !slot && <div style={S.error}>{submitError}</div>}
             {procedureOrderKind(service.service) && (
               <div style={{ ...S.hint, marginBottom: 8 }}>
-                💡 หากทำ Pico/Hifu/Ultraformer คู่กับหัตถการฉีด (Botox/Filler/Meso) ในวันเดียวกัน รบกวนเลือกเวลา Pico/Hifu/Ultraformer ไว้ก่อนเวลาฉีดนะคะ
+                💡 ทำคู่กับงานฉีดวันเดียวกัน รบกวนจองเวลา Pico/Hifu/Ultraformer ให้อยู่ก่อนฉีดนะคะ
               </div>
             )}
             <div style={S.chipRow}>
@@ -412,7 +416,7 @@ export default function PublicBookingPage() {
               onChange={(e) => setNote(e.target.value)} />
             {/* เจ้าของสั่ง 14 พ.ย. 2569 — จำนวนใบเลือกด้านบนแล้ว (ล็อกเวลาตามจริง); หัตถการอื่นในหมายเหตุไม่ได้จองเวลาไว้ ทำให้คิวหมอล้น */}
             <div style={{ color: "var(--amber)", fontSize: 12.5, lineHeight: 1.6, marginTop: 6 }}>
-              หมายเหตุใช้แจ้งรายละเอียดเท่านั้นนะคะ หัตถการอื่นที่เขียนในหมายเหตุ ระบบไม่ได้จองเวลาไว้ให้ รบกวนจองแยกอีกคิว หรือทัก LINE {LINE_ID} ค่ะ
+              หัตถการอื่นที่เขียนในหมายเหตุ ระบบไม่ได้จองเวลาไว้ให้นะคะ รบกวนจองแยกอีกคิวค่ะ
             </div>
             {/* กับดักบอท: คนจริงมองไม่เห็นและไม่กรอก */}
             <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" value={website}

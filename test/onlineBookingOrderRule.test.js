@@ -157,15 +157,15 @@ test("โหมดเดโม: ตัวจำลองทำกติกาเ
   }
 });
 
-test("หน้าจอง: กล่องข้อแนะนำก่อนจอง และข้อความถึงลูกค้าสุภาพทั้งหน้า (ไม่มี 'กรุณา' ห้วนๆ, ไม่บอกเพดาน/เบอร์)", () => {
-  assert.match(page, /📌 ข้อแนะนำก่อนจองคิวค่ะ/);
-  assert.match(page, /รบกวนจองแยกคิวละ 1 หัตถการนะคะ/);
-  assert.match(page, /รบกวนเลือกเวลา Pico \/ Hifu \/ Ultraformer ไว้ก่อนเวลาฉีดนะคะ/);
-  assert.match(page, /ใช้คูปองได้คิวละ 1–\{MAX_COUPONS\} ใบ/);
-  assert.match(page, /จองล่วงหน้าได้ตั้งแต่ 2 ชั่วโมงถึง 14 วันค่ะ/);
-  assert.match(page, /ขอบคุณที่ไว้วางใจ Class Clinic ค่ะ 🙏/);
+test("หน้าจอง: กล่องข้อแนะนำก่อนจอง สั้น อ่านง่าย และข้อความถึงลูกค้าสุภาพทั้งหน้า (ไม่มี 'กรุณา', ไม่บอกเพดาน/เบอร์)", () => {
+  assert.match(page, /📌 ข้อแนะนำก่อนจองค่ะ/);
+  assert.match(page, /ทำหลายหัตถการ จองแยกคิวละ 1 หัตถการนะคะ/);
+  assert.match(page, /ทำ Pico \/ Hifu \/ Ultraformer คู่กับงานฉีด จองเวลาให้อยู่ก่อนฉีดนะคะ/);
+  assert.match(page, /ใช้คูปองได้คิวละ 1–\$\{MAX_COUPONS\} ใบค่ะ/);
+  assert.match(page, /จองล่วงหน้าได้ 2 ชั่วโมง ถึง 14 วันค่ะ/);
+  assert.match(page, /เลื่อน ยกเลิก หรือสอบถาม ทัก LINE/);
   // กล่องข้อแนะนำไม่บอกเพดานคิว และไม่พูดถึงการตรวจจากเบอร์
-  const box = page.slice(page.indexOf("📌 ข้อแนะนำก่อนจองคิวค่ะ"), page.indexOf("{loadError && <div style={S.error}>"));
+  const box = page.slice(page.indexOf("📌 ข้อแนะนำก่อนจองค่ะ"), page.indexOf("{loadError && <div style={S.error}>"));
   assert.doesNotMatch(box, /เบอร์|2 วัน|3 คิว/);
   assert.doesNotMatch(page, /กรุณา/);
 });
