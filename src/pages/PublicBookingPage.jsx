@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchPublicBranches, fetchPublicServices, fetchPublicSlots, bookPublic } from "../utils/onlineBookingApi";
-import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile, matchesSearch, groupServices, COUPON_COUNTS, MAX_COUPONS, couponMinutes, addMinutes } from "../utils/publicBooking";
+import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile, matchesSearch, groupServices, COUPON_COUNTS, MAX_COUPONS, couponMinutes, addMinutes, floorToSlot, procedureOrderKind } from "../utils/publicBooking";
 
 // หน้าลูกค้าจองคิวเอง (/#book หรือ /#book/<branchId>) — ไม่ต้องล็อกอิน เปิดจากลิงก์ในไลน์/เพจ ใช้บนมือถือเป็นหลัก
 // เปิดเฉพาะสาขา/บริการที่ตั้งไว้ในเมนู "จองออนไลน์" กติกาเตียงและเวลาอยู่ฝั่งเซิร์ฟเวอร์ (online_booking_*_v1) ทั้งหมด
@@ -15,9 +15,24 @@ const ERROR_TEXT = {
   INVALID_BRANCH: "สาขานี้ปิดรับจองออนไลน์แล้ว",
   RATE_LIMITED: "ทำรายการถี่เกินไป กรุณารอสักครู่แล้วลองใหม่",
   INVALID_COUNT: `จองออนไลน์ใช้คูปองได้ครั้งละ 1–${MAX_COUPONS} ใบ หากใช้มากกว่านี้ กรุณาทัก LINE @classclinic`,
+  // เพดานใหม่ (20261115130000): ค้างได้ไม่เกิน 2 วัน วันละไม่เกิน 3 คิว
+  TOO_MANY_DAYS: "คุณลูกค้ามีคิวจองออนไลน์ล่วงหน้าครบ 2 วันแล้ว จองเพิ่มได้เฉพาะวันที่มีคิวอยู่แล้ว หากต้องการจองวันอื่นหรือเปลี่ยนเวลา กรุณาทัก LINE @classclinic",
+  TOO_MANY_SAME_DAY: "คุณลูกค้ามีคิวจองออนไลน์ในวันนี้ครบ 3 คิวแล้ว หากต้องการจองเพิ่ม กรุณาทัก LINE @classclinic",
 };
 // ห้ามบอกลูกค้าว่าตรวจจากเบอร์ (เจ้าของสั่ง 14 พ.ย. 2569) — ลูกค้าจะเปลี่ยนเบอร์มาจองหลบกติกา
-function errorText(code, conflict) {
+// minutes = ความยาวคิวที่กำลังจอง (ใช้คำนวณ "เวลาเริ่มไม่เกิน" ตอนผิดลำดับหัตถการ)
+function errorText(code, conflict, minutes) {
+  if (code === "PROCEDURE_ORDER") {
+    const what = conflict?.service ? `คิว ${conflict.service}` : "คิวหัตถการอื่น";
+    const when = conflict?.time ? ` เวลา ${conflict.time}${conflict.end_time ? `–${conflict.end_time}` : ""} น.` : "";
+    if (conflict?.need === "start_from") {
+      const from = conflict?.end_time ? `กรุณาเลือกเวลาตั้งแต่ ${conflict.end_time} น. เป็นต้นไป` : "กรุณาเลือกเวลาหลังคิวนั้น";
+      return `หัตถการฉีดต้องทำหลัง Pico/Hifu/Ultraformer คุณลูกค้ามี${what}${when} ในวันเดียวกันอยู่แล้ว ${from} หรือทัก LINE @classclinic`;
+    }
+    const latest = conflict?.time ? floorToSlot(addMinutes(conflict.time, -(Number(minutes) || 0))) : "";
+    const by = latest ? `กรุณาเลือกเวลาเริ่มไม่เกิน ${latest} น.` : "กรุณาเลือกเวลาก่อนคิวนั้น";
+    return `Pico/Hifu/Ultraformer ต้องทำก่อนหัตถการฉีด คุณลูกค้ามี${what}${when} ในวันเดียวกันอยู่แล้ว ${by} หรือทัก LINE @classclinic`;
+  }
   if (code === "CUSTOMER_TIME_CONFLICT") {
     const what = conflict?.service ? `คิว ${conflict.service}` : "คิวอื่น";
     const when = conflict?.time ? ` เวลา ${conflict.time}${conflict.end_time ? `–${conflict.end_time}` : ""} น.` : "";
@@ -178,8 +193,8 @@ export default function PublicBookingPage() {
       const result = await bookPublic({ ...payload, referenceId: refRef.current.reference });
       setDone(result);
     } catch (err) {
-      setSubmitError(errorText(err.code, err.conflict));
-      if (err.code === "SLOT_UNAVAILABLE" || err.code === "CUSTOMER_TIME_CONFLICT") { setStartTime(""); loadSlots(); }
+      setSubmitError(errorText(err.code, err.conflict, couponMinutes(service, couponCount)));
+      if (err.code === "SLOT_UNAVAILABLE" || err.code === "CUSTOMER_TIME_CONFLICT" || err.code === "PROCEDURE_ORDER") { setStartTime(""); loadSlots(); }
     } finally {
       setSubmitting(false);
     }
@@ -321,6 +336,11 @@ export default function PublicBookingPage() {
             <div style={S.label}>3. วันและเวลา</div>
             {/* จองไม่ผ่านเพราะเวลา (ถูกจองไป/ทับคิวเดิมของลูกค้า) ระบบล้างเวลาที่เลือก → การ์ดยืนยันหาย จึงแสดงเหตุผลตรงนี้แทน */}
             {submitError && !slot && <div style={S.error}>{submitError}</div>}
+            {procedureOrderKind(service.service) && (
+              <div style={{ ...S.hint, marginBottom: 8 }}>
+                💡 ถ้าจะทำ Pico/Hifu/Ultraformer และหัตถการฉีด (Botox/Filler/Meso) ในวันเดียวกัน ต้องจองเวลา Pico/Hifu/Ultraformer ให้อยู่ก่อนเวลาฉีด
+              </div>
+            )}
             <div style={S.chipRow}>
               {dates.map((d) => (
                 <button key={d} type="button" style={S.chip(d === date, false)} onClick={() => setDate(d)}>

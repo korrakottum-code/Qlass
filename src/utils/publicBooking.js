@@ -12,7 +12,24 @@ export function addMinutes(hhmm, minutes) {
   const [h, m] = String(hhmm || "").split(":").map(Number);
   if (!Number.isFinite(h) || !Number.isFinite(m)) return "";
   const total = h * 60 + m + (Number(minutes) || 0);
+  if (total < 0) return "";
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+// ปัดเวลาลงให้ตรงปุ่มเวลา (ทุก 30 นาที) — "เริ่มไม่เกิน 14:10" ไม่มีปุ่มให้กด บอกเป็น 14:00
+export function floorToSlot(hhmm, step = 30) {
+  const [h, m] = String(hhmm || "").split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return "";
+  const total = Math.floor((h * 60 + m) / step) * step;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+// ลำดับหัตถการ (เจ้าของสั่ง 15 พ.ย. 2569) — ตรงกับรายชื่อใน online_booking_create_v2 (20261115120000)
+// คนเดียวกันวันเดียวกัน: กลุ่ม "ทำก่อน" ต้องจบก่อนกลุ่ม "ฉีด" เริ่ม
+export const ORDER_FIRST = ["Pico", "Hifu", "Ultraformer", "Go-Hifu"];
+export const ORDER_INJECT = ["Botox", "Filler", "Meso", "Go-Botox", "Go-Filler"];
+export function procedureOrderKind(procedureName) {
+  if (ORDER_FIRST.includes(procedureName)) return "first";
+  if (ORDER_INJECT.includes(procedureName)) return "inject";
+  return null;
 }
 const THAI_DAYS = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
 const THAI_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
