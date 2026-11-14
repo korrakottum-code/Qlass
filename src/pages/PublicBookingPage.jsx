@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchPublicBranches, fetchPublicServices, fetchPublicSlots, bookPublic } from "../utils/onlineBookingApi";
-import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile, matchesSearch, groupServices, COUPON_COUNTS, MAX_COUPONS, couponMinutes, addMinutes, floorToSlot, procedureOrderKind } from "../utils/publicBooking";
+import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile, matchesSearch, groupServices, COUPON_COUNTS, MAX_COUPONS, couponMinutes, addMinutes, floorToSlot, ceilToSlot, procedureOrderKind } from "../utils/publicBooking";
 
 // หน้าลูกค้าจองคิวเอง (/#book หรือ /#book/<branchId>) — ไม่ต้องล็อกอิน เปิดจากลิงก์ในไลน์/เพจ ใช้บนมือถือเป็นหลัก
 // เปิดเฉพาะสาขา/บริการที่ตั้งไว้ในเมนู "จองออนไลน์" กติกาเตียงและเวลาอยู่ฝั่งเซิร์ฟเวอร์ (online_booking_*_v1) ทั้งหมด
@@ -21,16 +21,23 @@ const ERROR_TEXT = {
 };
 // ห้ามบอกลูกค้าว่าตรวจจากเบอร์ (เจ้าของสั่ง 14 พ.ย. 2569) — ลูกค้าจะเปลี่ยนเบอร์มาจองหลบกติกา
 // minutes = ความยาวคิวที่กำลังจอง (ใช้คำนวณ "เวลาเริ่มไม่เกิน" ตอนผิดลำดับหัตถการ)
-function errorText(code, conflict, minutes) {
+// dayTimes = เวลาเริ่มทุกปุ่มของวันนั้น ["11:00", …] — ถ้าเวลาที่ต้องเลือกอยู่นอกเวลาเปิด บอกให้เลือกวันอื่นแทน
+function errorText(code, conflict, minutes, dayTimes) {
   if (code === "PROCEDURE_ORDER") {
     const what = conflict?.service ? `คิว ${conflict.service}` : "คิวหัตถการอื่น";
     const when = conflict?.time ? ` เวลา ${conflict.time}${conflict.end_time ? `–${conflict.end_time}` : ""} น.` : "";
+    const times = Array.isArray(dayTimes) ? dayTimes.filter(Boolean) : [];
     if (conflict?.need === "start_from") {
-      const from = conflict?.end_time ? `กรุณาเลือกเวลาตั้งแต่ ${conflict.end_time} น. เป็นต้นไป` : "กรุณาเลือกเวลาหลังคิวนั้น";
+      const earliest = conflict?.end_time ? ceilToSlot(conflict.end_time) : "";
+      const noRoom = earliest && times.length > 0 && !times.some((t) => t >= earliest);
+      const from = noRoom ? "วันนั้นไม่มีเวลาหลังคิวนั้นแล้ว กรุณาเลือกวันอื่น"
+        : earliest ? `กรุณาเลือกเวลาตั้งแต่ ${earliest} น. เป็นต้นไป` : "กรุณาเลือกเวลาหลังคิวนั้น";
       return `หัตถการฉีดต้องทำหลัง Pico/Hifu/Ultraformer คุณลูกค้ามี${what}${when} ในวันเดียวกันอยู่แล้ว ${from} หรือทัก LINE @classclinic`;
     }
     const latest = conflict?.time ? floorToSlot(addMinutes(conflict.time, -(Number(minutes) || 0))) : "";
-    const by = latest ? `กรุณาเลือกเวลาเริ่มไม่เกิน ${latest} น.` : "กรุณาเลือกเวลาก่อนคิวนั้น";
+    const noRoom = latest && times.length > 0 && !times.some((t) => t <= latest);
+    const by = noRoom ? "วันนั้นไม่มีเวลาพอให้ทำก่อนคิวนั้น กรุณาเลือกวันอื่น"
+      : latest ? `กรุณาเลือกเวลาเริ่มไม่เกิน ${latest} น.` : "กรุณาเลือกเวลาก่อนคิวนั้น";
     return `Pico/Hifu/Ultraformer ต้องทำก่อนหัตถการฉีด คุณลูกค้ามี${what}${when} ในวันเดียวกันอยู่แล้ว ${by} หรือทัก LINE @classclinic`;
   }
   if (code === "CUSTOMER_TIME_CONFLICT") {
@@ -193,7 +200,7 @@ export default function PublicBookingPage() {
       const result = await bookPublic({ ...payload, referenceId: refRef.current.reference });
       setDone(result);
     } catch (err) {
-      setSubmitError(errorText(err.code, err.conflict, couponMinutes(service, couponCount)));
+      setSubmitError(errorText(err.code, err.conflict, couponMinutes(service, couponCount), (slots || []).map((s) => s.time)));
       if (err.code === "SLOT_UNAVAILABLE" || err.code === "CUSTOMER_TIME_CONFLICT" || err.code === "PROCEDURE_ORDER") { setStartTime(""); loadSlots(); }
     } finally {
       setSubmitting(false);
