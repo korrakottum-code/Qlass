@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchPublicBranches, fetchPublicServices, fetchPublicSlots, bookPublic } from "../utils/onlineBookingApi";
-import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile, matchesSearch, groupServices, COUPON_COUNTS, MAX_COUPONS, couponMinutes, addMinutes, floorToSlot, ceilToSlot, procedureOrderKind } from "../utils/publicBooking";
+import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile, matchesSearch, groupServices, COUPON_COUNTS, MAX_COUPONS, couponMinutes, isSingleCoupon, addMinutes, floorToSlot, ceilToSlot, procedureOrderKind } from "../utils/publicBooking";
 
 // หน้าลูกค้าจองคิวเอง (/#book หรือ /#book/<branchId>) — ไม่ต้องล็อกอิน เปิดจากลิงก์ในไลน์/เพจ ใช้บนมือถือเป็นหลัก
 // เปิดเฉพาะสาขา/บริการที่ตั้งไว้ในเมนู "จองออนไลน์" กติกาเตียงและเวลาอยู่ฝั่งเซิร์ฟเวอร์ (online_booking_*_v1) ทั้งหมด
@@ -192,7 +192,7 @@ export default function PublicBookingPage() {
     setSubmitting(true);
     const payload = {
       branchId, promoId, startTime, name: name.trim(), phone: normalizePhone(phone), customerType, note: note.trim(), website,
-      count: couponCount,
+      count: isSingleCoupon(service) ? 1 : couponCount,
     };
     // กดซ้ำด้วยข้อมูลเดิม (เน็ตหลุด) ใช้รหัสอ้างอิงเดิม = เซิร์ฟเวอร์คืนผลเดิม ไม่สร้างคิวซ้ำ
     const signature = JSON.stringify(payload);
@@ -241,7 +241,7 @@ export default function PublicBookingPage() {
           {[
             "ทำหลายหัตถการ จองแยกคิวละ 1 หัตถการนะคะ",
             "ทำ Pico / Hifu / Ultraformer คู่กับงานฉีด จองเวลาให้อยู่ก่อนฉีดนะคะ",
-            `ใช้คูปองได้คิวละ 1–${MAX_COUPONS} ใบค่ะ`,
+            `ใช้คูปองได้คิวละ 1–${MAX_COUPONS} ใบ (Pico ใบเดียวพอค่ะ)`,
             "จองล่วงหน้าได้ 2 ชั่วโมง ถึง 14 วันค่ะ",
           ].map((t) => (
             <div key={t} style={{ display: "flex", gap: 6, marginBottom: 4 }}><span>•</span><span>{t}</span></div>
@@ -330,7 +330,12 @@ export default function PublicBookingPage() {
                 })()}
               </>
             )}
-            {service && !pickService && (
+            {service && !pickService && isSingleCoupon(service) && (
+              <div style={{ ...S.muted, marginTop: 12, lineHeight: 1.6 }}>
+                {service.service} ไม่จำกัดช็อตค่ะ ใช้คูปองใบเดียวก็ทำได้เต็มที่ · จองเวลาให้ {couponMinutes(service, 1)} นาทีค่ะ
+              </div>
+            )}
+            {service && !pickService && !isSingleCoupon(service) && (
               <div style={{ marginTop: 12 }}>
                 <div style={{ fontSize: 14, marginBottom: 6 }}>ใช้คูปองกี่ใบคะ</div>
                 <div style={{ display: "flex", gap: 8 }}>

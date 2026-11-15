@@ -96,11 +96,11 @@ test("ทั้งสองไฟล์: แก้แค่ create_v2 สิท�
   }
 });
 
-test("migration ล่าสุดที่นิยาม create_v2 = ไฟล์เพดานวัน (มีทั้งสองกติกา)", () => {
+test("migration ล่าสุดที่นิยาม create_v2 = ไฟล์ Pico ใบเดียว (ต่อจากไฟล์เพดานวัน มีทั้งสองกติกา)", () => {
   const dir = new URL("../supabase/migrations/", import.meta.url);
   const files = fs.readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()
     .filter((f) => fs.readFileSync(new URL(f, dir), "utf8").includes("create or replace function public.online_booking_create_v2("));
-  assert.equal(files.at(-1), "20261115130000_online_booking_day_limit.sql");
+  assert.equal(files.at(-1), "20261115140000_online_booking_pico_single_coupon.sql");
 });
 
 test("public-booking: ส่งรายละเอียดคิวที่ขวาง (รวม need) เฉพาะเวลาทับ/ผิดลำดับ", () => {
@@ -161,7 +161,7 @@ test("หน้าจอง: กล่องข้อแนะนำก่อน
   assert.match(page, /📌 ข้อแนะนำก่อนจองค่ะ/);
   assert.match(page, /ทำหลายหัตถการ จองแยกคิวละ 1 หัตถการนะคะ/);
   assert.match(page, /ทำ Pico \/ Hifu \/ Ultraformer คู่กับงานฉีด จองเวลาให้อยู่ก่อนฉีดนะคะ/);
-  assert.match(page, /ใช้คูปองได้คิวละ 1–\$\{MAX_COUPONS\} ใบค่ะ/);
+  assert.match(page, /ใช้คูปองได้คิวละ 1–\$\{MAX_COUPONS\} ใบ \(Pico ใบเดียวพอค่ะ\)/);
   assert.match(page, /จองล่วงหน้าได้ 2 ชั่วโมง ถึง 14 วันค่ะ/);
   assert.match(page, /เลื่อน ยกเลิก หรือสอบถาม ทัก LINE/);
   // กล่องข้อแนะนำไม่บอกเพดานคิว และไม่พูดถึงการตรวจจากเบอร์

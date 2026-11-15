@@ -81,7 +81,7 @@ test("หน้าจอง: ส่งจำนวนใบทั้งดูเ
   assert.match(api, /callPublic\(\{ action: "slots", branchId, promoId, date, count \}\)/);
   assert.match(page, /fetchPublicSlots\(branchId, promoId, date, couponCount\)/);
   assert.match(page, /\[branchId, promoId, date, couponCount\]/);
-  assert.match(page, /count: couponCount,/);
+  assert.match(page, /count: isSingleCoupon\(service\) \? 1 : couponCount,/);
   assert.match(page, /COUPON_COUNTS\.map/);
   assert.ok(page.includes("ระบบไม่ได้จองเวลาไว้ให้"));
   assert.ok(!page.includes("ให้ระบุรายละเอียดโปรแกรมและจำนวนคูปอง"));
