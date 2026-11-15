@@ -96,11 +96,11 @@ test("ทั้งสองไฟล์: แก้แค่ create_v2 สิท�
   }
 });
 
-test("migration ล่าสุดที่นิยาม create_v2 = ไฟล์ Pico ใบเดียว (ต่อจากไฟล์เพดานวัน มีทั้งสองกติกา)", () => {
+test("migration ล่าสุดที่นิยาม create_v2 = ไฟล์เพดานวัน (มีทั้งสองกติกา)", () => {
   const dir = new URL("../supabase/migrations/", import.meta.url);
   const files = fs.readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()
     .filter((f) => fs.readFileSync(new URL(f, dir), "utf8").includes("create or replace function public.online_booking_create_v2("));
-  assert.equal(files.at(-1), "20261115140000_online_booking_pico_single_coupon.sql");
+  assert.equal(files.at(-1), "20261115130000_online_booking_day_limit.sql");
 });
 
 test("public-booking: ส่งรายละเอียดคิวที่ขวาง (รวม need) เฉพาะเวลาทับ/ผิดลำดับ", () => {

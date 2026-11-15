@@ -10,7 +10,7 @@ export const getServerSessionToken = () => "demo";
 const settings = { branches: { b1: true }, promoIds: new Set([...DB.promos.filter((p) => p.active !== false).slice(0, 4).map((p) => p.id), "pr6", "pr15"]) };
 // ชื่อหัตถการในข้อมูลเดโมสะกดต่างจากระบบจริง (HIFU) — แปลงให้ตรงชื่อจริงเพื่อใช้กติกาเดียวกัน
 const realName = (n) => ({ HIFU: "Hifu", "Pico Laser": "Pico" })[n] || n;
-// Pico ใช้คูปองใบเดียวพอ — ส่งมากี่ใบก็นับ 1 ใบ เหมือน online_booking_*_v2 (20261115140000)
+// Pico ใช้คูปองใบเดียวพอ — หน้าจองส่ง 1 ใบเสมออยู่แล้ว ตัวจำลองนับ 1 ใบเผื่อไว้
 const effCount = (proc, count) => (SINGLE_COUPON.includes(realName(proc.name)) ? 1 : count);
 const booked = [];
 const wait = () => new Promise((r) => setTimeout(r, 150));

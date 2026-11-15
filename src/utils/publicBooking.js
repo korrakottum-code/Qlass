@@ -3,8 +3,8 @@ export const MAX_DAYS_AHEAD = 14; // ตรงกับ c_max_days ใน online
 // จำนวนคูปองต่อคิว (เจ้าของสั่ง 14 พ.ย. 2569) — ตรงกับ c_max_count ใน online_booking_*_v2; เกินนี้ทักแอดมิน
 export const MAX_COUPONS = 3;
 export const COUPON_COUNTS = Array.from({ length: MAX_COUPONS }, (_, i) => i + 1);
-// หัตถการที่ใช้คูปองใบเดียวพอ (เจ้าของสั่ง 15 พ.ย. 2569: Pico ไม่จำกัดช็อต) — ไม่ถามจำนวนใบ จองเวลา 1 รอบเสมอ
-// ตรงกับชื่อใน online_booking_*_v2 (20261115140000) ที่นับหลายใบเป็น 1 ใบให้หน้าจองรุ่นเก่า
+// หัตถการที่ใช้คูปองใบเดียวพอ (เจ้าของสั่ง 15 พ.ย. 2569: Pico ไม่จำกัดช็อต) — ไม่ถามจำนวนใบ ส่ง 1 ใบ จองเวลา 1 รอบเสมอ
+// แก้เฉพาะหน้าจอง (เจ้าของไม่ให้แก้หลังบ้านเพื่อหน้ารุ่นเก่า — เปิดค้างไม่นานเดี๋ยวก็รีเฟรช)
 export const SINGLE_COUPON = ["Pico"];
 export function isSingleCoupon(service) {
   return SINGLE_COUPON.includes(service?.service);

@@ -5,27 +5,8 @@ import { SINGLE_COUPON, isSingleCoupon, couponMinutes } from "../src/utils/publi
 
 // จองออนไลน์: Pico ไม่จำกัดช็อต ใช้คูปองใบเดียวพอ (เจ้าของสั่ง 15 พ.ย. 2569) — หัตถการอื่นยัง 1–3 ใบ
 const read = (p) => fs.readFileSync(new URL(p, import.meta.url), "utf8");
-const coupon = read("../supabase/migrations/20261114120000_online_booking_coupon_count.sql");
-const days = read("../supabase/migrations/20261115130000_online_booking_day_limit.sql");
-const pico = read("../supabase/migrations/20261115140000_online_booking_pico_single_coupon.sql");
 const page = read("../src/pages/PublicBookingPage.jsx");
 const mock = read("../scripts/screenshot/mockOnlineBookingApi.js");
-
-const fnBody = (sql, name) => {
-  const start = sql.indexOf(`create or replace function public.${name}(`);
-  assert.ok(start >= 0, name);
-  return sql.slice(start, sql.indexOf("\n$$;", start));
-};
-const codeLines = (b) => b.split("\n").map((l) => l.replace(/\s+--.*$/, "").trimEnd()).filter((l) => l.trim() && !/^\s*--/.test(l));
-// บรรทัดที่หายไป / เพิ่มมา (เทียบแบบนับซ้ำ) — ต้องตรงกับที่ตั้งใจแก้เท่านั้น
-function lineDiff(oldB, newB) {
-  const count = (arr) => arr.reduce((m, l) => m.set(l, (m.get(l) || 0) + 1), new Map());
-  const a = count(codeLines(oldB)), b = count(codeLines(newB));
-  const removed = [], added = [];
-  for (const [l, n] of a) for (let i = 0; i < n - (b.get(l) || 0); i++) removed.push(l.trim());
-  for (const [l, n] of b) for (let i = 0; i < n - (a.get(l) || 0); i++) added.push(l.trim());
-  return { removed: removed.sort(), added: added.sort() };
-}
 
 test("หน้าจอง: Pico นับ 1 ใบ เวลา 1 รอบ, หัตถการอื่นคูณจำนวนใบเหมือนเดิม", () => {
   assert.deepEqual(SINGLE_COUPON, ["Pico"]);
@@ -34,7 +15,7 @@ test("หน้าจอง: Pico นับ 1 ใบ เวลา 1 รอบ, �
   assert.equal(isSingleCoupon(p), true);
   assert.equal(isSingleCoupon(f), false);
   assert.equal(isSingleCoupon(null), false);
-  assert.equal(isSingleCoupon({ service: "pico" }), false); // ชื่อต้องตรงกับระบบ (SQL ใช้ = 'Pico')
+  assert.equal(isSingleCoupon({ service: "pico" }), false); // ชื่อต้องตรงกับชื่อหัตถการในระบบ
   assert.equal(couponMinutes(p, 3), 30);
   assert.equal(couponMinutes(f, 3), 90);
 });
@@ -47,49 +28,9 @@ test("หน้าจอง: Pico ไม่ขึ้นปุ่มเลือ�
   assert.match(page, /ใช้คูปองได้คิวละ 1–\$\{MAX_COUPONS\} ใบ \(Pico ใบเดียวพอค่ะ\)/);
 });
 
-test("SQL slots_v2: ต่างจากเดิมแค่ Pico หาเวลา 1 รอบ", () => {
-  const { removed, added } = lineDiff(fnBody(coupon, "online_booking_slots_v2"), fnBody(pico, "online_booking_slots_v2"));
-  assert.deepEqual(removed, ["select r.branch_active, r.procedure_id, r.dur * p_count into v_active, v_proc, v_dur"]);
-  assert.deepEqual(added, [
-    "select p.name into v_pname from public.procedures p where p.id = v_proc;",
-    "select r.branch_active, r.procedure_id, r.dur into v_active, v_proc, v_dur",
-    "v_dur := v_dur * case when v_pname = 'Pico' then 1 else p_count end;",
-    "v_pname text;",
-  ].sort());
-});
-
-test("SQL create_v2: ต่างจากเวอร์ชันที่ใช้อยู่แค่ v_count (เวลา หมายเหตุ ผลตอบกลับ)", () => {
-  const oldB = fnBody(days, "online_booking_create_v2");
-  const newB = fnBody(pico, "online_booking_create_v2");
-  const { removed, added } = lineDiff(oldB, newB);
-  assert.deepEqual(removed, [
-    "'[จองออนไลน์]' || case when p_count > 1 then ' คูปอง ' || p_count || ' ใบ' else '' end",
-    "'branch', v_branch_name, 'service', v_promo_name, 'count', p_count,",
-    "select r.branch_active, r.procedure_id, r.promo_id, r.price, r.dur * p_count, r.promo_name",
-  ].sort());
-  assert.deepEqual(added, [
-    "'[จองออนไลน์]' || case when v_count > 1 then ' คูปอง ' || v_count || ' ใบ' else '' end",
-    "'branch', v_branch_name, 'service', v_promo_name, 'count', v_count,",
-    "select r.branch_active, r.procedure_id, r.promo_id, r.price, r.dur, r.promo_name",
-    "v_count := case when v_pname = 'Pico' then 1 else p_count end;",
-    "v_count int;",
-    "v_dur := v_dur * v_count;",
-  ].sort());
-  // ชื่อหัตถการต้องหาก่อนคำนวณเวลา และก่อนกติกาลำดับหัตถการที่ใช้ v_pname / v_dur ต่อ
-  const at = (s) => { const i = newB.indexOf(s); assert.ok(i >= 0, s); return i; };
-  assert.ok(at("select p.name into v_pname") < at("v_dur := v_dur * v_count;"));
-  assert.ok(at("v_dur := v_dur * v_count;") < at("'TOO_MANY_SAME_DAY'"));
-  assert.ok(at("v_dur := v_dur * v_count;") < at("CUSTOMER_TIME_CONFLICT"));
-  assert.equal(newB.split("select p.name into v_pname").length - 1, 1);
-  // hash กันกดซ้ำยังใช้จำนวนที่ส่งมา (กดซ้ำด้วยข้อมูลเดิม = ผลเดิม)
-  assert.match(newB, /'count:' \|\| p_count::text/);
-  assert.match(newB, /if p_count is null or p_count < 1 or p_count > c_max_count then raise exception 'INVALID_COUNT'; end if;/);
-});
-
-test("SQL: สิทธิ์ยังเป็น service_role เท่านั้น", () => {
-  assert.match(pico, /revoke all on function\s+public\.online_booking_slots_v2\(uuid, uuid, date, int\),\s+public\.online_booking_create_v2\(text, uuid, uuid, timestamptz, text, text, text, text, int\)\s+from public, anon, authenticated;/);
-  assert.match(pico, /grant execute on function\s+public\.online_booking_slots_v2\(uuid, uuid, date, int\),\s+public\.online_booking_create_v2\(text, uuid, uuid, timestamptz, text, text, text, text, int\)\s+to service_role;/);
-  assert.doesNotMatch(pico, /grant[^;]*\b(anon|authenticated)\b/i);
+test("หลังบ้านไม่แตะ: ไม่มี migration ของ Pico (เจ้าของสั่งแก้เฉพาะหน้าจอง)", () => {
+  const dir = new URL("../supabase/migrations/", import.meta.url);
+  assert.equal(fs.readdirSync(dir).some((f) => /pico/i.test(f)), false);
 });
 
 test("โหมดตัวอย่าง: Pico ส่ง 3 ใบได้ 1 ใบ 30 นาที, HIFU 3 ใบยังคูณ", async () => {
