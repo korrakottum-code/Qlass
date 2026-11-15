@@ -3,9 +3,15 @@ export const MAX_DAYS_AHEAD = 14; // ตรงกับ c_max_days ใน online
 // จำนวนคูปองต่อคิว (เจ้าของสั่ง 14 พ.ย. 2569) — ตรงกับ c_max_count ใน online_booking_*_v2; เกินนี้ทักแอดมิน
 export const MAX_COUPONS = 3;
 export const COUPON_COUNTS = Array.from({ length: MAX_COUPONS }, (_, i) => i + 1);
+// หัตถการที่ใช้คูปองใบเดียวพอ (เจ้าของสั่ง 15 พ.ย. 2569: Pico ไม่จำกัดช็อต) — ไม่ถามจำนวนใบ ส่ง 1 ใบ จองเวลา 1 รอบเสมอ
+// แก้เฉพาะหน้าจอง (เจ้าของไม่ให้แก้หลังบ้านเพื่อหน้ารุ่นเก่า — เปิดค้างไม่นานเดี๋ยวก็รีเฟรช)
+export const SINGLE_COUPON = ["Pico"];
+export function isSingleCoupon(service) {
+  return SINGLE_COUPON.includes(service?.service);
+}
 // 1 ใบ = เวลาหัตถการเต็ม 1 รอบ (ไม่ลดเวลาใบถัดไป)
 export function couponMinutes(service, count) {
-  return (Number(service?.duration_minutes) || 0) * count;
+  return (Number(service?.duration_minutes) || 0) * (isSingleCoupon(service) ? 1 : count);
 }
 // "15:00" + 60 → "16:00" — เวลาจบที่ระบบจองไว้ (ปุ่มเวลาบอกแค่เวลาเริ่ม ลูกค้างงว่าทำไม 15:00 ได้แต่ 15:30 ไม่ได้)
 export function addMinutes(hhmm, minutes) {

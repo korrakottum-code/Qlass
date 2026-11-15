@@ -1,15 +1,17 @@
 // ตัวจำลอง "ลูกค้าจองเอง" ในหน่วยความจำ (โหมดเดโม) — ทำตามกติกาหลักของ online_booking_*_v1 ใน SQL แบบย่อ
 // (ห้องตามประเภท ไม่ชนคิว ก่อนนัด 2 ชม. ไม่เกิน 14 วัน เบอร์ละ 2 วัน วันละ 3 คิว, Pico/Hifu ก่อนฉีด) ไม่ต่อเครือข่าย ข้อมูลหายเมื่อรีเฟรช
 import { DB } from "./mockSupabaseService.js";
-import { bangkokToday, MAX_DAYS_AHEAD, procedureOrderKind } from "../../src/utils/publicBooking.js";
+import { bangkokToday, MAX_DAYS_AHEAD, procedureOrderKind, SINGLE_COUPON } from "../../src/utils/publicBooking.js";
 
 export const onlineBookingSettingsAvailable = true;
 export const getServerSessionToken = () => "demo";
 
-// เปิด Botox/Filler (4 โปรแรก) + HIFU 300 ไว้ให้เห็นกติกา "Hifu ก่อนงานฉีด" ในเดโม
-const settings = { branches: { b1: true }, promoIds: new Set([...DB.promos.filter((p) => p.active !== false).slice(0, 4).map((p) => p.id), "pr6"]) };
+// เปิด Botox/Filler (4 โปรแรก) + HIFU 300 ไว้ให้เห็นกติกา "Hifu ก่อนงานฉีด" + Pico ให้เห็น "ใบเดียวพอ" ในเดโม
+const settings = { branches: { b1: true }, promoIds: new Set([...DB.promos.filter((p) => p.active !== false).slice(0, 4).map((p) => p.id), "pr6", "pr15"]) };
 // ชื่อหัตถการในข้อมูลเดโมสะกดต่างจากระบบจริง (HIFU) — แปลงให้ตรงชื่อจริงเพื่อใช้กติกาเดียวกัน
-const realName = (n) => ({ HIFU: "Hifu" })[n] || n;
+const realName = (n) => ({ HIFU: "Hifu", "Pico Laser": "Pico" })[n] || n;
+// Pico ใช้คูปองใบเดียวพอ — หน้าจองส่ง 1 ใบเสมออยู่แล้ว ตัวจำลองนับ 1 ใบเผื่อไว้
+const effCount = (proc, count) => (SINGLE_COUPON.includes(realName(proc.name)) ? 1 : count);
 const booked = [];
 const wait = () => new Promise((r) => setTimeout(r, 150));
 const fail = (code) => { const e = new Error(code); e.code = code; throw e; };
@@ -56,7 +58,7 @@ function startMs(date, block) {
 export async function fetchPublicSlots(branchId, promoId, date, count = 1) {
   await wait();
   const { proc, rooms } = service(branchId, promoId);
-  const dur = proc.blocks * count;
+  const dur = proc.blocks * effCount(proc, count);
   const slots = [];
   for (let b = 132; b + dur <= 240; b += 6) {
     const hhmm = `${String(Math.floor(b / 12)).padStart(2, "0")}:${String((b % 12) * 5).padStart(2, "0")}`;
@@ -70,8 +72,9 @@ export async function fetchPublicSlots(branchId, promoId, date, count = 1) {
 export async function bookPublic(b) {
   await wait();
   const { promo, proc, rooms } = service(b.branchId, b.promoId);
-  const count = b.count ?? 1;
-  if (!Number.isInteger(count) || count < 1 || count > 3) fail("INVALID_COUNT");
+  const sent = b.count ?? 1;
+  if (!Number.isInteger(sent) || sent < 1 || sent > 3) fail("INVALID_COUNT");
+  const count = effCount(proc, sent);
   const dur = proc.blocks * count;
   const date = b.startTime.slice(0, 10);
   const [hh, mm] = b.startTime.slice(11, 16).split(":").map(Number);
