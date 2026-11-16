@@ -35,6 +35,56 @@ export function ceilToSlot(hhmm, step = 30) {
   const total = Math.ceil((h * 60 + m) / step) * step;
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
+// ─── กดถี่เกิน (16 พ.ย. 2569) ───
+// เซิร์ฟเวอร์ส่ง retry_after_minutes มาด้วย: ≤ 60 นาที = บอกให้รอกี่นาที, เกิน = ครบเพดานรายวัน ให้ทักแอดมิน
+export const RATE_LIMITED_TEXT = "ทำรายการถี่เกินไปค่ะ รบกวนรอสักครู่แล้วลองใหม่อีกครั้งนะคะ";
+export function rateLimitText(minutes) {
+  const m = Math.ceil(Number(minutes));
+  if (!Number.isFinite(m) || m <= 0) return RATE_LIMITED_TEXT;
+  if (m > 60) return "วันนี้ทำรายการจองผ่านเว็บครบจำนวนแล้วค่ะ รบกวนทัก LINE @classclinic ให้แอดมินช่วยจองนะคะ";
+  return `ทำรายการถี่เกินไปค่ะ รบกวนรออีกประมาณ ${m} นาทีแล้วลองใหม่อีกครั้งนะคะ`;
+}
+
+// ─── คิวที่เพิ่งจองในเครื่องนี้ (16 พ.ย. 2569) ───
+// จองหัตถการที่ 2 วันเดียวกันแล้วเลือกเวลาทับคิวแรก = เซิร์ฟเวอร์ปฏิเสธ (CUSTOMER_TIME_CONFLICT) ~50 คน/วัน
+// จำคิวที่จองสำเร็จไว้ในเครื่อง แล้วทำเครื่องหมายเวลาที่ทับ — แค่เตือน ไม่บล็อก (จองให้เพื่อนในเครื่องเดียวกันได้ตามปกติ
+// และคิวที่จำไว้อาจถูกยกเลิกไปแล้ว) เซิร์ฟเวอร์ยังเป็นคนตัดสินเหมือนเดิม; ไม่เก็บชื่อ/เบอร์
+export const MINE_KEY = "qlass_book_mine_v1";
+const MINE_MAX = 20;
+function toMinutes(hhmm) {
+  const [h, m] = String(hhmm || "").split(":").map(Number);
+  return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : NaN;
+}
+function cleanMine(list, today) {
+  if (!Array.isArray(list)) return [];
+  return list.filter((e) => e && typeof e === "object"
+    && /^\d{4}-\d{2}-\d{2}$/.test(e.date) && e.date >= today
+    && Number.isFinite(toMinutes(e.time)) && Number.isFinite(toMinutes(e.end_time)) && toMinutes(e.end_time) > toMinutes(e.time))
+    .map((e) => ({ date: e.date, time: e.time, end_time: e.end_time, service: String(e.service || "").slice(0, 120) }))
+    .slice(-MINE_MAX);
+}
+export function loadMine(today, storage = globalThis.localStorage) {
+  try {
+    return cleanMine(JSON.parse(storage?.getItem(MINE_KEY) || "[]"), today);
+  } catch {
+    return [];
+  }
+}
+// คืนรายการใหม่ (เก็บลงเครื่องด้วยถ้าทำได้ — เก็บไม่ได้ก็ใช้ในหน้านี้ต่อ)
+export function rememberMine(list, entry, today, storage = globalThis.localStorage) {
+  const same = (e) => e.date === entry?.date && e.time === entry?.time && e.end_time === entry?.end_time;
+  const next = cleanMine([...(list || []).filter((e) => !same(e)), entry], today);
+  try { storage?.setItem(MINE_KEY, JSON.stringify(next)); } catch { /* โหมดส่วนตัว/เต็ม: ไม่เป็นไร */ }
+  return next;
+}
+// เวลาเริ่ม slotTime ยาว minutes นาที ทับคิวไหนที่จำไว้ในวัน date บ้าง (คืนคิวแรกที่ทับ หรือ null)
+export function clashWithMine(list, date, slotTime, minutes) {
+  const start = toMinutes(slotTime);
+  const end = start + (Number(minutes) || 0);
+  if (!Number.isFinite(start) || !(end > start)) return null;
+  return (list || []).find((e) => e.date === date && start < toMinutes(e.end_time) && toMinutes(e.time) < end) || null;
+}
+
 // ลำดับหัตถการ (เจ้าของสั่ง 15 พ.ย. 2569) — ตรงกับรายชื่อใน online_booking_create_v2 (20261115120000)
 // คนเดียวกันวันเดียวกัน: กลุ่ม "ทำก่อน" ต้องจบก่อนกลุ่ม "ฉีด" เริ่ม
 export const ORDER_FIRST = ["Pico", "Hifu", "Ultraformer", "Go-Hifu"];
