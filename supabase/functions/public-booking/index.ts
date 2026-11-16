@@ -71,16 +71,27 @@ function clientIp(req: Request) {
   return forwarded.split(",")[0].trim() || req.headers.get("cf-connecting-ip") || "unknown";
 }
 
-async function overRateLimit(ipHash: string, action: string): Promise<boolean> {
+// คืนจำนวนนาทีที่ต้องรอ (0 = ผ่าน) — นับเฉพาะครั้งที่เข้าถึงระบบจริง ไม่นับครั้งที่โดนบล็อก (status 429)
+// (16 พ.ย. 2569: เดิมนับ 429 ด้วย ลูกค้ากดซ้ำตอนโดนบล็อก = บล็อกยืดไปเรื่อย ๆ บางคนโดนข้ามคืน)
+async function rateLimitWaitMinutes(ipHash: string, action: string): Promise<number> {
   for (const [limit, minutes] of RATE_LIMITS[action] ?? []) {
     const since = new Date(Date.now() - minutes * 60_000).toISOString();
     const { count, error } = await supabase
       .from("online_booking_log").select("id", { count: "exact", head: true })
-      .eq("ip_hash", ipHash).eq("endpoint", action).gte("at", since);
-    if (error) return false; // นับไม่ได้ = ไม่บล็อกลูกค้าปกติ
-    if ((count ?? 0) >= limit) return true;
+      .eq("ip_hash", ipHash).eq("endpoint", action).gte("at", since).neq("status", 429);
+    if (error) return 0; // นับไม่ได้ = ไม่บล็อกลูกค้าปกติ
+    const used = count ?? 0;
+    if (used >= limit) {
+      // ต้องรอจนครั้งที่ (used - limit + 1) นับจากเก่าสุดหลุดช่วงเวลา จึงเหลือที่ว่าง 1 ครั้ง
+      const { data } = await supabase
+        .from("online_booking_log").select("at")
+        .eq("ip_hash", ipHash).eq("endpoint", action).gte("at", since).neq("status", 429)
+        .order("at", { ascending: true }).range(used - limit, used - limit);
+      const freedAt = data?.[0]?.at ? Date.parse(data[0].at) + minutes * 60_000 : Date.now() + minutes * 60_000;
+      return Math.min(minutes, Math.max(1, Math.ceil((freedAt - Date.now()) / 60_000)));
+    }
   }
-  return false;
+  return 0;
 }
 
 async function writeLog(entry: Record<string, unknown>) {
@@ -144,8 +155,9 @@ Deno.serve(async (req) => {
   let detail: Record<string, unknown> | null = null;
 
   try {
-    if (await overRateLimit(ipHash, action)) {
-      res = respond({ error: "RATE_LIMITED" }, 429, origin);
+    const waitMinutes = await rateLimitWaitMinutes(ipHash, action);
+    if (waitMinutes > 0) {
+      res = respond({ error: "RATE_LIMITED", retry_after_minutes: waitMinutes }, 429, origin);
     } else if (action === "branches") {
       const { data, error } = await supabase.rpc("online_booking_branches_v1");
       res = error ? rpcError(error, origin) : respond({ branches: data }, 200, origin);
@@ -179,6 +191,9 @@ Deno.serve(async (req) => {
       const start = parseStart(body.startTime);
       const count = parseCount(body.count);
       const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
+      // ตัวอักษรล่องหน (zero-width / BOM / word joiner) ติดมาจากการคัดลอกชื่อ — ตัดทิ้ง ไม่งั้นพนักงานค้นชื่อไม่เจอ
+      // และกติกา "คนเดียวกัน" (เบอร์+ชื่อ) มองชื่อเดียวกันเป็นคนละคน (16 พ.ย. 2569)
+      const cleanName = (v: unknown) => str(v, 200).replace(/[\u200B-\u200D\u2060\uFEFF]/g, "");
       if (str(body.website, 200).trim() !== "") {
         detail = { honeypot: true };
         res = respond({ success: false, error_code: "SLOT_UNAVAILABLE" }, 409, origin);
@@ -190,7 +205,7 @@ Deno.serve(async (req) => {
       else {
         const args = {
           p_reference_id: reference, p_branch_id: branchId, p_promo_id: promoId, p_start: start,
-          p_name: str(body.name, 200), p_phone: str(body.phone, 40), p_customer_type: str(body.customerType, 10),
+          p_name: cleanName(body.name), p_phone: str(body.phone, 40), p_customer_type: str(body.customerType, 10),
           p_note: str(body.note, 600),
         };
         const { data, error } = count === null
