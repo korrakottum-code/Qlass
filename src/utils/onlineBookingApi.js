@@ -13,17 +13,20 @@ async function callPublic(body) {
   if (!error) return data;
   let code = null;
   let conflict = null;
+  let retryAfterMinutes = null;
   const res = error?.context;
   if (res && typeof res.json === "function") {
     try {
       const parsed = typeof res.clone === "function" ? await res.clone().json() : await res.json();
       code = parsed?.error_code || parsed?.error || null;
       conflict = parsed?.conflict || null; // CUSTOMER_TIME_CONFLICT: คิวของลูกค้าเองที่เวลาทับ
+      retryAfterMinutes = Number.isFinite(Number(parsed?.retry_after_minutes)) ? Number(parsed.retry_after_minutes) : null; // RATE_LIMITED
     } catch { /* ไม่ใช่ JSON */ }
   }
   const err = new Error(code || "NETWORK_ERROR");
   err.code = code || "NETWORK_ERROR";
   err.conflict = conflict;
+  err.retryAfterMinutes = retryAfterMinutes;
   throw err;
 }
 
