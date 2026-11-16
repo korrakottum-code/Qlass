@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchPublicBranches, fetchPublicServices, fetchPublicSlots, bookPublic } from "../utils/onlineBookingApi";
-import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile, matchesSearch, groupServices, COUPON_COUNTS, MAX_COUPONS, couponMinutes, isSingleCoupon, addMinutes, floorToSlot, ceilToSlot, procedureOrderKind, RATE_LIMITED_TEXT, rateLimitText, loadMine, rememberMine, clashWithMine } from "../utils/publicBooking";
+import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile, matchesSearch, groupServices, COUPON_COUNTS, MAX_COUPONS, couponMinutes, isSingleCoupon, addMinutes, floorToSlot, ceilToSlot, procedureOrderKind } from "../utils/publicBooking";
 
 // หน้าลูกค้าจองคิวเอง (/#book หรือ /#book/<branchId>) — ไม่ต้องล็อกอิน เปิดจากลิงก์ในไลน์/เพจ ใช้บนมือถือเป็นหลัก
 // เปิดเฉพาะสาขา/บริการที่ตั้งไว้ในเมนู "จองออนไลน์" กติกาเตียงและเวลาอยู่ฝั่งเซิร์ฟเวอร์ (online_booking_*_v1) ทั้งหมด
@@ -14,7 +14,7 @@ const ERROR_TEXT = {
   INVALID_CUSTOMER: "รบกวนตรวจสอบชื่อและเบอร์มือถืออีกครั้งนะคะ",
   INVALID_SERVICE: "ขออภัยค่ะ บริการนี้ปิดรับจองออนไลน์แล้ว รบกวนเลือกบริการอื่นนะคะ",
   INVALID_BRANCH: "ขออภัยค่ะ สาขานี้ปิดรับจองออนไลน์แล้วค่ะ",
-  RATE_LIMITED: RATE_LIMITED_TEXT, // ตอนกดจองใช้ rateLimitText(นาทีที่ต้องรอ) แทน
+  RATE_LIMITED: "ทำรายการถี่เกินไปค่ะ รบกวนรอสักครู่แล้วลองใหม่อีกครั้งนะคะ",
   INVALID_COUNT: `จองออนไลน์ใช้คูปองได้ครั้งละ 1–${MAX_COUPONS} ใบค่ะ หากต้องการใช้มากกว่านี้ รบกวนทัก LINE @classclinic นะคะ`,
   // เพดานใหม่ (20261115130000): ค้างได้ไม่เกิน 2 วัน วันละไม่เกิน 3 คิว
   TOO_MANY_DAYS: "คุณลูกค้ามีคิวจองออนไลน์ล่วงหน้าครบ 2 วันแล้วค่ะ จองเพิ่มได้เฉพาะวันที่มีคิวอยู่แล้ว หากต้องการจองวันอื่นหรือเปลี่ยนเวลา รบกวนทัก LINE @classclinic นะคะ",
@@ -109,10 +109,6 @@ const S = {
     border: "1.5px solid var(--border)", background: open ? "var(--surface2)" : "var(--surface)", cursor: "pointer",
     fontFamily: "var(--font)", fontSize: 15, fontWeight: 700, color: "var(--text)", textAlign: "left",
   }),
-  // เวลาที่ทับคิวที่เพิ่งจองในเครื่องนี้ (กดได้ปกติ แค่เตือน)
-  chipClash: { position: "relative", border: "1.5px dashed #E8590C" },
-  clashCorner: { position: "absolute", top: 1, right: 4, color: "#E8590C", fontSize: 9, lineHeight: 1 },
-  clashDot: { color: "#E8590C", fontSize: 10, marginRight: 4, verticalAlign: "middle" },
   hint: { background: "var(--accent-soft)", color: "var(--text)", borderRadius: 10, padding: "10px 12px", fontSize: 14, lineHeight: 1.6 },
 };
 
@@ -131,8 +127,6 @@ export default function PublicBookingPage() {
   const today = useMemo(() => bangkokToday(), []);
   const dates = useMemo(() => bookingDates(today), [today]);
   const [date, setDate] = useState(today);
-  // คิวที่เพิ่งจองในเครื่องนี้ — ใช้ทำเครื่องหมายเวลาที่ทับ (เตือนอย่างเดียว ไม่บล็อก)
-  const [mine, setMine] = useState(() => loadMine(today));
   const [slots, setSlots] = useState(null);
   const [startTime, setStartTime] = useState("");
   const [name, setName] = useState("");
@@ -205,17 +199,9 @@ export default function PublicBookingPage() {
     if (refRef.current.signature !== signature) refRef.current = { signature, reference: newReference() };
     try {
       const result = await bookPublic({ ...payload, referenceId: refRef.current.reference });
-      if (result?.date && result?.time) {
-        const endTime = result.end_time || addMinutes(result.time, couponMinutes(service, payload.count));
-        setMine((prev) => rememberMine(prev, { date: result.date, time: result.time, end_time: endTime, service: result.service }, today));
-      }
       setDone(result);
     } catch (err) {
-      if (err.code === "CUSTOMER_TIME_CONFLICT" && err.conflict?.time && err.conflict?.end_time) {
-        setMine((prev) => rememberMine(prev, { date, time: err.conflict.time, end_time: err.conflict.end_time, service: err.conflict.service }, today));
-      }
-      setSubmitError(err.code === "RATE_LIMITED" ? rateLimitText(err.retryAfterMinutes)
-        : errorText(err.code, err.conflict, couponMinutes(service, couponCount), (slots || []).map((s) => s.time)));
+      setSubmitError(errorText(err.code, err.conflict, couponMinutes(service, couponCount), (slots || []).map((s) => s.time)));
       if (err.code === "SLOT_UNAVAILABLE" || err.code === "CUSTOMER_TIME_CONFLICT" || err.code === "PROCEDURE_ORDER") { setStartTime(""); loadSlots(); }
     } finally {
       setSubmitting(false);
@@ -394,30 +380,17 @@ export default function PublicBookingPage() {
               {slots && slots.filter((s) => s.available).length === 0 && <span style={S.muted}>ขออภัยค่ะ วันที่เลือกเวลาเต็มแล้ว รบกวนเลือกวันอื่นนะคะ</span>}
               {slots && slots.some((s) => s.available) && (
                 <div style={S.grid}>
-                  {slots.map((s) => {
-                    const clash = s.available && clashWithMine(mine, date, s.time, couponMinutes(service, couponCount));
-                    const on = s.start_time === startTime;
-                    return (
-                      <button key={s.start_time} type="button" disabled={!s.available}
-                        style={{ ...S.chip(on, !s.available), ...(clash && !on ? S.chipClash : null) }}
-                        onClick={() => { setStartTime(s.start_time); setSubmitError(""); }}>
-                        {clash && <span style={S.clashCorner} aria-label="ทับคิวที่เพิ่งจอง">●</span>}{s.time}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              {slots && slots.some((s) => s.available && clashWithMine(mine, date, s.time, couponMinutes(service, couponCount))) && (
-                <div style={{ ...S.muted, marginTop: 10, lineHeight: 1.6 }}>
-                  <span style={S.clashDot}>●</span>= เวลาทับกับคิวที่เพิ่งจองไว้ในเครื่องนี้ ({mine.filter((e) => e.date === date).map((e) => `${e.service ? `${e.service} ` : ""}${e.time}–${e.end_time} น.`).join(", ")}) หากจองให้ตัวเอง รบกวนเลือกเวลาอื่นนะคะ
+                  {slots.map((s) => (
+                    <button key={s.start_time} type="button" disabled={!s.available}
+                      style={S.chip(s.start_time === startTime, !s.available)} onClick={() => { setStartTime(s.start_time); setSubmitError(""); }}>
+                      {s.time}
+                    </button>
+                  ))}
                 </div>
               )}
               {slot && (
                 <div style={{ ...S.hint, marginTop: 10 }}>
                   🕒 จองเวลา <b>{slot.time}–{addMinutes(slot.time, couponMinutes(service, couponCount))} น.</b> ({couponMinutes(service, couponCount)} นาที{couponCount > 1 ? ` สำหรับ ${couponCount} ใบ` : ""})
-                  {clashWithMine(mine, date, slot.time, couponMinutes(service, couponCount)) && (
-                    <div style={{ color: "var(--orange, #D9480F)", marginTop: 4 }}>⚠️ เวลานี้ทับกับคิวที่เพิ่งจองไว้ หากจองให้ตัวเอง รบกวนเลือกเวลาอื่นนะคะ</div>
-                  )}
                 </div>
               )}
               {slots && slots.some((s) => s.available) && !slot && (
