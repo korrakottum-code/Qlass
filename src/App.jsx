@@ -80,6 +80,7 @@ import TicketPage from "./pages/TicketPage";
 import ActivityLogPage from "./pages/ActivityLogPage";
 import CeoDashboardPage from "./pages/CeoDashboardPage";
 import ManualPage from "./pages/ManualPage";
+import { shouldCheckTiktokBedRule, tiktokBedRuleCheck, tiktokBedRuleMessage, tiktokBedRuleCodeFromError } from "./utils/tiktokBedRule";
 // หน้าคูปองโหลดเมื่อเปิดเมนูเท่านั้น และไม่เก็บข้อมูลคูปองใน state ของ App (ค้นจากเซิร์ฟเวอร์เป็นรายใบ)
 const CouponPage = lazy(() => import("./pages/CouponPage"));
 // ตั้งค่าลูกค้าจองเอง (/#book): สาขาที่เปิด + บริการที่ให้จอง — ข้อมูลอยู่ฝั่งเซิร์ฟเวอร์ (staff-session online_booking_*)
@@ -685,6 +686,18 @@ export default function App() {
       }
     }
 
+    // ─── เตียง TikTok (ติ๊กรายเตียง 19 พ.ย. 2569) — กติกาจริงอยู่ที่ trigger ฐานข้อมูล ตรงนี้แค่บอกเหตุผลก่อน ───
+    {
+      const bedOriginal = editingQueueId ? queues.find((q) => q.id === editingQueueId) : null;
+      if (shouldCheckTiktokBedRule(form, bedOriginal, { rooms, promos, procedures, roomProcedureIndex })) {
+        const bedCode = tiktokBedRuleCheck(form, { rooms, promos, procedures, roomProcedureIndex });
+        if (bedCode !== "ok") {
+          showToast("error", tiktokBedRuleMessage(bedCode, { rooms, roomId: form.roomId }));
+          return false;
+        }
+      }
+    }
+
     // ─── ตรวจสอบเวลาชนกัน (ดึงจาก DB สด ป้องกัน race condition หลายเครื่อง) ───
     if (form.timeBlock !== null && form.roomId && form.procedureId) {
       const proc = procedures.find((p) => p.id === form.procedureId);
@@ -791,8 +804,11 @@ export default function App() {
       // direct insert path. The server wrote nothing; show the reason and keep
       // the draft. A transport failure keeps the request ID so retrying the
       // same attempt cannot create a duplicate queue.
-      const serverCode = useServerCreate ? await extractQueueCreateErrorCode(error) : null;
-      if (serverCode) {
+      const bedCode = tiktokBedRuleCodeFromError(error);
+      const serverCode = !bedCode && useServerCreate ? await extractQueueCreateErrorCode(error) : null;
+      if (bedCode) {
+        showToast("error", tiktokBedRuleMessage(bedCode, { rooms, roomId: form.roomId }));
+      } else if (serverCode) {
         serverQueueRequestIdRef.current = null;
         showToast("error", queueCreateErrorMessage(serverCode));
       } else {
@@ -800,7 +816,7 @@ export default function App() {
       }
       return false;
     }
-  }, [form, editingQueueId, showToast, queues, procedures, parseHints, lastParseSnapshot, branches, promos, rooms, currentUser]);
+  }, [form, editingQueueId, showToast, queues, procedures, parseHints, lastParseSnapshot, branches, promos, rooms, currentUser, roomProcedureIndex]);
 
   const editQueue = useCallback((q) => {
     setForm({ ...q });
@@ -1700,6 +1716,7 @@ export default function App() {
                   let created = 0;
                   let skippedNoType = 0;
                   let skippedPast = 0;
+                  let skippedBed = 0;
                   for (const fields of allFields) {
                     if (!fields.name && !fields.phone) continue;
                     if (!VALID_TYPES.includes(fields.customerType)) {
@@ -1730,10 +1747,12 @@ export default function App() {
                       });
                       created++;
                     } catch (err) {
+                      if (tiktokBedRuleCodeFromError(err)) skippedBed++;
                       console.error("Bulk booking error:", err);
                     }
                   }
-                  const pastNote = skippedPast > 0 ? ` — ข้าม ${skippedPast} คิวที่วันที่ผ่านไปแล้ว` : "";
+                  const pastNote = (skippedPast > 0 ? ` — ข้าม ${skippedPast} คิวที่วันที่ผ่านไปแล้ว` : "")
+                    + (skippedBed > 0 ? ` — ข้าม ${skippedBed} คิวที่ลงเตียงผิด (คิว TikTok ต้องลงเตียง TikTok และเตียง TikTok รับเฉพาะ TikTok) กรุณาลงเองทีละคิว` : "");
                   if (created > 0 && skippedNoType > 0) {
                     showToast("success", `สร้าง ${created} คิว — ข้าม ${skippedNoType} คิวที่ไม่รู้ประเภทลูกค้า กรุณาลงเองทีละคิว${pastNote}`);
                   } else if (created > 0) {
@@ -1742,6 +1761,8 @@ export default function App() {
                     showToast("error", `ไม่ได้สร้างสักคิว — ทั้ง ${skippedNoType} คิวไม่ได้ระบุประเภทลูกค้าในข้อความ (ลูกค้าใหม่ / เก่า / ใช้คอร์ส)${pastNote}`);
                   } else if (skippedPast > 0) {
                     showToast("error", `ไม่ได้สร้างสักคิว — ทั้ง ${skippedPast} คิวเป็นวันที่ผ่านไปแล้ว ลงย้อนหลังไม่ได้`);
+                  } else if (skippedBed > 0) {
+                    showToast("error", `ไม่ได้สร้างสักคิว${pastNote}`);
                   }
                 }}
                 todayStats={todayStats}
@@ -1907,6 +1928,14 @@ export default function App() {
                     showToast("error", `${dup.name} (${dup.phone}) มีคิววันนี้แล้ว (${dup.timeBlock !== null ? blockToTime(dup.timeBlock) : "ไม่ระบุเวลา"})`);
                     return false;
                   }
+                  // เตียง TikTok (ติ๊กรายเตียง) — กติกาเดียวกับหน้าบันทึกคิว
+                  if (shouldCheckTiktokBedRule(bookingForm, null)) {
+                    const bedCode = tiktokBedRuleCheck(bookingForm, { rooms, promos, procedures, roomProcedureIndex });
+                    if (bedCode !== "ok") {
+                      showToast("error", tiktokBedRuleMessage(bedCode, { rooms, roomId: bookingForm.roomId }));
+                      return false;
+                    }
+                  }
                   // conflict check — ดึงจาก DB สด ป้องกัน race condition หลายเครื่อง
                   if (bookingForm.timeBlock !== null && bookingForm.roomId && bookingForm.procedureId) {
                     const proc = procedures.find((p) => p.id === bookingForm.procedureId);
@@ -1960,8 +1989,11 @@ export default function App() {
                     console.error("Timeline booking save failed:", error);
                     // Goal 13: after a server business rejection there is NO fallback to
                     // the direct insert path — same rule as the Booking page.
-                    const serverCode = useServerCreate ? await extractQueueCreateErrorCode(error) : null;
-                    if (serverCode) {
+                    const bedCode = tiktokBedRuleCodeFromError(error);
+                    const serverCode = !bedCode && useServerCreate ? await extractQueueCreateErrorCode(error) : null;
+                    if (bedCode) {
+                      showToast("error", tiktokBedRuleMessage(bedCode, { rooms, roomId: bookingForm.roomId }));
+                    } else if (serverCode) {
                       timelineServerQueueRequestIdRef.current = null;
                       showToast("error", queueCreateErrorMessage(serverCode));
                     } else {
