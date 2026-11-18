@@ -401,6 +401,8 @@ export async function fetchRooms() {
     sortOrder: r.sort_order ?? 0,
     // หัตถการที่เตียงนี้ติ๊กให้ (เช่น ดริป/ปากกาบนเตียง M) — ไม่มีคอลัมน์ = ว่าง
     optInProcedureIds: Array.isArray(r.opt_in_procedure_ids) ? r.opt_in_procedure_ids : [],
+    // เตียงนี้รับเฉพาะคิวโปร TikTok (ติ๊กในหน้าแก้ไขเตียง) — ไม่มีคอลัมน์ = false
+    tiktokOnly: r.tiktok_only === true,
   }));
 }
 
@@ -430,6 +432,7 @@ export async function createRoom(room) {
     closeBlock: data.close_block,
     sortOrder: data.sort_order ?? 0,
     optInProcedureIds: Array.isArray(data.opt_in_procedure_ids) ? data.opt_in_procedure_ids : [],
+    tiktokOnly: data.tiktok_only === true,
   };
 }
 
@@ -444,6 +447,8 @@ export async function updateRoom(id, room) {
   if (room.sortOrder !== undefined) payload.sort_order = room.sortOrder;
   // ส่งเฉพาะตอนผู้ใช้เปลี่ยนการติ๊กจริง — undefined = ไม่แตะของเดิม
   if (room.optInProcedureIds !== undefined) payload.opt_in_procedure_ids = room.optInProcedureIds;
+  // เตียง TikTok — ส่งเฉพาะตอนผู้ใช้เปลี่ยนการติ๊กจริง undefined = ไม่แตะของเดิม
+  if (room.tiktokOnly !== undefined) payload.tiktok_only = room.tiktokOnly === true;
 
   const { data, error } = await supabase
     .from("rooms")
@@ -463,6 +468,7 @@ export async function updateRoom(id, room) {
     closeBlock: data.close_block,
     sortOrder: data.sort_order ?? 0,
     optInProcedureIds: Array.isArray(data.opt_in_procedure_ids) ? data.opt_in_procedure_ids : [],
+    tiktokOnly: data.tiktok_only === true,
   };
 }
 

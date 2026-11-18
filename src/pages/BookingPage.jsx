@@ -496,12 +496,17 @@ export default function BookingPage({
                 >
                   <option value="">-- เลือกห้อง --</option>
                   {branchRooms.map((r) => {
-                    return <option key={r.id} value={r.id}>[{r.type}] {r.name}</option>;
+                    return <option key={r.id} value={r.id}>[{r.type}] {r.name}{r.tiktokOnly ? " · TikTok" : ""}</option>;
                   })}
                 </select>
                 {roomIsConfigured && (
                   <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: "var(--accent)", lineHeight: 1.5 }}>
                     🔒 เตียงนี้รับ: {roomLockLabel(roomProcedureIndex, selectedRoom, procedures)}
+                  </div>
+                )}
+                {selectedRoom?.tiktokOnly && (
+                  <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: "var(--accent)", lineHeight: 1.5 }}>
+                    🎵 เตียง TikTok — รับเฉพาะคิวโปร TikTok
                   </div>
                 )}
                 {selectedRoom?.notes && (

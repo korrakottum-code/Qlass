@@ -1,36 +1,44 @@
-// เตียง M02 = เตียง TikTok ฉีด (ทีมตัดสิน 18 พ.ย. 2569)
-// กติกาจริงอยู่ที่ฐานข้อมูล (trigger queues_tiktok_bed_rule — migration 20261118120000)
+// เตียง TikTok: ติ๊กรายเตียง "เตียงนี้รับเฉพาะ TikTok" (เจ้าของตัดสิน 19 พ.ย. 2569)
+// กติกาจริงอยู่ที่ฐานข้อมูล (trigger queues_tiktok_bed_rule — migration 20261119120000)
 // ไฟล์นี้แค่ตรวจซ้ำฝั่งหน้าจอ เพื่อบอกแอดมินเหตุผลชัด ๆ ก่อนกดบันทึก ต้องตรงกับ tiktok_bed_rule_v1 เสมอ
-//   1. คิวโปร TikTok ของงานฉีด ลงได้เฉพาะเตียง M02
-//   2. เตียง M02 รับเฉพาะคิวโปร TikTok ฉีด (คิวธรรมดาทุกอย่าง และ TikTok ที่ไม่ใช่ฉีด ลงไม่ได้)
+//   1. เตียงที่ติ๊ก (room.tiktokOnly) รับเฉพาะคิวโปร TikTok
+//   2. คิวโปร TikTok ต้องลงเตียงที่ติ๊ก ถ้าสาขามีเตียงติ๊กประเภทเดียวกันที่ทำหัตถการนั้นได้
+//   3. สาขาที่ยังไม่ติ๊กเตียงไหน = ลงปนได้แบบเดิม
 // คิวเดิมไม่แตะ: แก้คิวโดยไม่เปลี่ยนเตียง/โปร/หัตถการ = ไม่ตรวจ (ดู shouldCheckTiktokBedRule)
-
-export const INJECT_PROCEDURE_NAMES = ["Botox", "Filler", "Meso", "Go-Botox", "Go-Filler"];
+import { isProcedureAllowedInRoom } from "./roomProcedures.js";
 
 export function isTiktokPromoName(name) {
   return String(name ?? "").trim().toLowerCase().startsWith("tiktok");
 }
 
 export function isTiktokBed(room) {
-  return !!room && room.type === "M" && String(room.name ?? "").trim().toUpperCase() === "M02";
+  return !!room?.tiktokOnly;
 }
 
-/** "ok" | "tiktok_needs_m02" | "m02_tiktok_only" — เหมือน tiktok_bed_rule_v1 ใน SQL */
-export function tiktokBedRuleCheck({ roomId, promoId, procedureId, promoNameSnapshot }, { rooms = [], promos = [], procedures = [] } = {}) {
+/** เตียง TikTok ในสาขาเดียวกัน ประเภทเดียวกัน ที่ทำหัตถการนี้ได้ */
+export function tiktokBedsFor(room, procedure, { rooms = [], roomProcedureIndex = null } = {}) {
+  if (!room || !procedure) return [];
+  return rooms.filter((r) => r.branchId === room.branchId && r.type === room.type && isTiktokBed(r)
+    && isProcedureAllowedInRoom(roomProcedureIndex, r, procedure));
+}
+
+/** "ok" | "tiktok_needs_tiktok_bed" | "tiktok_bed_only" — เหมือน tiktok_bed_rule_v1 ใน SQL */
+export function tiktokBedRuleCheck({ roomId, promoId, procedureId, promoNameSnapshot }, { rooms = [], promos = [], procedures = [], roomProcedureIndex = null } = {}) {
   if (!roomId) return "ok";
   const room = rooms.find((r) => r.id === roomId);
+  if (!room) return "ok";
   const promo = promoId ? promos.find((p) => p.id === promoId) : null;
-  const proc = procedureId ? procedures.find((p) => p.id === procedureId) : null;
-  const isM02 = isTiktokBed(room);
   const isTt = isTiktokPromoName(promo ? promo.name : promoNameSnapshot);
-  const isInject = !!proc && INJECT_PROCEDURE_NAMES.includes(proc.name);
-  if (isM02 && !(isTt && isInject)) return "m02_tiktok_only";
-  if (isTt && isInject && !isM02) return "tiktok_needs_m02";
+  if (isTiktokBed(room) && !isTt) return "tiktok_bed_only";
+  if (isTt && !isTiktokBed(room)) {
+    const proc = procedureId ? procedures.find((p) => p.id === procedureId) : null;
+    if (tiktokBedsFor(room, proc, { rooms, roomProcedureIndex }).length > 0) return "tiktok_needs_tiktok_bed";
+  }
   return "ok";
 }
 
-/** ตรวจเฉพาะคิวใหม่ หรือแก้คิวที่เปลี่ยนเตียง/โปร/หัตถการ (เหมือน trigger) */
-// คิวเดิมที่ผิดกติกาอยู่แล้วก่อนมีกติกา แก้โปร/หัตถการได้ถ้าไม่ย้ายเตียง (ส่ง ctx มาด้วยถึงจะรู้)
+/** ตรวจเฉพาะคิวใหม่ หรือแก้คิวที่เปลี่ยนเตียง/โปร/หัตถการ (เหมือน trigger)
+ *  คิวเดิมที่ผิดกติกาอยู่แล้วก่อนติ๊ก แก้โปร/หัตถการได้ถ้าไม่ย้ายเตียง (ส่ง ctx มาด้วยถึงจะรู้) */
 export function shouldCheckTiktokBedRule(form, original, ctx = null) {
   if (!form?.roomId) return false;
   if (!original) return true;
@@ -43,15 +51,17 @@ export function shouldCheckTiktokBedRule(form, original, ctx = null) {
   return true;
 }
 
-export function tiktokBedRuleMessage(code, { rooms = [], branchId } = {}) {
-  if (code === "tiktok_needs_m02") {
-    const branchHasM02 = !branchId || rooms.some((r) => r.branchId === branchId && isTiktokBed(r));
-    return branchHasM02
-      ? "คิวโปร TikTok (ฉีด) ลงได้เฉพาะเตียง M02 — เลือกเตียง M02 หรือวันอื่นที่ M02 ว่าง"
-      : "สาขานี้ไม่มีเตียง M02 จึงรับคิวโปร TikTok (ฉีด) ไม่ได้";
+export function tiktokBedRuleMessage(code, { rooms = [], roomId } = {}) {
+  const room = rooms.find((r) => r.id === roomId);
+  if (code === "tiktok_needs_tiktok_bed") {
+    const names = room
+      ? rooms.filter((r) => r.branchId === room.branchId && r.type === room.type && isTiktokBed(r)).map((r) => r.name)
+      : [];
+    const where = names.length > 0 ? names.join(", ") : "เตียง TikTok";
+    return `คิวโปร TikTok ต้องลงเตียงที่ตั้งเป็นเตียง TikTok (${where}) — เลือกเตียงนั้น หรือวันอื่นที่เตียงนั้นว่าง`;
   }
-  if (code === "m02_tiktok_only") {
-    return "เตียง M02 รับเฉพาะคิวโปร TikTok ฉีด — คิวนี้ให้ลงเตียงอื่น";
+  if (code === "tiktok_bed_only") {
+    return `${room?.name ? `เตียง ${room.name}` : "เตียงนี้"} รับเฉพาะคิวโปร TikTok — คิวนี้ให้ลงเตียงอื่น`;
   }
   return null;
 }
@@ -60,6 +70,6 @@ export function tiktokBedRuleMessage(code, { rooms = [], branchId } = {}) {
 export function tiktokBedRuleCodeFromError(error) {
   const text = [error?.message, error?.details, error?.hint, typeof error === "string" ? error : ""]
     .filter(Boolean).join(" ");
-  const m = /TIKTOK_BED_RULE:(tiktok_needs_m02|m02_tiktok_only)/.exec(text);
+  const m = /TIKTOK_BED_RULE:(tiktok_needs_tiktok_bed|tiktok_bed_only)/.exec(text);
   return m ? m[1] : null;
 }

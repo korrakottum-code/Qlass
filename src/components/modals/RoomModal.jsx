@@ -71,6 +71,9 @@ export default function RoomModal({
     [data, optInProcIds]
   );
   const [optInIds, setOptInIds] = useState(initialOptInIds);
+  // เตียง TikTok: รับเฉพาะคิวโปร TikTok และคิว TikTok ประเภทเดียวกันในสาขาต้องลงเตียงที่ติ๊ก
+  // (กติกาจริงอยู่ที่ฐานข้อมูล — tiktokBedRule.js / migration 20261119120000)
+  const [tiktokOnly, setTiktokOnly] = useState(!!data?.tiktokOnly);
 
   // ตัวที่ต้องติ๊กรายเตียงไม่อยู่ในรายการล็อก — ถ้าเตียงนี้ถูกล็อก จะเติมให้อัตโนมัติตอนบันทึก
   // (ไม่งั้นล็อกจะห้ามซ้อนกับช่องติ๊ก ติ๊กดริปแล้วก็ยังลงไม่ได้)
@@ -183,6 +186,8 @@ export default function RoomModal({
             const chosen = procIds.length > 0 ? [...new Set([...procIds, ...genericIds, ...optInProcIds])] : [];
             return sameSet(currentIds, chosen) ? undefined : chosen;
           })(),
+          // เตียง TikTok — ส่งเฉพาะตอนแก้ไขและติ๊กเปลี่ยนจริง undefined = ไม่แตะของเดิม
+          tiktokOnly: isEdit && tiktokOnly !== !!data?.tiktokOnly ? tiktokOnly : undefined,
           // เตียงที่ติ๊กดริป/ปากกา — ส่งเฉพาะตอนแก้ไขและติ๊กเปลี่ยนจริง undefined = ไม่แตะของเดิม
           optInProcedureIds: (() => {
             if (!isEdit || optInProcs.length === 0) return undefined;
@@ -402,6 +407,35 @@ export default function RoomModal({
               กำหนดเวลาทำการปกติของห้องนี้ — ใช้ "ตารางห้อง/เครื่อง" สำหรับวันพิเศษ
             </span>
           </div>
+
+          {/* เตียง TikTok */}
+          {isEdit && (
+            <div className="form-group full">
+              <label className="form-label">🎵 เตียง TikTok</label>
+              <label
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "8px 10px", borderRadius: 6, cursor: "pointer",
+                  border: "1px solid var(--border)",
+                  background: tiktokOnly ? "var(--accent-soft)" : "transparent",
+                  fontSize: 13, fontWeight: tiktokOnly ? 700 : 400,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={tiktokOnly}
+                  onChange={() => setTiktokOnly((v) => !v)}
+                  style={CHECKBOX_STYLE}
+                />
+                เตียง {autoName} รับเฉพาะคิวโปร TikTok
+              </label>
+              <span style={{ fontSize: 11, color: "var(--text3)", lineHeight: 1.6 }}>
+                ติ๊ก = เตียงนี้รับเฉพาะคิว TikTok และคิว TikTok ประเภท {type} ของสาขานี้ต้องลงเตียงที่ติ๊กเท่านั้น (รวมหน้าจองออนไลน์)
+                <br />
+                ไม่ติ๊กสักเตียงในสาขา = TikTok ลงปนเตียงธรรมดาได้แบบเดิม · คิวที่จองไว้แล้วไม่ถูกแตะ
+              </span>
+            </div>
+          )}
 
           {/* หัตถการที่ต้องติ๊กรายเตียง (เช่น ดริป/ปากกาบนเตียง M) */}
           {isEdit && optInProcs.length > 0 && (
