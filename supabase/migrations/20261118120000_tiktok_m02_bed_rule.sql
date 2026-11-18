@@ -2,7 +2,7 @@
 --
 -- กติกา (ใช้กับคิวที่ลงใหม่/ย้ายเตียงใหม่เท่านั้น — คิวเดิมทั้งหมดไม่แตะ):
 --   1. คิวโปร TikTok ของงานฉีด (Botox / Filler / Meso / Go-Botox / Go-Filler) ลงได้เฉพาะเตียง M02
---   2. เตียง M02 รับเฉพาะคิวโปร TikTok — คิวธรรมดาลง M02 ไม่ได้
+--   2. เตียง M02 รับเฉพาะคิวโปร TikTok ฉีด — คิวธรรมดาทุกอย่าง และ TikTok ที่ไม่ใช่ฉีด ลง M02 ไม่ได้ (เจ้าของยืนยัน 18 พ.ย.)
 --   3. วันที่ M02 ปิด = สาขานั้นไม่รับ TikTok ฉีดวันนั้น (ตามมาเองจากข้อ 1)
 --   4. สาขาที่ไม่มี M02 (นครศรีธรรมราช) = ไม่รับ TikTok ฉีด
 --   ลูกค้าจองเองเห็นแค่ "เวลาเต็ม" (ไม่บอกว่าเป็นเตียง TikTok / ไม่บอกโควต้า)
@@ -43,7 +43,7 @@ as $$
     when not coalesce((select s.enabled from public.tiktok_bed_rule_settings s where s.id), false) then 'ok'
     else (
       select case
-               when x.is_m02 and not x.is_tt then 'm02_tiktok_only'
+               when x.is_m02 and not (x.is_tt and x.is_inj) then 'm02_tiktok_only'
                when x.is_tt and x.is_inj and not x.is_m02 then 'tiktok_needs_m02'
                else 'ok'
              end

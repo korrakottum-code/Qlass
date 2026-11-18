@@ -28,7 +28,8 @@ test("TikTok injection must be on M02", () => {
   assert.equal(tiktokBedRuleCheck({ roomId: "m3", promoId: "tt", procedureId: "gofiller" }, ctx), "tiktok_needs_m02");
 });
 
-test("M02 takes TikTok only", () => {
+test("M02 takes TikTok injection only", () => {
+  assert.equal(tiktokBedRuleCheck({ roomId: "m2", promoId: "ttPico", procedureId: "pico" }, ctx), "m02_tiktok_only");
   assert.equal(tiktokBedRuleCheck({ roomId: "m2", promoId: "reg", procedureId: "botox" }, ctx), "m02_tiktok_only");
   assert.equal(tiktokBedRuleCheck({ roomId: "m2", promoId: "", procedureId: "botox" }, ctx), "m02_tiktok_only");
   assert.equal(tiktokBedRuleCheck({ roomId: "m1", promoId: "reg", procedureId: "botox" }, ctx), "ok");
@@ -63,7 +64,7 @@ test("a queue booked before the rule may change promo while staying on its bed",
 test("messages: branch without M02 is told it cannot take TikTok injection", () => {
   assert.match(tiktokBedRuleMessage("tiktok_needs_m02", { rooms, branchId: "b1" }), /เฉพาะเตียง M02/);
   assert.match(tiktokBedRuleMessage("tiktok_needs_m02", { rooms, branchId: "b2" }), /ไม่มีเตียง M02/);
-  assert.match(tiktokBedRuleMessage("m02_tiktok_only", {}), /รับเฉพาะคิวโปร TikTok/);
+  assert.match(tiktokBedRuleMessage("m02_tiktok_only", {}), /รับเฉพาะคิวโปร TikTok ฉีด/);
   assert.equal(tiktokBedRuleMessage("ok", {}), null);
 });
 
@@ -86,4 +87,5 @@ test("migration: kill switch, locked down, and old queues untouched", () => {
   for (const name of ["'Botox'", "'Filler'", "'Meso'", "'Go-Botox'", "'Go-Filler'"]) assert.ok(sql.includes(name));
   // fail closed if the live function text changed
   assert.match(sql, /pattern not found/);
+  assert.match(sql, /when x\.is_m02 and not \(x\.is_tt and x\.is_inj\) then 'm02_tiktok_only'/);
 });

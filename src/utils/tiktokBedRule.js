@@ -2,7 +2,7 @@
 // กติกาจริงอยู่ที่ฐานข้อมูล (trigger queues_tiktok_bed_rule — migration 20261118120000)
 // ไฟล์นี้แค่ตรวจซ้ำฝั่งหน้าจอ เพื่อบอกแอดมินเหตุผลชัด ๆ ก่อนกดบันทึก ต้องตรงกับ tiktok_bed_rule_v1 เสมอ
 //   1. คิวโปร TikTok ของงานฉีด ลงได้เฉพาะเตียง M02
-//   2. เตียง M02 รับเฉพาะคิวโปร TikTok
+//   2. เตียง M02 รับเฉพาะคิวโปร TikTok ฉีด (คิวธรรมดาทุกอย่าง และ TikTok ที่ไม่ใช่ฉีด ลงไม่ได้)
 // คิวเดิมไม่แตะ: แก้คิวโดยไม่เปลี่ยนเตียง/โปร/หัตถการ = ไม่ตรวจ (ดู shouldCheckTiktokBedRule)
 
 export const INJECT_PROCEDURE_NAMES = ["Botox", "Filler", "Meso", "Go-Botox", "Go-Filler"];
@@ -24,7 +24,7 @@ export function tiktokBedRuleCheck({ roomId, promoId, procedureId, promoNameSnap
   const isM02 = isTiktokBed(room);
   const isTt = isTiktokPromoName(promo ? promo.name : promoNameSnapshot);
   const isInject = !!proc && INJECT_PROCEDURE_NAMES.includes(proc.name);
-  if (isM02 && !isTt) return "m02_tiktok_only";
+  if (isM02 && !(isTt && isInject)) return "m02_tiktok_only";
   if (isTt && isInject && !isM02) return "tiktok_needs_m02";
   return "ok";
 }
@@ -51,7 +51,7 @@ export function tiktokBedRuleMessage(code, { rooms = [], branchId } = {}) {
       : "สาขานี้ไม่มีเตียง M02 จึงรับคิวโปร TikTok (ฉีด) ไม่ได้";
   }
   if (code === "m02_tiktok_only") {
-    return "เตียง M02 รับเฉพาะคิวโปร TikTok — คิวนี้ให้ลงเตียง M อื่น";
+    return "เตียง M02 รับเฉพาะคิวโปร TikTok ฉีด — คิวนี้ให้ลงเตียงอื่น";
   }
   return null;
 }

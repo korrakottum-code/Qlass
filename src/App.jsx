@@ -1752,7 +1752,7 @@ export default function App() {
                     }
                   }
                   const pastNote = (skippedPast > 0 ? ` — ข้าม ${skippedPast} คิวที่วันที่ผ่านไปแล้ว` : "")
-                    + (skippedBed > 0 ? ` — ข้าม ${skippedBed} คิวที่ลงเตียงผิด (TikTok ฉีดต้องลง M02 และ M02 รับเฉพาะ TikTok) กรุณาลงเองทีละคิว` : "");
+                    + (skippedBed > 0 ? ` — ข้าม ${skippedBed} คิวที่ลงเตียงผิด (TikTok ฉีดต้องลง M02 และ M02 รับเฉพาะ TikTok ฉีด) กรุณาลงเองทีละคิว` : "");
                   if (created > 0 && skippedNoType > 0) {
                     showToast("success", `สร้าง ${created} คิว — ข้าม ${skippedNoType} คิวที่ไม่รู้ประเภทลูกค้า กรุณาลงเองทีละคิว${pastNote}`);
                   } else if (created > 0) {
