@@ -8,6 +8,7 @@
 --   1. เตียงที่ติ๊ก rooms.tiktok_only รับเฉพาะคิวโปร TikTok (คิวธรรมดาลงไม่ได้)
 --   2. คิวโปร TikTok ลงเตียงที่ไม่ได้ติ๊กไม่ได้ ถ้าสาขานั้นมีเตียงติ๊กประเภทเดียวกัน (M/T/N)
 --      ที่ทำหัตถการนั้นได้ (ตามล็อกเครื่อง/ติ๊กรายเตียง เหมือนหน้าจองออนไลน์)
+--   ยกเว้น "ปิดคิว" (คิวกันช่องเวลา ไม่ใช่ลูกค้า) ลงเตียงไหนก็ได้
 --   3. สาขาที่ยังไม่ติ๊กเตียงไหน = ลงปนได้แบบเดิม (เจ้าของเลือก) — ค่าเริ่มต้นไม่ติ๊กสักเตียง
 --      ไฟล์นี้จึงยังไม่เปลี่ยนผลการลงคิวเลย จนกว่าจะมีคนติ๊กเตียง
 --   ฝั่ง Treatment (T) ตอนนี้ไม่ติ๊ก = ลงปนได้; อยากกันวันไหนก็ติ๊กเตียง T ได้ทันทีโดยไม่ต้องแก้โค้ด
@@ -52,6 +53,8 @@ as $$
   select case
     when p_room_id is null then 'ok'
     when not coalesce((select s.enabled from public.tiktok_bed_rule_settings s where s.id), false) then 'ok'
+    -- "ปิดคิว" = คิวกันช่องเวลา ไม่ใช่ลูกค้า — ปิดช่องบนเตียง TikTok ได้เสมอ
+    when exists (select 1 from public.procedures p where p.id = p_procedure_id and p.name = 'ปิดคิว') then 'ok'
     else coalesce((
       select case
                when r.tiktok_only and not t.is_tt then 'tiktok_bed_only'

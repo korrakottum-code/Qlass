@@ -7,6 +7,8 @@
 // คิวเดิมไม่แตะ: แก้คิวโดยไม่เปลี่ยนเตียง/โปร/หัตถการ = ไม่ตรวจ (ดู shouldCheckTiktokBedRule)
 import { isProcedureAllowedInRoom } from "./roomProcedures.js";
 
+export const BLOCK_SLOT_PROCEDURE_NAME = "ปิดคิว";
+
 export function isTiktokPromoName(name) {
   return String(name ?? "").trim().toLowerCase().startsWith("tiktok");
 }
@@ -27,12 +29,14 @@ export function tiktokBedRuleCheck({ roomId, promoId, procedureId, promoNameSnap
   if (!roomId) return "ok";
   const room = rooms.find((r) => r.id === roomId);
   if (!room) return "ok";
+  // "ปิดคิว" = คิวกันช่องเวลา ไม่ใช่ลูกค้า — ปิดช่องบนเตียง TikTok ได้เสมอ (เหมือน SQL)
+  const procObj = procedureId ? procedures.find((p) => p.id === procedureId) : null;
+  if (procObj?.name === BLOCK_SLOT_PROCEDURE_NAME) return "ok";
   const promo = promoId ? promos.find((p) => p.id === promoId) : null;
   const isTt = isTiktokPromoName(promo ? promo.name : promoNameSnapshot);
   if (isTiktokBed(room) && !isTt) return "tiktok_bed_only";
   if (isTt && !isTiktokBed(room)) {
-    const proc = procedureId ? procedures.find((p) => p.id === procedureId) : null;
-    if (tiktokBedsFor(room, proc, { rooms, roomProcedureIndex }).length > 0) return "tiktok_needs_tiktok_bed";
+    if (tiktokBedsFor(room, procObj, { rooms, roomProcedureIndex }).length > 0) return "tiktok_needs_tiktok_bed";
   }
   return "ok";
 }

@@ -29,6 +29,7 @@ const procedures = [
   { id: "pico", name: "Pico", roomType: "T" },
   { id: "vit", name: "วิตามินผิว", roomType: "MN", optInRoomTypes: "M" },
   { id: "consult", name: "ปรึกษาทั่วไป", roomType: "MN" },
+  { id: "block", name: "ปิดคิว", roomType: "MTN" },
 ];
 const ctx = { rooms, promos, procedures, roomProcedureIndex: buildRoomProcedureIndex([]) };
 const check = (roomId, promoId, procedureId) => tiktokBedRuleCheck({ roomId, promoId, procedureId }, ctx);
@@ -44,6 +45,10 @@ test("the ticked bed takes TikTok only", () => {
   assert.equal(check("m2", "reg", "botox"), "tiktok_bed_only");
   assert.equal(check("m2", "", "consult"), "tiktok_bed_only");
   assert.equal(check("m1", "reg", "botox"), "ok");
+});
+
+test("ปิดคิว (slot blocker) may go on the TikTok bed", () => {
+  assert.equal(check("m2", "", "block"), "ok");
 });
 
 test("treatment side is untouched while no T bed is ticked", () => {
@@ -112,4 +117,5 @@ test("migration: no bed ticked by default, kill switch, locked down, old queues 
   assert.match(sql, /new\.room_id is not distinct from old\.room_id/);
   assert.match(sql, /booking_api_candidate_rooms_v1\(r\.branch_id, p_procedure_id\)/);
   assert.match(sql, /pattern not found/);
+  assert.match(sql, /p\.name = 'ปิดคิว'\) then 'ok'/);
 });
