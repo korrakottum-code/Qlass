@@ -14,6 +14,7 @@
 --
 -- คิวเดิมไม่แตะ:
 --   - แก้ไขคิวโดยไม่เปลี่ยนเตียง/โปร/หัตถการ (เช่น เปลี่ยนสถานะ เวลา ชื่อ) = ไม่ตรวจ
+--   - คิวที่ผิดกติกาอยู่แล้วก่อนมีกติกา แก้โปร/หัตถการได้ถ้าไม่ย้ายเตียง
 --   - แถว "เลื่อนมา" (rescheduled_in) ที่สร้างตอนเลื่อนนัด = ไม่ตรวจ (เลื่อนนัดใช้เตียงเดิม เลือกเตียงไม่ได้)
 --
 -- ปิดฉุกเฉิน (ไม่ต้อง deploy): update public.tiktok_bed_rule_settings set enabled = false;
@@ -73,6 +74,11 @@ begin
     if new.room_id is not distinct from old.room_id
        and new.promo_id is not distinct from old.promo_id
        and new.procedure_id is not distinct from old.procedure_id then
+      return new;
+    end if;
+    -- คิวเดิมที่ลงไว้ก่อนมีกติกา (ผิดกติกาอยู่แล้ว) แก้โปร/หัตถการได้ ถ้าไม่ย้ายเตียง
+    if new.room_id is not distinct from old.room_id
+       and public.tiktok_bed_rule_v1(old.room_id, old.promo_id, old.procedure_id, old.promo_name_snapshot) <> 'ok' then
       return new;
     end if;
     if coalesce(new.status, '') in ('cancelled', 'no_show', 'rescheduled') then return new; end if;

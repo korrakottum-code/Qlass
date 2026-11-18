@@ -52,6 +52,14 @@ test("old queues are not re-checked unless bed / promo / procedure changes", () 
   assert.equal(shouldCheckTiktokBedRule({ ...original, roomId: "" }, original), false);
 });
 
+test("a queue booked before the rule may change promo while staying on its bed", () => {
+  const oldTtOnM01 = { roomId: "m1", promoId: "tt", procedureId: "botox" };
+  assert.equal(shouldCheckTiktokBedRule({ ...oldTtOnM01, promoId: "tt" , procedureId: "gofiller" }, oldTtOnM01, ctx), false);
+  assert.equal(shouldCheckTiktokBedRule({ ...oldTtOnM01, roomId: "m3" }, oldTtOnM01, ctx), true);
+  const okRegOnM01 = { roomId: "m1", promoId: "reg", procedureId: "botox" };
+  assert.equal(shouldCheckTiktokBedRule({ ...okRegOnM01, promoId: "tt" }, okRegOnM01, ctx), true);
+});
+
 test("messages: branch without M02 is told it cannot take TikTok injection", () => {
   assert.match(tiktokBedRuleMessage("tiktok_needs_m02", { rooms, branchId: "b1" }), /เฉพาะเตียง M02/);
   assert.match(tiktokBedRuleMessage("tiktok_needs_m02", { rooms, branchId: "b2" }), /ไม่มีเตียง M02/);

@@ -689,7 +689,7 @@ export default function App() {
     // ─── เตียง M02 = เตียง TikTok ฉีด (18 พ.ย. 2569) — กติกาจริงอยู่ที่ trigger ฐานข้อมูล ตรงนี้แค่บอกเหตุผลก่อน ───
     {
       const bedOriginal = editingQueueId ? queues.find((q) => q.id === editingQueueId) : null;
-      if (shouldCheckTiktokBedRule(form, bedOriginal)) {
+      if (shouldCheckTiktokBedRule(form, bedOriginal, { rooms, promos, procedures })) {
         const bedCode = tiktokBedRuleCheck(form, { rooms, promos, procedures });
         if (bedCode !== "ok") {
           showToast("error", tiktokBedRuleMessage(bedCode, { rooms, branchId: form.branchId }));

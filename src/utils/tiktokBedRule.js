@@ -30,12 +30,17 @@ export function tiktokBedRuleCheck({ roomId, promoId, procedureId, promoNameSnap
 }
 
 /** ตรวจเฉพาะคิวใหม่ หรือแก้คิวที่เปลี่ยนเตียง/โปร/หัตถการ (เหมือน trigger) */
-export function shouldCheckTiktokBedRule(form, original) {
+// คิวเดิมที่ผิดกติกาอยู่แล้วก่อนมีกติกา แก้โปร/หัตถการได้ถ้าไม่ย้ายเตียง (ส่ง ctx มาด้วยถึงจะรู้)
+export function shouldCheckTiktokBedRule(form, original, ctx = null) {
   if (!form?.roomId) return false;
   if (!original) return true;
-  return (form.roomId || null) !== (original.roomId || null)
+  const sameRoom = (form.roomId || null) === (original.roomId || null);
+  const changed = !sameRoom
     || (form.promoId || null) !== (original.promoId || null)
     || (form.procedureId || null) !== (original.procedureId || null);
+  if (!changed) return false;
+  if (sameRoom && ctx && tiktokBedRuleCheck(original, ctx) !== "ok") return false;
+  return true;
 }
 
 export function tiktokBedRuleMessage(code, { rooms = [], branchId } = {}) {
