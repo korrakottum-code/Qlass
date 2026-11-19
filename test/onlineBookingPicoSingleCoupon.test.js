@@ -25,7 +25,7 @@ test("หน้าจอง: Pico ไม่ขึ้นปุ่มเลือ�
   assert.match(page, /\{service && !pickService && !isSingleCoupon\(service\) && \(\s*<div style=\{\{ marginTop: 12 \}\}>\s*<div style=\{\{ fontSize: 14, marginBottom: 6 \}\}>ใช้คูปองกี่ใบคะ/);
   assert.match(page, /ไม่จำกัดช็อตค่ะ ใช้คูปองใบเดียวก็ทำได้เต็มที่/);
   assert.match(page, /count: isSingleCoupon\(service\) \? 1 : couponCount,/);
-  assert.match(page, /ใช้คูปองได้คิวละ 1–\$\{MAX_COUPONS\} ใบ \(Pico ใบเดียวพอค่ะ\)/);
+  assert.match(page, /ใช้คูปองได้คิวละ 1–\$\{MAX_COUPONS\} ใบ \(บางโปรใช้ได้ครั้งละ 1 สิทธิ์ค่ะ\)/);
 });
 
 test("หลังบ้านไม่แตะ: ไม่มี migration ของ Pico (เจ้าของสั่งแก้เฉพาะหน้าจอง)", () => {

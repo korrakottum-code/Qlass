@@ -82,7 +82,7 @@ test("หน้าจอง: ส่งจำนวนใบทั้งดูเ
   assert.match(page, /fetchPublicSlots\(branchId, promoId, date, couponCount\)/);
   assert.match(page, /\[branchId, promoId, date, couponCount\]/);
   assert.match(page, /count: isSingleCoupon\(service\) \? 1 : couponCount,/);
-  assert.match(page, /COUPON_COUNTS\.map/);
+  assert.match(page, /couponOptions\(service\)\.map/);
   assert.ok(page.includes("ระบบไม่ได้จองเวลาไว้ให้"));
   assert.ok(!page.includes("ให้ระบุรายละเอียดโปรแกรมและจำนวนคูปอง"));
   // เปลี่ยนบริการ/สาขา = กลับเป็น 1 ใบ
@@ -139,4 +139,37 @@ test("หน้าจอง: แสดงช่วงเวลาที่จอ
   assert.match(page, /จองเวลา <b>\{slot\.time\}–\{addMinutes\(slot\.time, couponMinutes\(service, couponCount\)\)\} น\.<\/b>/);
   assert.match(page, /เวลา \{slot\.time\}–\{addMinutes\(slot\.time, couponMinutes\(service, couponCount\)\)\} น\./);
   assert.ok(page.includes("เวลาบนปุ่มคือเวลาเริ่ม"));
+});
+
+// เวลาตามจำนวนคูปองรายโปร (ทีมตั้ง 20 พ.ย. 2569) — ไม่ได้ตั้ง = กติกาเดิมทุกอย่าง
+import { couponOptions, couponMinutesList, isSingleCoupon as single } from "../src/utils/publicBooking.js";
+
+test("ไม่ได้ตั้งเวลาคูปอง = เหมือนเดิม: 1–3 ใบ เวลา × จำนวนใบ, Pico ใบเดียว", () => {
+  const meso = { service: "Meso", duration_minutes: 15, coupon_minutes: null };
+  assert.deepEqual(couponOptions(meso), [1, 2, 3]);
+  assert.equal(couponMinutes(meso, 3), 45);
+  const pico = { service: "Pico", duration_minutes: 30 };
+  assert.deepEqual(couponOptions(pico), [1]);
+  assert.equal(couponMinutes(pico, 1), 30);
+});
+
+test("ตั้งเวลาคูปองรายโปร: จำนวนใบสูงสุด = ความยาวรายการ, เวลาตามรายการ", () => {
+  const hifu = { service: "Hifu", duration_minutes: 30, coupon_minutes: [30, 40, 50] };
+  assert.deepEqual(couponOptions(hifu), [1, 2, 3]);
+  assert.equal(couponMinutes(hifu, 2), 40);
+  assert.equal(couponMinutes(hifu, 3), 50);
+  const botox = { service: "Botox", duration_minutes: 30, coupon_minutes: [30, 40] };
+  assert.deepEqual(couponOptions(botox), [1, 2]);
+  assert.equal(couponMinutes(botox, 3), 40); // เกินเพดาน = ใช้ค่าสูงสุดที่ตั้งไว้
+  const set = { service: "Botox", duration_minutes: 30, coupon_minutes: [30] };
+  assert.equal(single(set), true);
+  const diode = { service: "Diode", duration_minutes: 15, coupon_minutes: [15] };
+  assert.deepEqual(couponOptions(diode), [1]);
+});
+
+test("ค่าที่ตั้งผิดรูป = ไม่ใช้ กลับไปกติกาเดิม", () => {
+  assert.equal(couponMinutesList({ coupon_minutes: [] }), null);
+  assert.equal(couponMinutesList({ coupon_minutes: [15, 20, 30, 40] }), null);
+  assert.equal(couponMinutesList({ coupon_minutes: [15, "x"] }), null);
+  assert.equal(couponMinutesList({ coupon_minutes: [0] }), null);
 });

@@ -38,13 +38,15 @@ function service(branchId, promoId) {
   if (!proc) fail("INVALID_SERVICE");
   return { promo, proc, rooms: DB.rooms.filter((r) => r.branchId === branchId && String(proc.roomType || "").includes(r.type)) };
 }
+// ตัวอย่างเวลาตามจำนวนคูปองรายโปร (ของจริงตั้งใน online_booking_promos.coupon_minutes) — ไม่ได้ตั้ง = เวลา × จำนวนใบ
+const DEMO_COUPON_MINUTES = { Botox: [30, 40], Hifu: [30, 40, 50] };
 export async function fetchPublicServices(branchId) {
   await wait();
   return DB.promos
     .filter((p) => settings.promoIds.has(p.id) && p.active !== false)
     .map((p) => { try { const s = service(branchId, p.id); return s.rooms.length ? s : null; } catch { return null; } })
     .filter(Boolean)
-    .map(({ promo, proc }) => ({ id: promo.id, name: promo.name, price: promo.price, service: realName(proc.name), duration_minutes: proc.blocks * 5 }));
+    .map(({ promo, proc }) => ({ id: promo.id, name: promo.name, price: promo.price, service: realName(proc.name), duration_minutes: proc.blocks * 5, coupon_minutes: DEMO_COUPON_MINUTES[realName(proc.name)] ?? null }));
 }
 function roomFree(room, date, start, dur) {
   if (start < (room.openBlock ?? 132) || start + dur > (room.closeBlock ?? 240)) return false;

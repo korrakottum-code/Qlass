@@ -6,11 +6,26 @@ export const COUPON_COUNTS = Array.from({ length: MAX_COUPONS }, (_, i) => i + 1
 // หัตถการที่ใช้คูปองใบเดียวพอ (เจ้าของสั่ง 15 พ.ย. 2569: Pico ไม่จำกัดช็อต) — ไม่ถามจำนวนใบ ส่ง 1 ใบ จองเวลา 1 รอบเสมอ
 // แก้เฉพาะหน้าจอง (เจ้าของไม่ให้แก้หลังบ้านเพื่อหน้ารุ่นเก่า — เปิดค้างไม่นานเดี๋ยวก็รีเฟรช)
 export const SINGLE_COUPON = ["Pico"];
-export function isSingleCoupon(service) {
-  return SINGLE_COUPON.includes(service?.service);
+// เวลาตามจำนวนคูปองรายโปร (ทีมตั้ง 20 พ.ย. 2569) — service.coupon_minutes = [นาทีของ 1 ใบ, 2 ใบ, 3 ใบ]
+// ความยาวของรายการ = จำนวนใบสูงสุดของโปรนั้น (เช่น [30, 40] = ได้สูงสุด 2 ใบ, [15] = ครั้งละ 1 สิทธิ์)
+// ไม่ได้ตั้ง (null) = กติกาเดิม: 1–3 ใบ เวลาหัตถการ × จำนวนใบ (Pico ใบเดียว)
+export function couponMinutesList(service) {
+  const list = service?.coupon_minutes;
+  if (!Array.isArray(list) || list.length < 1 || list.length > MAX_COUPONS) return null;
+  return list.every((m) => Number.isInteger(m) && m > 0) ? list : null;
 }
-// 1 ใบ = เวลาหัตถการเต็ม 1 รอบ (ไม่ลดเวลาใบถัดไป)
+export function couponOptions(service) {
+  const list = couponMinutesList(service);
+  if (list) return list.map((_, i) => i + 1);
+  return SINGLE_COUPON.includes(service?.service) ? [1] : COUPON_COUNTS;
+}
+export function isSingleCoupon(service) {
+  return couponOptions(service).length === 1;
+}
 export function couponMinutes(service, count) {
+  const list = couponMinutesList(service);
+  if (list) return list[Math.min(Math.max(Number(count) || 1, 1), list.length) - 1];
+  // 1 ใบ = เวลาหัตถการเต็ม 1 รอบ (ไม่ลดเวลาใบถัดไป)
   return (Number(service?.duration_minutes) || 0) * (isSingleCoupon(service) ? 1 : count);
 }
 // "15:00" + 60 → "16:00" — เวลาจบที่ระบบจองไว้ (ปุ่มเวลาบอกแค่เวลาเริ่ม ลูกค้างงว่าทำไม 15:00 ได้แต่ 15:30 ไม่ได้)
