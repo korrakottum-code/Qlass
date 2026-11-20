@@ -419,10 +419,14 @@ export default function PublicBookingPage() {
               <button type="button" style={{ ...S.chip(customerType === "new", false), flex: 1 }} onClick={() => setCustomerType("new")}>ครั้งแรก</button>
               <button type="button" style={{ ...S.chip(customerType === "old", false), flex: 1 }} onClick={() => setCustomerType("old")}>เคยมาแล้ว</button>
             </div>
-            <textarea style={{ ...S.input, minHeight: 60, resize: "vertical" }} placeholder="หมายเหตุ (ถ้ามี) เช่น ชื่อคูปองที่จะใช้" value={note} maxLength={300}
+            <textarea style={{ ...S.input, minHeight: 60, resize: "vertical" }} placeholder="หมายเหตุถึงแอดมิน (ถ้ามี)" value={note} maxLength={300}
               onChange={(e) => setNote(e.target.value)} />
-            {/* เจ้าของสั่ง 14 พ.ย. 2569 — จำนวนใบเลือกด้านบนแล้ว (ล็อกเวลาตามจริง); หัตถการอื่นในหมายเหตุไม่ได้จองเวลาไว้ ทำให้คิวหมอล้น */}
+            {/* เจ้าของสั่ง 14 พ.ย. 2569 — จำนวนใบเลือกด้านบนแล้ว (ล็อกเวลาตามจริง); หัตถการอื่นในหมายเหตุไม่ได้จองเวลาไว้ ทำให้คิวหมอล้น
+                20 พ.ย. 2569 — ลูกค้ายังเขียนจำนวนใบในหมายเหตุมากกว่าที่กดเลือก (~10 คิว/วัน) เวลาจึงจองไม่พอ: บอกให้กดเลือกที่ปุ่มแทน */}
             <div style={{ color: "var(--amber)", fontSize: 12.5, lineHeight: 1.6, marginTop: 6 }}>
+              {!isSingleCoupon(service) && (
+                <>จำนวนคูปอง ต้องกดเลือกที่ปุ่ม "ใช้คูปองกี่ใบคะ" ด้านบนเท่านั้นนะคะ เขียนในหมายเหตุ ระบบไม่ได้จองเวลาเพิ่มให้ค่ะ<br /></>
+              )}
               หัตถการอื่นที่เขียนในหมายเหตุ ระบบไม่ได้จองเวลาไว้ให้นะคะ รบกวนจองแยกอีกคิวค่ะ
             </div>
             {/* กับดักบอท: คนจริงมองไม่เห็นและไม่กรอก */}
