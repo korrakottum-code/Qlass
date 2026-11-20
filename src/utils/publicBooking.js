@@ -28,6 +28,15 @@ export function couponMinutes(service, count) {
   // 1 ใบ = เวลาหัตถการเต็ม 1 รอบ (ไม่ลดเวลาใบถัดไป)
   return (Number(service?.duration_minutes) || 0) * (isSingleCoupon(service) ? 1 : count);
 }
+// ลูกค้าติ๊กรับทราบเงื่อนไขคูปอง (เจ้าของสั่ง 20 พ.ย. 2569) — บันทึกลงหมายเหตุคิวเป็นหลักฐานให้หน้าร้านเห็น
+// วางไว้หน้าข้อความลูกค้า เพราะเซิร์ฟเวอร์ตัดหมายเหตุที่ 300 ตัว (online_booking_create_v2) ข้อความยอมรับจะไม่ถูกตัดทิ้ง
+export const NOTE_MAX = 300;
+export function couponAcceptedNote(count, customerNote = "") {
+  const tag = `✅ ลูกค้ายอมรับ: ใช้คูปอง ${count} ใบตามที่จองเท่านั้น`;
+  const rest = String(customerNote || "").trim();
+  if (!rest) return tag;
+  return `${tag} · ${rest}`.slice(0, NOTE_MAX);
+}
 // "15:00" + 60 → "16:00" — เวลาจบที่ระบบจองไว้ (ปุ่มเวลาบอกแค่เวลาเริ่ม ลูกค้างงว่าทำไม 15:00 ได้แต่ 15:30 ไม่ได้)
 export function addMinutes(hhmm, minutes) {
   const [h, m] = String(hhmm || "").split(":").map(Number);
