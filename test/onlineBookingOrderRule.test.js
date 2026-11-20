@@ -158,14 +158,15 @@ test("โหมดเดโม: ตัวจำลองทำกติกาเ
 });
 
 test("หน้าจอง: กล่องข้อแนะนำก่อนจอง สั้น อ่านง่าย และข้อความถึงลูกค้าสุภาพทั้งหน้า (ไม่มี 'กรุณา', ไม่บอกเพดาน/เบอร์)", () => {
-  assert.match(page, /📌 ข้อแนะนำก่อนจองค่ะ/);
+  // รวมกับเงื่อนไขคูปองเป็นกล่องเดียว (20 พ.ย. 2569)
+  assert.match(page, /📌 อ่านก่อนจองนะคะ/);
   assert.match(page, /ทำหลายหัตถการ จองแยกคิวละ 1 หัตถการนะคะ/);
   assert.match(page, /ทำ Pico \/ Hifu \/ Ultraformer คู่กับงานฉีด จองเวลาให้อยู่ก่อนฉีดนะคะ/);
-  assert.match(page, /ใช้คูปองได้คิวละ 1–\$\{MAX_COUPONS\} ใบ \(บางโปรใช้ได้ครั้งละ 1 สิทธิ์ค่ะ\)/);
+  assert.match(page, /ใช้คูปองได้คิวละ 1–\{MAX_COUPONS\} ใบ \(บางโปรใช้ได้ครั้งละ 1 สิทธิ์ค่ะ\)/);
   assert.match(page, /จองล่วงหน้าได้ 2 ชั่วโมง ถึง 14 วันค่ะ/);
   assert.match(page, /เลื่อน ยกเลิก หรือสอบถาม ทัก LINE/);
   // กล่องข้อแนะนำไม่บอกเพดานคิว และไม่พูดถึงการตรวจจากเบอร์
-  const box = page.slice(page.indexOf("📌 ข้อแนะนำก่อนจองค่ะ"), page.indexOf("{loadError && <div style={S.error}>"));
+  const box = page.slice(page.indexOf("📌 อ่านก่อนจองนะคะ"), page.indexOf("{loadError && <div style={S.error}>"));
   assert.doesNotMatch(box, /เบอร์|2 วัน|3 คิว/);
   assert.doesNotMatch(page, /กรุณา/);
 });

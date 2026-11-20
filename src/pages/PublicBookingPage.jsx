@@ -110,9 +110,14 @@ const S = {
     fontFamily: "var(--font)", fontSize: 15, fontWeight: 700, color: "var(--text)", textAlign: "left",
   }),
   hint: { background: "var(--accent-soft)", color: "var(--text)", borderRadius: 10, padding: "10px 12px", fontSize: 14, lineHeight: 1.6 },
-  // เงื่อนไขคูปอง (เจ้าของสั่ง 20 พ.ย. 2569) — แดง ตัวใหญ่ ให้เห็นชัด
-  alert: { background: "var(--red-soft)", color: "var(--red)", border: "2px solid var(--red)", borderRadius: 12, padding: "12px 14px", fontSize: 16, fontWeight: 700, lineHeight: 1.6 },
+  // เงื่อนไขคูปอง (เจ้าของสั่ง 20 พ.ย. 2569) — กล่อง/ข้อความสีแดง (เจ้าของสั่ง) ถ้อยคำนอบน้อม; คำที่ต้องเน้นตัวหนา (<Em>)
+  alert: { background: "var(--red-soft)", color: "var(--red)", border: "1.5px solid var(--red)", borderRadius: 12, padding: "12px 14px", fontSize: 15, lineHeight: 1.65 },
 };
+
+// คำที่ต้องเน้นในเงื่อนไขคูปอง: แดง ตัวหนา + พื้นไฮไลท์เหลือง (นำสายตา)
+function Em({ children }) {
+  return <b style={{ color: "var(--red)", background: "#fff3a3", borderRadius: 3, padding: "0 2px", boxDecorationBreak: "clone", WebkitBoxDecorationBreak: "clone" }}>{children}</b>;
+}
 
 const CUSTOMER_TYPE_LABEL = { new: "ครั้งแรก", old: "เคยมาแล้ว" };
 
@@ -131,10 +136,10 @@ function BookingDetails({ rows, style }) {
 }
 
 // ข้อความเงื่อนไขคูปองที่ลูกค้าต้องกดยอมรับก่อนจอง — ใช้ซ้ำทั้งกล่องแดงและช่องติ๊ก
+// เรื่องคูปองทั้งหมดอยู่กล่องนี้กล่องเดียว (เจ้าของสั่ง 20 พ.ย. 2569: รวมจากกล่องข้อแนะนำ ให้กระชับ ไม่ซ้ำ)
 const COUPON_RULE_LINES = [
-  "ใช้คูปองได้ตามจำนวนที่จองไว้เท่านั้นค่ะ",
-  "เลือกจำนวนคูปองที่ปุ่มในขั้นที่ 2 เท่านั้น — พิมพ์จำนวนในหมายเหตุไม่นับนะคะ",
-  "ใช้เกินจำนวนที่จองไม่ได้ เพราะเวลาที่จองไว้ไม่พอ และกระทบคิวลูกค้าท่านอื่นค่ะ",
+  ["max", <>ใช้คูปองได้คิวละ 1–{MAX_COUPONS} ใบ (บางโปรใช้ได้ครั้งละ 1 สิทธิ์ค่ะ)</>],
+  ["booked", <>ขออนุญาตให้บริการ<Em>ตามจำนวนคูปองที่จองไว้</Em>นะคะ เพื่อให้มีเวลาเพียงพอและไม่กระทบคิวลูกค้าท่านอื่นค่ะ 🙏</>],
 ];
 
 export default function PublicBookingPage() {
@@ -251,7 +256,7 @@ export default function PublicBookingPage() {
               ✅ ยืนยันแล้ว {done.count || 1} ใบ
             </div>
             <div style={{ ...S.alert, margin: "8px 0 10px", padding: "8px 12px", textAlign: "left", fontSize: 13.5, lineHeight: 1.5 }}>
-              ลูกค้ารับทราบและยอมรับแล้ว: ใช้คูปองได้ตามจำนวนที่ยืนยันเท่านั้น เพิ่มที่หน้าสาขาไม่ได้ค่ะ
+              รับทราบแล้ว: ให้บริการ<Em>ตามจำนวนคูปองที่ยืนยันไว้</Em>นะคะ หากต้องการเพิ่ม รบกวนจองคิวเพิ่มหรือทัก LINE {LINE_ID} ค่ะ 🙏
             </div>
             <BookingDetails style={{ textAlign: "left", fontSize: 14 }} rows={[
               ["สาขา", done.branch],
@@ -274,24 +279,27 @@ export default function PublicBookingPage() {
       <div style={S.wrap}>
         <div style={S.h1}>จองคิวออนไลน์</div>
         <div style={S.sub}>Class Clinic — เลือกสาขา บริการ และเวลาที่สะดวกได้เลยค่ะ</div>
-        {/* ข้อแนะนำก่อนจอง (เจ้าของสั่ง 15 พ.ย. 2569) — เฉพาะที่ลูกค้าต้องรู้ สั้นๆ; ไม่บอกเพดานคิว/การตรวจจากเบอร์ */}
-        <div style={{ ...S.hint, marginBottom: 12, fontSize: 14, lineHeight: 1.55 }}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>📌 ข้อแนะนำก่อนจองค่ะ</div>
-          {[
-            "ทำหลายหัตถการ จองแยกคิวละ 1 หัตถการนะคะ",
-            "ทำ Pico / Hifu / Ultraformer คู่กับงานฉีด จองเวลาให้อยู่ก่อนฉีดนะคะ",
-            `ใช้คูปองได้คิวละ 1–${MAX_COUPONS} ใบ (บางโปรใช้ได้ครั้งละ 1 สิทธิ์ค่ะ)`,
-            "จองล่วงหน้าได้ 2 ชั่วโมง ถึง 14 วันค่ะ",
-          ].map((t) => (
-            <div key={t} style={{ display: "flex", gap: 6, marginBottom: 4 }}><span>•</span><span>{t}</span></div>
+        {/* เงื่อนไข/ข้อแนะนำก่อนจอง กล่องเดียว (เจ้าของสั่ง 15 + 20 พ.ย. 2569) — คูปองบนสุดตัวแดง, ทั่วไปตัวปกติ;
+            ไม่บอกเพดานคิว/การตรวจจากเบอร์ */}
+        <div style={{ ...S.alert, marginBottom: 12, padding: 0, overflow: "hidden" }}>
+          {/* หัวแถบแดงทึบ = จุดแรกที่สายตาไปหยุด */}
+          <div style={{ background: "var(--red)", color: "#fff", fontSize: 16, fontWeight: 700, padding: "8px 14px" }}>📌 อ่านก่อนจองนะคะ 🙏</div>
+          <div style={{ padding: "10px 14px 12px" }}>
+          {COUPON_RULE_LINES.map(([k, t]) => (
+            <div key={k} style={{ display: "flex", gap: 6 }}><span>•</span><span>{t}</span></div>
           ))}
-          <div style={{ marginTop: 6, color: "var(--text2)" }}>เลื่อน ยกเลิก หรือสอบถาม ทัก LINE <LineLink>{LINE_ID}</LineLink> ค่ะ 🙏</div>
-        </div>
-        <div style={{ ...S.alert, marginBottom: 12 }}>
-          <div style={{ fontSize: 17, marginBottom: 4 }}>⚠️ เงื่อนไขการใช้คูปอง</div>
-          {COUPON_RULE_LINES.map((t) => (
-            <div key={t} style={{ display: "flex", gap: 6 }}><span>•</span><span>{t}</span></div>
-          ))}
+          <div style={{ borderTop: "1px solid var(--red)", opacity: 0.35, margin: "8px 0" }} />
+          <div style={{ fontSize: 14, lineHeight: 1.55 }}>
+            {[
+              "ทำหลายหัตถการ จองแยกคิวละ 1 หัตถการนะคะ",
+              "ทำ Pico / Hifu / Ultraformer คู่กับงานฉีด จองเวลาให้อยู่ก่อนฉีดนะคะ",
+              "จองล่วงหน้าได้ 2 ชั่วโมง ถึง 14 วันค่ะ",
+            ].map((t) => (
+              <div key={t} style={{ display: "flex", gap: 6, marginBottom: 2 }}><span>•</span><span>{t}</span></div>
+            ))}
+            <div style={{ marginTop: 6, color: "var(--text2)" }}>เลื่อน ยกเลิก หรือสอบถาม ทัก LINE <LineLink>{LINE_ID}</LineLink> ค่ะ 🙏</div>
+          </div>
+          </div>
         </div>
         {loadError && <div style={S.error}>{loadError}</div>}
 
@@ -405,8 +413,8 @@ export default function PublicBookingPage() {
                     <div style={{ fontSize: 20, fontWeight: 700 }}>{couponMinutes(service, couponCount)} นาที</div>
                   </div>
                 </div>
-                <div style={{ ...S.alert, marginTop: 10, fontSize: 15 }}>
-                  ⚠️ เลือกให้ตรงกับจำนวนคูปองที่จะใช้จริงนะคะ ระบบจองเวลาให้ตามจำนวนนี้ และใช้ได้ตามจำนวนที่จองไว้เท่านั้นค่ะ
+                <div style={{ ...S.alert, marginTop: 10, fontSize: 14.5 }}>
+                  💡 รบกวน<Em>เลือกให้ตรงกับจำนวนคูปองที่จะใช้จริง</Em>นะคะ ระบบจะจองเวลาและให้บริการตามจำนวนนี้ค่ะ
                 </div>
                 <a href={LINE_URL} target="_blank" rel="noopener noreferrer"
                   style={{ display: "block", marginTop: 10, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #06C755", color: "var(--text)", textDecoration: "none", lineHeight: 1.5 }}>
@@ -484,11 +492,11 @@ export default function PublicBookingPage() {
               onChange={(e) => setNote(e.target.value)} />
             {/* เจ้าของสั่ง 14 พ.ย. 2569 — จำนวนใบเลือกด้านบนแล้ว (ล็อกเวลาตามจริง); หัตถการอื่นในหมายเหตุไม่ได้จองเวลาไว้ ทำให้คิวหมอล้น
                 20 พ.ย. 2569 — ลูกค้ายังเขียนจำนวนใบในหมายเหตุมากกว่าที่กดเลือก (~10 คิว/วัน) เวลาจึงจองไม่พอ: บอกให้กดเลือกที่ปุ่มแทน */}
-            <div style={{ color: "var(--red)", fontSize: 14, fontWeight: 700, lineHeight: 1.6, marginTop: 6 }}>
+            <div style={{ color: "var(--red)", fontSize: 13.5, lineHeight: 1.6, marginTop: 6 }}>
               {!isSingleCoupon(service) && (
-                <>❗ เพิ่มคูปองผ่านหมายเหตุไม่ได้ — เลือกจำนวนคูปองที่ปุ่ม "ใช้คูปองกี่ใบคะ" ด้านบนเท่านั้นค่ะ<br /></>
+                <>💡 จำนวนคูปอง รบกวนเลือกที่ปุ่ม "ใช้คูปองกี่ใบคะ" ด้านบนนะคะ <Em>พิมพ์ในหมายเหตุระบบจะไม่นับ</Em>ค่ะ<br /></>
               )}
-              ❗ หัตถการอื่นที่เขียนในหมายเหตุ ระบบไม่ได้จองเวลาไว้ให้นะคะ รบกวนจองแยกอีกคิวค่ะ
+              💡 หัตถการอื่นที่เขียนในหมายเหตุ ระบบไม่ได้จองเวลาไว้ให้นะคะ รบกวนจองแยกอีกคิวค่ะ
             </div>
             {/* กับดักบอท: คนจริงมองไม่เห็นและไม่กรอก */}
             <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" value={website}
@@ -499,11 +507,10 @@ export default function PublicBookingPage() {
         {slot && (
           <div style={S.card}>
             <div style={{ ...S.label, fontSize: 17 }}>5. สรุปการจอง — ตรวจสอบก่อนยืนยัน</div>
-            <div style={{ ...S.alert, marginBottom: 10, fontSize: 20, textAlign: "center" }}>🎟️ ใช้คูปอง {bookedCount} ใบ</div>
+            <div style={{ ...S.alert, marginBottom: 10, fontSize: 20, fontWeight: 700, textAlign: "center" }}>🎟️ ใช้คูปอง <Em>{bookedCount} ใบ</Em></div>
             <BookingDetails style={{ marginBottom: 12 }} rows={[
               ["สาขา", branch.name],
               ["บริการ", service.name],
-              ["จำนวนคูปอง", `${bookedCount} ใบ`],
               ["วันที่", thaiDateLabel(date)],
               ["เวลา", `${slot.time}–${addMinutes(slot.time, couponMinutes(service, couponCount))} น. (${couponMinutes(service, couponCount)} นาที)`],
               ["ชื่อ", name.trim()],
@@ -513,10 +520,10 @@ export default function PublicBookingPage() {
             ]} />
             <label style={{ ...S.alert, display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer", marginBottom: 12, fontSize: 15 }}>
               <input type="checkbox" checked={couponAccepted} onChange={(e) => setCouponAccepted(e.target.checked)}
-                style={{ width: 22, height: 22, flex: "0 0 auto", marginTop: 2, accentColor: "var(--red)" }} />
+                style={{ width: 22, height: 22, flex: "0 0 auto", marginTop: 2, accentColor: "var(--accent)" }} />
               <span>
-                ข้าพเจ้ารับทราบและยอมรับว่า จะใช้คูปอง <u>{bookedCount} ใบ</u> ตามที่จองไว้เท่านั้น
-                จำนวนที่พิมพ์ในหมายเหตุไม่นับ และใช้เกินจำนวนที่จองไว้ไม่ได้ หากต้องการใช้เพิ่ม จะจองคิวเพิ่มหรือทัก LINE {LINE_ID}
+                รับทราบค่ะ/ครับ ว่าจะ<Em>ใช้คูปอง {bookedCount} ใบตามที่จองไว้</Em> (จำนวนที่พิมพ์ในหมายเหตุไม่นับ)
+                หากต้องการใช้เพิ่ม จะจองคิวเพิ่มหรือทัก LINE {LINE_ID}
               </span>
             </label>
             {submitError && <div style={S.error}>{submitError}</div>}
