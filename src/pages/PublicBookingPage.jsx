@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchPublicBranches, fetchPublicServices, fetchPublicSlots, bookPublic } from "../utils/onlineBookingApi";
-import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile, matchesSearch, groupServices, MAX_COUPONS, couponMinutes, couponOptions, isSingleCoupon, addMinutes, floorToSlot, ceilToSlot, procedureOrderKind } from "../utils/publicBooking";
+import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobile, matchesSearch, groupServices, MAX_COUPONS, couponMinutes, couponOptions, isSingleCoupon, couponAcceptedNote, addMinutes, floorToSlot, ceilToSlot, procedureOrderKind } from "../utils/publicBooking";
 
 // หน้าลูกค้าจองคิวเอง (/#book หรือ /#book/<branchId>) — ไม่ต้องล็อกอิน เปิดจากลิงก์ในไลน์/เพจ ใช้บนมือถือเป็นหลัก
 // เปิดเฉพาะสาขา/บริการที่ตั้งไว้ในเมนู "จองออนไลน์" กติกาเตียงและเวลาอยู่ฝั่งเซิร์ฟเวอร์ (online_booking_*_v1) ทั้งหมด
@@ -110,7 +110,32 @@ const S = {
     fontFamily: "var(--font)", fontSize: 15, fontWeight: 700, color: "var(--text)", textAlign: "left",
   }),
   hint: { background: "var(--accent-soft)", color: "var(--text)", borderRadius: 10, padding: "10px 12px", fontSize: 14, lineHeight: 1.6 },
+  // เงื่อนไขคูปอง (เจ้าของสั่ง 20 พ.ย. 2569) — แดง ตัวใหญ่ ให้เห็นชัด
+  alert: { background: "var(--red-soft)", color: "var(--red)", border: "2px solid var(--red)", borderRadius: 12, padding: "12px 14px", fontSize: 16, fontWeight: 700, lineHeight: 1.6 },
 };
+
+const CUSTOMER_TYPE_LABEL = { new: "ครั้งแรก", old: "เคยมาแล้ว" };
+
+// ตารางรายละเอียดการจอง — ใช้ทั้งขั้นสรุปก่อนยืนยัน และหน้าจองสำเร็จ (ภาพที่ลูกค้าแคปให้พนักงานดู)
+function BookingDetails({ rows, style }) {
+  return (
+    <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", fontSize: 15, ...style }}>
+      {rows.map(([label, value], i) => (
+        <div key={label} style={{ display: "flex", gap: 10, padding: "6px 12px", background: i % 2 ? "var(--surface)" : "var(--surface2)", lineHeight: 1.5 }}>
+          <div style={{ flex: "0 0 92px", color: "var(--text2)" }}>{label}</div>
+          <div style={{ flex: 1, fontWeight: 600, wordBreak: "break-word" }}>{value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ข้อความเงื่อนไขคูปองที่ลูกค้าต้องกดยอมรับก่อนจอง — ใช้ซ้ำทั้งกล่องแดงและช่องติ๊ก
+const COUPON_RULE_LINES = [
+  "ใช้คูปองได้ตามจำนวนที่จองไว้เท่านั้นค่ะ",
+  "เลือกจำนวนคูปองที่ปุ่มในขั้นที่ 2 เท่านั้น — พิมพ์จำนวนในหมายเหตุไม่นับนะคะ",
+  "ใช้เกินจำนวนที่จองไม่ได้ เพราะเวลาที่จองไว้ไม่พอ และกระทบคิวลูกค้าท่านอื่นค่ะ",
+];
 
 export default function PublicBookingPage() {
   const [branches, setBranches] = useState(null);
@@ -138,6 +163,7 @@ export default function PublicBookingPage() {
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(null);
+  const [couponAccepted, setCouponAccepted] = useState(false); // ต้องติ๊กรับทราบเงื่อนไขคูปองก่อนกดจอง
   const refRef = useRef({ signature: "", reference: "" });
   const slotRequest = useRef(0);
 
@@ -184,14 +210,17 @@ export default function PublicBookingPage() {
   const service = services?.find((s) => s.id === promoId) || null;
   const slot = slots?.find((s) => s.start_time === startTime) || null;
   const phoneOk = isValidMobile(phone);
-  const formOk = Boolean(branch && service && slot && name.trim().length >= 2 && phoneOk && customerType);
+  const bookedCount = service && isSingleCoupon(service) ? 1 : couponCount;
+  // เปลี่ยนโปร/จำนวนใบ = จำนวนที่ยอมรับไว้ไม่ตรงแล้ว ต้องติ๊กใหม่
+  useEffect(() => { setCouponAccepted(false); }, [promoId, bookedCount]);
+  const formOk = Boolean(branch && service && slot && name.trim().length >= 2 && phoneOk && customerType && couponAccepted);
 
   async function submit() {
     if (!formOk || submitting) return;
     setSubmitError("");
     setSubmitting(true);
     const payload = {
-      branchId, promoId, startTime, name: name.trim(), phone: normalizePhone(phone), customerType, note: note.trim(), website,
+      branchId, promoId, startTime, name: name.trim(), phone: normalizePhone(phone), customerType, note: couponAcceptedNote(bookedCount, note), website,
       count: isSingleCoupon(service) ? 1 : couponCount,
     };
     // กดซ้ำด้วยข้อมูลเดิม (เน็ตหลุด) ใช้รหัสอ้างอิงเดิม = เซิร์ฟเวอร์คืนผลเดิม ไม่สร้างคิวซ้ำ
@@ -212,16 +241,26 @@ export default function PublicBookingPage() {
     return (
       <div style={S.page}>
         <div style={S.wrap}>
-          <div style={{ ...S.card, textAlign: "center", padding: 24 }}>
-            <div style={{ fontSize: 44 }}>✅</div>
-            <div style={S.h1}>จองคิวสำเร็จแล้วค่ะ</div>
-            <div style={{ ...S.hint, fontWeight: 700, margin: "10px 0 14px" }}>📸 รบกวนแคปหน้าจอนี้เก็บไว้ และแสดงให้พนักงานดูเมื่อมาถึงคลินิกนะคะ</div>
-            <div style={{ ...S.sub, marginBottom: 16 }}>เลขที่การจอง <b style={{ fontFamily: "var(--mono)", color: "var(--text)" }}>{done.booking_ref}</b></div>
-            <div style={{ textAlign: "left", fontSize: 15, lineHeight: 1.9 }}>
-              <div>📍 {done.branch}</div>
-              <div>💆 {done.service}{done.count > 1 ? ` · คูปอง ${done.count} ใบ` : ""}</div>
-              <div>📅 {thaiDateLabel(done.date)} เวลา {done.time}{done.end_time ? `–${done.end_time}` : ""} น.</div>
+          {/* ภาพแคปจอเดียว (เจ้าของสั่ง 20 พ.ย. 2569): ยืนยันจำนวนใบ + ข้อความยอมรับ + รายละเอียดสั้น */}
+          <div style={{ ...S.card, textAlign: "center", padding: 16 }}>
+            <div style={{ ...S.h1, margin: 0 }}>✅ จองคิวสำเร็จแล้วค่ะ</div>
+            <div style={{ fontSize: 13, color: "var(--text2)", margin: "4px 0 10px" }}>
+              📸 แคปหน้าจอนี้ไว้แสดงพนักงานนะคะ · เลขที่ <b style={{ fontFamily: "var(--mono)", color: "var(--text)" }}>{done.booking_ref}</b>
             </div>
+            <div style={{ padding: "10px 12px", borderRadius: 12, background: "var(--green, #059669)", color: "#fff", fontSize: 21, fontWeight: 700 }}>
+              ✅ ยืนยันแล้ว {done.count || 1} ใบ
+            </div>
+            <div style={{ ...S.alert, margin: "8px 0 10px", padding: "8px 12px", textAlign: "left", fontSize: 13.5, lineHeight: 1.5 }}>
+              ลูกค้ารับทราบและยอมรับแล้ว: ใช้คูปองได้ตามจำนวนที่ยืนยันเท่านั้น เพิ่มที่หน้าสาขาไม่ได้ค่ะ
+            </div>
+            <BookingDetails style={{ textAlign: "left", fontSize: 14 }} rows={[
+              ["สาขา", done.branch],
+              ["บริการ", done.service],
+              ["วันเวลา", `${thaiDateLabel(done.date)} · ${done.time}${done.end_time ? `–${done.end_time}` : ""} น.`],
+              ["ชื่อ", name.trim()],
+              ["เบอร์โทร", normalizePhone(phone)],
+              ...(note.trim() ? [["หมายเหตุ", note.trim()]] : []),
+            ]} />
             <div style={{ ...S.muted, marginTop: 16 }}>รบกวนมาก่อนเวลานัด 10–15 นาทีนะคะ หากต้องการเลื่อนหรือยกเลิก ทัก LINE <LineLink>{LINE_ID}</LineLink> ได้เลยค่ะ</div>
             <div style={{ ...S.sub, marginTop: 10, marginBottom: 0 }}>ขอบคุณที่ไว้วางใจ Class Clinic ค่ะ 🙏</div>
           </div>
@@ -247,6 +286,12 @@ export default function PublicBookingPage() {
             <div key={t} style={{ display: "flex", gap: 6, marginBottom: 4 }}><span>•</span><span>{t}</span></div>
           ))}
           <div style={{ marginTop: 6, color: "var(--text2)" }}>เลื่อน ยกเลิก หรือสอบถาม ทัก LINE <LineLink>{LINE_ID}</LineLink> ค่ะ 🙏</div>
+        </div>
+        <div style={{ ...S.alert, marginBottom: 12 }}>
+          <div style={{ fontSize: 17, marginBottom: 4 }}>⚠️ เงื่อนไขการใช้คูปอง</div>
+          {COUPON_RULE_LINES.map((t) => (
+            <div key={t} style={{ display: "flex", gap: 6 }}><span>•</span><span>{t}</span></div>
+          ))}
         </div>
         {loadError && <div style={S.error}>{loadError}</div>}
 
@@ -349,9 +394,25 @@ export default function PublicBookingPage() {
                     </button>
                   ))}
                 </div>
-                <div style={{ ...S.muted, marginTop: 8, lineHeight: 1.6 }}>
-                  ระบบจองเวลาให้ตามจำนวนใบค่ะ · มากกว่า {couponOptions(service).length} ใบ ทัก LINE <LineLink>{LINE_ID}</LineLink>
+                {/* แถบสรุปจำนวน/เวลา (ไอเดียเจ้าของ 20 พ.ย. 2569) */}
+                <div style={{ display: "flex", marginTop: 10, borderRadius: 10, background: "var(--accent-soft)", textAlign: "center" }}>
+                  <div style={{ flex: 1, padding: "8px 4px" }}>
+                    <div style={{ fontSize: 12, color: "var(--text2)" }}>จำนวนที่เลือก</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{couponCount} ใบ</div>
+                  </div>
+                  <div style={{ flex: 1, padding: "8px 4px", borderLeft: "1px solid var(--border)" }}>
+                    <div style={{ fontSize: 12, color: "var(--text2)" }}>เวลาโดยประมาณ</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{couponMinutes(service, couponCount)} นาที</div>
+                  </div>
                 </div>
+                <div style={{ ...S.alert, marginTop: 10, fontSize: 15 }}>
+                  ⚠️ เลือกให้ตรงกับจำนวนคูปองที่จะใช้จริงนะคะ ระบบจองเวลาให้ตามจำนวนนี้ และใช้ได้ตามจำนวนที่จองไว้เท่านั้นค่ะ
+                </div>
+                <a href={LINE_URL} target="_blank" rel="noopener noreferrer"
+                  style={{ display: "block", marginTop: 10, padding: "10px 12px", borderRadius: 10, border: "1.5px solid #06C755", color: "var(--text)", textDecoration: "none", lineHeight: 1.5 }}>
+                  <div style={{ fontWeight: 700 }}>ใช้มากกว่า {couponOptions(service).length} ใบ?</div>
+                  <div style={{ fontSize: 13, color: "var(--text2)" }}>ทักแอดมินทาง LINE <span style={{ color: "#06C755", fontWeight: 700 }}>{LINE_ID}</span> ให้ช่วยตรวจสอบและจองให้ค่ะ</div>
+                </a>
               </div>
             )}
             {services && (pickService || !service) && (
@@ -423,11 +484,11 @@ export default function PublicBookingPage() {
               onChange={(e) => setNote(e.target.value)} />
             {/* เจ้าของสั่ง 14 พ.ย. 2569 — จำนวนใบเลือกด้านบนแล้ว (ล็อกเวลาตามจริง); หัตถการอื่นในหมายเหตุไม่ได้จองเวลาไว้ ทำให้คิวหมอล้น
                 20 พ.ย. 2569 — ลูกค้ายังเขียนจำนวนใบในหมายเหตุมากกว่าที่กดเลือก (~10 คิว/วัน) เวลาจึงจองไม่พอ: บอกให้กดเลือกที่ปุ่มแทน */}
-            <div style={{ color: "var(--amber)", fontSize: 12.5, lineHeight: 1.6, marginTop: 6 }}>
+            <div style={{ color: "var(--red)", fontSize: 14, fontWeight: 700, lineHeight: 1.6, marginTop: 6 }}>
               {!isSingleCoupon(service) && (
-                <>จำนวนคูปอง ต้องกดเลือกที่ปุ่ม "ใช้คูปองกี่ใบคะ" ด้านบนเท่านั้นนะคะ เขียนในหมายเหตุ ระบบไม่ได้จองเวลาเพิ่มให้ค่ะ<br /></>
+                <>❗ เพิ่มคูปองผ่านหมายเหตุไม่ได้ — เลือกจำนวนคูปองที่ปุ่ม "ใช้คูปองกี่ใบคะ" ด้านบนเท่านั้นค่ะ<br /></>
               )}
-              หัตถการอื่นที่เขียนในหมายเหตุ ระบบไม่ได้จองเวลาไว้ให้นะคะ รบกวนจองแยกอีกคิวค่ะ
+              ❗ หัตถการอื่นที่เขียนในหมายเหตุ ระบบไม่ได้จองเวลาไว้ให้นะคะ รบกวนจองแยกอีกคิวค่ะ
             </div>
             {/* กับดักบอท: คนจริงมองไม่เห็นและไม่กรอก */}
             <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" value={website}
@@ -437,11 +498,27 @@ export default function PublicBookingPage() {
 
         {slot && (
           <div style={S.card}>
-            <div style={{ fontSize: 14, lineHeight: 1.8, marginBottom: 12 }}>
-              <div>📍 {branch.name}</div>
-              <div>💆 {service.name}{couponCount > 1 ? ` · คูปอง ${couponCount} ใบ` : ""}</div>
-              <div>📅 {thaiDateLabel(date)} เวลา {slot.time}–{addMinutes(slot.time, couponMinutes(service, couponCount))} น. ({couponMinutes(service, couponCount)} นาที)</div>
-            </div>
+            <div style={{ ...S.label, fontSize: 17 }}>5. สรุปการจอง — ตรวจสอบก่อนยืนยัน</div>
+            <div style={{ ...S.alert, marginBottom: 10, fontSize: 20, textAlign: "center" }}>🎟️ ใช้คูปอง {bookedCount} ใบ</div>
+            <BookingDetails style={{ marginBottom: 12 }} rows={[
+              ["สาขา", branch.name],
+              ["บริการ", service.name],
+              ["จำนวนคูปอง", `${bookedCount} ใบ`],
+              ["วันที่", thaiDateLabel(date)],
+              ["เวลา", `${slot.time}–${addMinutes(slot.time, couponMinutes(service, couponCount))} น. (${couponMinutes(service, couponCount)} นาที)`],
+              ["ชื่อ", name.trim()],
+              ["เบอร์โทร", normalizePhone(phone)],
+              ["ลูกค้า", CUSTOMER_TYPE_LABEL[customerType] || "—"],
+              ["หมายเหตุ", note.trim() || "—"],
+            ]} />
+            <label style={{ ...S.alert, display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer", marginBottom: 12, fontSize: 15 }}>
+              <input type="checkbox" checked={couponAccepted} onChange={(e) => setCouponAccepted(e.target.checked)}
+                style={{ width: 22, height: 22, flex: "0 0 auto", marginTop: 2, accentColor: "var(--red)" }} />
+              <span>
+                ข้าพเจ้ารับทราบและยอมรับว่า จะใช้คูปอง <u>{bookedCount} ใบ</u> ตามที่จองไว้เท่านั้น
+                จำนวนที่พิมพ์ในหมายเหตุไม่นับ และใช้เกินจำนวนที่จองไว้ไม่ได้ หากต้องการใช้เพิ่ม จะจองคิวเพิ่มหรือทัก LINE {LINE_ID}
+              </span>
+            </label>
             {submitError && <div style={S.error}>{submitError}</div>}
             <button type="button" style={S.button(!formOk || submitting)} disabled={!formOk || submitting} onClick={submit}>
               {submitting ? "กำลังจอง…" : "ยืนยันการจอง"}

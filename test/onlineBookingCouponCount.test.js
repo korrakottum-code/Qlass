@@ -137,7 +137,8 @@ test("เวลาจบ: บวกนาทีข้ามชั่วโมง
 
 test("หน้าจอง: แสดงช่วงเวลาที่จอง (เริ่ม–จบ) ใต้ช่องเวลาและในสรุป", () => {
   assert.match(page, /จองเวลา <b>\{slot\.time\}–\{addMinutes\(slot\.time, couponMinutes\(service, couponCount\)\)\} น\.<\/b>/);
-  assert.match(page, /เวลา \{slot\.time\}–\{addMinutes\(slot\.time, couponMinutes\(service, couponCount\)\)\} น\./);
+  // สรุปก่อนยืนยัน (ตารางรายละเอียดการจอง 20 พ.ย. 2569)
+  assert.match(page, /\["เวลา", `\$\{slot\.time\}–\$\{addMinutes\(slot\.time, couponMinutes\(service, couponCount\)\)\} น\./);
   assert.ok(page.includes("เวลาบนปุ่มคือเวลาเริ่ม"));
 });
 
