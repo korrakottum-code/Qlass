@@ -1,5 +1,5 @@
 // ตัวจำลอง "ลูกค้าจองเอง" ในหน่วยความจำ (โหมดเดโม) — ทำตามกติกาหลักของ online_booking_*_v1 ใน SQL แบบย่อ
-// (ห้องตามประเภท ไม่ชนคิว ก่อนนัด 2 ชม. ไม่เกิน 14 วัน เบอร์ละ 2 วัน วันละ 3 คิว, Pico/Hifu ก่อนฉีด) ไม่ต่อเครือข่าย ข้อมูลหายเมื่อรีเฟรช
+// (ห้องตามประเภท ไม่ชนคิว ก่อนนัด 2 ชม. ไม่เกิน 30 วัน เบอร์ละ 2 วัน วันละ 3 คิว, Pico/Hifu ก่อนฉีด) ไม่ต่อเครือข่าย ข้อมูลหายเมื่อรีเฟรช
 import { DB } from "./mockSupabaseService.js";
 import { bangkokToday, MAX_DAYS_AHEAD, procedureOrderKind, SINGLE_COUPON } from "../../src/utils/publicBooking.js";
 
