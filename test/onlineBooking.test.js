@@ -9,12 +9,12 @@ const migration = read("supabase/migrations/20261103120000_online_self_booking.s
 const publicFn = read("supabase/functions/public-booking/index.ts");
 const staffSession = read("supabase/functions/staff-session/index.ts");
 
-test("วันให้เลือก: วันนี้ + 14 วัน ข้ามเดือน/ปีถูก", () => {
+test("วันให้เลือก: วันนี้ + 30 วัน ข้ามเดือน/ปีถูก", () => {
   const d = bookingDates("2026-12-25");
   assert.equal(d.length, MAX_DAYS_AHEAD + 1);
   assert.equal(d[0], "2026-12-25");
   assert.equal(d[7], "2027-01-01");
-  assert.equal(d.at(-1), "2027-01-08");
+  assert.equal(d.at(-1), "2027-01-24");
 });
 
 test("วันที่ภาษาไทย พ.ศ.", () => {

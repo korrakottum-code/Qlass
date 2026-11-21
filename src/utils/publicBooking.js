@@ -1,5 +1,5 @@
 // ตัวช่วยของหน้าลูกค้าจองเอง (/#book) — แยกจากหน้าเพื่อให้เทสต์ได้โดยไม่ต้องเรนเดอร์
-export const MAX_DAYS_AHEAD = 14; // ตรงกับ c_max_days ใน online_booking_slots_v1
+export const MAX_DAYS_AHEAD = 30; // ตรงกับ c_max_days ใน online_booking_slots_v1/v2 (ขยายจาก 14 เมื่อ 21 พ.ย. 2569)
 // จำนวนคูปองต่อคิว (เจ้าของสั่ง 14 พ.ย. 2569) — ตรงกับ c_max_count ใน online_booking_*_v2; เกินนี้ทักแอดมิน
 export const MAX_COUPONS = 3;
 export const COUPON_COUNTS = Array.from({ length: MAX_COUPONS }, (_, i) => i + 1);
