@@ -1,5 +1,6 @@
 // ตัวช่วยของหน้าลูกค้าจองเอง (/#book) — แยกจากหน้าเพื่อให้เทสต์ได้โดยไม่ต้องเรนเดอร์
-export const MAX_DAYS_AHEAD = 14; // ตรงกับ c_max_days ใน online_booking_slots_v1
+// จำนวนวันที่แสดงเป็นปุ่มลัด — ไม่ใช่เพดานการจอง (21 พ.ย. 2569 เลิกจำกัดวันล่วงหน้าแล้ว ลูกค้าเลือกวันอื่นจากช่องวันที่ได้)
+export const QUICK_PICK_DAYS = 14;
 // จำนวนคูปองต่อคิว (เจ้าของสั่ง 14 พ.ย. 2569) — ตรงกับ c_max_count ใน online_booking_*_v2; เกินนี้ทักแอดมิน
 export const MAX_COUPONS = 3;
 export const COUPON_COUNTS = Array.from({ length: MAX_COUPONS }, (_, i) => i + 1);
@@ -76,7 +77,7 @@ export function bangkokToday(now = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
   return parts; // YYYY-MM-DD
 }
-export function bookingDates(today, count = MAX_DAYS_AHEAD + 1) {
+export function bookingDates(today, count = QUICK_PICK_DAYS + 1) {
   const [y, m, d] = today.split("-").map(Number);
   return Array.from({ length: count }, (_, i) => {
     const dt = new Date(Date.UTC(y, m - 1, d + i));

@@ -1,7 +1,7 @@
 // ตัวจำลอง "ลูกค้าจองเอง" ในหน่วยความจำ (โหมดเดโม) — ทำตามกติกาหลักของ online_booking_*_v1 ใน SQL แบบย่อ
-// (ห้องตามประเภท ไม่ชนคิว ก่อนนัด 2 ชม. ไม่เกิน 14 วัน เบอร์ละ 2 วัน วันละ 3 คิว, Pico/Hifu ก่อนฉีด) ไม่ต่อเครือข่าย ข้อมูลหายเมื่อรีเฟรช
+// (ห้องตามประเภท ไม่ชนคิว ก่อนนัด 2 ชม. ไม่จำกัดวันล่วงหน้า เบอร์ละ 2 วัน วันละ 3 คิว, Pico/Hifu ก่อนฉีด) ไม่ต่อเครือข่าย ข้อมูลหายเมื่อรีเฟรช
 import { DB } from "./mockSupabaseService.js";
-import { bangkokToday, MAX_DAYS_AHEAD, procedureOrderKind, SINGLE_COUPON } from "../../src/utils/publicBooking.js";
+import { bangkokToday, procedureOrderKind, SINGLE_COUPON } from "../../src/utils/publicBooking.js";
 
 export const onlineBookingSettingsAvailable = true;
 export const getServerSessionToken = () => "demo";
@@ -82,8 +82,7 @@ export async function bookPublic(b) {
   const [hh, mm] = b.startTime.slice(11, 16).split(":").map(Number);
   const block = hh * 12 + mm / 5;
   const today = bangkokToday();
-  const maxDay = new Date(Date.parse(`${today}T00:00:00Z`) + MAX_DAYS_AHEAD * 86400_000).toISOString().slice(0, 10);
-  if (startMs(date, block) < Date.now() + 2 * 3600_000 || date > maxDay) fail("OUTSIDE_BOOKING_WINDOW");
+  if (startMs(date, block) < Date.now() + 2 * 3600_000) fail("OUTSIDE_BOOKING_WINDOW");
   const mine = booked.filter((q) => q.phone === b.phone && q.date >= today);
   const sameDay = mine.filter((q) => q.date === date).length;
   if (sameDay >= 3) fail("TOO_MANY_SAME_DAY");

@@ -163,7 +163,7 @@ test("หน้าจอง: กล่องข้อแนะนำก่อน
   assert.match(page, /ทำหลายหัตถการ จองแยกคิวละ 1 หัตถการนะคะ/);
   assert.match(page, /ทำ Pico \/ Hifu \/ Ultraformer คู่กับงานฉีด จองเวลาให้อยู่ก่อนฉีดนะคะ/);
   assert.match(page, /ใช้คูปองได้คิวละ 1–\{MAX_COUPONS\} ใบ \(บางโปรใช้ได้ครั้งละ 1 สิทธิ์ค่ะ\)/);
-  assert.match(page, /จองล่วงหน้าได้ 2 ชั่วโมง ถึง 14 วันค่ะ/);
+  assert.match(page, /จองได้ก่อนเวลานัดอย่างน้อย 2 ชั่วโมง เลือกวันไหนก็ได้ค่ะ/);
   assert.match(page, /เลื่อน ยกเลิก หรือสอบถาม ทัก LINE/);
   // กล่องข้อแนะนำไม่บอกเพดานคิว และไม่พูดถึงการตรวจจากเบอร์
   const box = page.slice(page.indexOf("📌 อ่านก่อนจองนะคะ"), page.indexOf("{loadError && <div style={S.error}>"));

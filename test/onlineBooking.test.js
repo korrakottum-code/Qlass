@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { bookingDates, thaiDateLabel, normalizePhone, isValidMobile, isPublicBookingHash, bangkokToday, MAX_DAYS_AHEAD, matchesSearch, groupServices, BOOKING_HOST, isBookingHost, customerBookingLink } from "../src/utils/publicBooking.js";
+import { bookingDates, thaiDateLabel, normalizePhone, isValidMobile, isPublicBookingHash, bangkokToday, QUICK_PICK_DAYS, matchesSearch, groupServices, BOOKING_HOST, isBookingHost, customerBookingLink } from "../src/utils/publicBooking.js";
 import { ALL_ROLES } from "../src/utils/constants.js";
 
 const read = (p) => fs.readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
@@ -11,7 +11,7 @@ const staffSession = read("supabase/functions/staff-session/index.ts");
 
 test("วันให้เลือก: วันนี้ + 14 วัน ข้ามเดือน/ปีถูก", () => {
   const d = bookingDates("2026-12-25");
-  assert.equal(d.length, MAX_DAYS_AHEAD + 1);
+  assert.equal(d.length, QUICK_PICK_DAYS + 1);
   assert.equal(d[0], "2026-12-25");
   assert.equal(d[7], "2027-01-01");
   assert.equal(d.at(-1), "2027-01-08");

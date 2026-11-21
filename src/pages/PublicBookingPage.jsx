@@ -9,7 +9,7 @@ import { bangkokToday, bookingDates, thaiDateLabel, normalizePhone, isValidMobil
 const ERROR_TEXT = {
   SLOT_UNAVAILABLE: "ขออภัยค่ะ เวลานี้เพิ่งมีผู้จองไป รบกวนเลือกเวลาอื่นนะคะ",
   TOO_MANY_BOOKINGS: "คุณลูกค้ามีคิวจองออนไลน์ค้างอยู่ 2 คิวแล้วค่ะ หากต้องการจองเพิ่มหรือเปลี่ยนเวลา รบกวนทัก LINE @classclinic นะคะ",
-  OUTSIDE_BOOKING_WINDOW: "ขออภัยค่ะ จองออนไลน์ได้ก่อนเวลานัดอย่างน้อย 2 ชั่วโมง และล่วงหน้าได้ไม่เกิน 14 วันค่ะ",
+  OUTSIDE_BOOKING_WINDOW: "ขออภัยค่ะ จองออนไลน์ได้ก่อนเวลานัดอย่างน้อย 2 ชั่วโมงค่ะ",
   BRANCH_NOT_ACCEPTING: "ขออภัยค่ะ สาขานี้ปิดรับจองออนไลน์ชั่วคราว รบกวนทัก LINE @classclinic นะคะ",
   INVALID_CUSTOMER: "รบกวนตรวจสอบชื่อและเบอร์มือถืออีกครั้งนะคะ",
   INVALID_SERVICE: "ขออภัยค่ะ บริการนี้ปิดรับจองออนไลน์แล้ว รบกวนเลือกบริการอื่นนะคะ",
@@ -293,7 +293,7 @@ export default function PublicBookingPage() {
             {[
               "ทำหลายหัตถการ จองแยกคิวละ 1 หัตถการนะคะ",
               "ทำ Pico / Hifu / Ultraformer คู่กับงานฉีด จองเวลาให้อยู่ก่อนฉีดนะคะ",
-              "จองล่วงหน้าได้ 2 ชั่วโมง ถึง 14 วันค่ะ",
+              "จองได้ก่อนเวลานัดอย่างน้อย 2 ชั่วโมง เลือกวันไหนก็ได้ค่ะ",
             ].map((t) => (
               <div key={t} style={{ display: "flex", gap: 6, marginBottom: 2 }}><span>•</span><span>{t}</span></div>
             ))}
@@ -446,6 +446,16 @@ export default function PublicBookingPage() {
                 </button>
               ))}
             </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              <span style={S.muted}>วันอื่น</span>
+              <input
+                type="date"
+                style={{ ...S.input, width: "auto", minWidth: 170 }}
+                min={today}
+                value={date}
+                onChange={(e) => { if (e.target.value && e.target.value >= today) setDate(e.target.value); }}
+              />
+            </label>
             <div style={{ marginTop: 12 }}>
               {slots === null && <span style={S.muted}>กำลังดูเวลาว่าง…</span>}
               {slots && slots.filter((s) => s.available).length === 0 && <span style={S.muted}>ขออภัยค่ะ วันที่เลือกเวลาเต็มแล้ว รบกวนเลือกวันอื่นนะคะ</span>}
