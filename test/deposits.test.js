@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   phoneDigits, phonesMatch, validateDepositForm, depositBookingState, canBookDeposit,
   depositToBookingForm, sumDepositStats, shouldLinkDeposit, formatPhone,
+  DEPOSIT_COMMISSION_RATE, depositCommission,
 } from "../src/utils/deposits.js";
 import { ALL_ROLES, NAV_ITEMS } from "../src/utils/constants.js";
 
@@ -189,7 +190,21 @@ test("ยอดรวมแถวสุดท้าย", () => {
     { count: 2, amount: 178, bookedCount: 1, bookedAmount: 89, doneCount: 0, doneAmount: 0 },
     { count: 1, amount: "290", bookedCount: 1, bookedAmount: 290, doneCount: 1, doneAmount: 290 },
   ]);
-  assert.deepEqual(sum, { count: 3, amount: 468, bookedCount: 2, bookedAmount: 379, doneCount: 1, doneAmount: 290 });
+  assert.deepEqual(sum, { count: 3, amount: 468, bookedCount: 2, bookedAmount: 379, doneCount: 1, doneAmount: 290, commission: 9.36 });
+});
+
+test("ค่าคอม 2% ของยอดโอน ได้ทันทีที่บันทึก (เจ้าของกำหนด 23 พ.ย. 2569)", () => {
+  assert.equal(DEPOSIT_COMMISSION_RATE, 0.02);
+  assert.equal(depositCommission(89), 1.78);
+  assert.equal(depositCommission(290), 5.8);
+  assert.equal(depositCommission("790"), 15.8);
+  assert.equal(depositCommission(0), 0);
+  assert.equal(depositCommission(null), 0);
+  assert.equal(depositCommission(12345.67), 246.91);
+  // คิดจากคอลัมน์ "บันทึกทั้งหมด" (amount) ไม่ใช่ยอดจองแล้ว/มาทำแล้ว
+  const page = read("../src/pages/DepositPage.jsx");
+  assert.match(page, /depositCommission\(r\.amount\)/);
+  assert.doesNotMatch(page, /depositCommission\(r\.(bookedAmount|doneAmount)\)/);
 });
 
 // ─── App.jsx: การจองปกติไม่เปลี่ยน ผูกเฉพาะตอนมาจากรายการโอน และคิวไม่ล้มถ้าผูกไม่ได้ ───

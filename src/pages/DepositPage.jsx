@@ -9,7 +9,7 @@ import { serverErrorCode } from "../utils/sessionApi";
 import { getServerSessionToken, depositsAvailable, listDeposits, createDeposit, cancelDeposit, fetchDepositSlipUrl, fetchDepositStats } from "../utils/depositApi";
 import {
   DEPOSIT_PAGE_SIZE, MAX_SLIP_BYTES, validateDepositForm, depositBookingState, canBookDeposit,
-  formatBaht, formatPhone, sumDepositStats,
+  formatBaht, formatPhone, sumDepositStats, depositCommission,
 } from "../utils/deposits";
 import Modal, { ModalHeader, ModalBody } from "../components/Modal";
 
@@ -438,13 +438,14 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
             </div>
           </div>
           <div style={{ overflowX: "auto" }}>
-            <table className="data-table" style={{ minWidth: 620 }}>
+            <table className="data-table" style={{ minWidth: 720 }}>
               <thead>
                 <tr>
                   <th style={th}>คนบันทึก</th>
                   <th style={th}>บันทึกทั้งหมด</th>
                   <th style={th}>จองคิวแล้ว</th>
                   <th style={th}>ลูกค้ามาทำแล้ว</th>
+                  <th style={th}>ค่าคอม 2%</th>
                 </tr>
               </thead>
               <tbody>
@@ -454,6 +455,7 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
                     <td style={{ ...td, textAlign: "right" }}>{r.count} ราย · <b>{formatBaht(r.amount)}</b> บาท</td>
                     <td style={{ ...td, textAlign: "right" }}>{r.bookedCount} ราย · <b>{formatBaht(r.bookedAmount)}</b> บาท</td>
                     <td style={{ ...td, textAlign: "right" }}>{r.doneCount} ราย · <b>{formatBaht(r.doneAmount)}</b> บาท</td>
+                    <td style={{ ...td, textAlign: "right", color: "var(--green)", fontWeight: 800 }}>{formatBaht(depositCommission(r.amount))} บาท</td>
                   </tr>
                 ))}
                 {statRows.length > 1 && (
@@ -462,14 +464,15 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
                     <td style={{ ...td, textAlign: "right" }}>{statSum.count} ราย · {formatBaht(statSum.amount)} บาท</td>
                     <td style={{ ...td, textAlign: "right" }}>{statSum.bookedCount} ราย · {formatBaht(statSum.bookedAmount)} บาท</td>
                     <td style={{ ...td, textAlign: "right" }}>{statSum.doneCount} ราย · {formatBaht(statSum.doneAmount)} บาท</td>
+                    <td style={{ ...td, textAlign: "right", color: "var(--green)" }}>{formatBaht(statSum.commission)} บาท</td>
                   </tr>
                 )}
-                {stats && statRows.length === 0 && <tr><td colSpan={4} style={{ ...td, textAlign: "center", color: "var(--text3)" }}>ไม่มีรายการในช่วงนี้</td></tr>}
+                {stats && statRows.length === 0 && <tr><td colSpan={5} style={{ ...td, textAlign: "center", color: "var(--text3)" }}>ไม่มีรายการในช่วงนี้</td></tr>}
               </tbody>
             </table>
           </div>
           <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 8 }}>
-            ไม่นับรายการที่ยกเลิก/คืนเงิน · “จองคิวแล้ว” ไม่นับคิวที่ถูกยกเลิก/ไม่มา · {stats?.scope === "self" ? "แสดงเฉพาะยอดที่คุณบันทึก" : "ทุกคนทุกสาขา"}
+            ค่าคอม 2% ของยอด “บันทึกทั้งหมด” ได้ทันทีที่บันทึกการโอน · ไม่นับรายการที่ยกเลิก/คืนเงิน (ยกเลิกทีหลัง = ค่าคอมรายการนั้นหายไปจากยอด) · “จองคิวแล้ว” ไม่นับคิวที่ถูกยกเลิก/ไม่มา · {stats?.scope === "self" ? "แสดงเฉพาะยอดที่คุณบันทึก" : "ทุกคนทุกสาขา"}
           </div>
         </div>
       )}

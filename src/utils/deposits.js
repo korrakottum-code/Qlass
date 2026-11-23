@@ -94,6 +94,15 @@ export function formatPhone(value) {
   return d;
 }
 
+// ค่าคอมแคมเปญโอนเงิน: ผู้บันทึกได้ 2% ของยอดโอน ทันทีที่บันทึก (เจ้าของกำหนด 23 พ.ย. 2569)
+// นับจาก "บันทึกทั้งหมด" ไม่ต้องรอจองคิว/มาทำ — รายการที่ยกเลิก/คืนเงินไม่นับ (deposit_stats_v1 ตัดทิ้งแล้ว) จึงหักคืนเอง
+export const DEPOSIT_COMMISSION_RATE = 0.02;
+export function depositCommission(amount) {
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.round(n * DEPOSIT_COMMISSION_RATE * 100) / 100;
+}
+
 /** ยอดรวมของตารางสรุป (แถวสุดท้าย "รวม") */
 export function sumDepositStats(rows) {
   return (rows || []).reduce((acc, r) => ({
@@ -103,7 +112,8 @@ export function sumDepositStats(rows) {
     bookedAmount: acc.bookedAmount + Number(r.bookedAmount || 0),
     doneCount: acc.doneCount + Number(r.doneCount || 0),
     doneAmount: acc.doneAmount + Number(r.doneAmount || 0),
-  }), { count: 0, amount: 0, bookedCount: 0, bookedAmount: 0, doneCount: 0, doneAmount: 0 });
+    commission: Math.round((acc.commission + depositCommission(r.amount)) * 100) / 100,
+  }), { count: 0, amount: 0, bookedCount: 0, bookedAmount: 0, doneCount: 0, doneAmount: 0, commission: 0 });
 }
 
 /**
