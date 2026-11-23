@@ -4,6 +4,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { formatThaiDate, blockToTime, getTodayStr } from "../utils/helpers";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
+import { pickDatePresets, daySpan } from "../utils/datePresets";
 import { serverErrorCode } from "../utils/sessionApi";
 import { getServerSessionToken, depositsAvailable, listDeposits, createDeposit, cancelDeposit, fetchDepositSlipUrl, fetchDepositStats } from "../utils/depositApi";
 import {
@@ -11,6 +12,9 @@ import {
   formatBaht, formatPhone, sumDepositStats,
 } from "../utils/deposits";
 import Modal, { ModalHeader, ModalBody } from "../components/Modal";
+
+// ช่วงด่วนของแท็บยอดรวม — ใช้ชุดเดียวกับหน้าตารางคิว/Export (utils/datePresets.js)
+const STATS_PRESET_KEYS = ["today", "yesterday", "last7", "thisWeek", "lastWeek", "monthToYesterday", "thisMonth", "lastMonth", "thisQuarter", "thisYear"];
 
 // สีใช้ธีมของแอป (ปุ่ม btn-primary/btn-secondary, ตาราง data-table, var(--green)) เหมือนหน้าอื่น — เจ้าของสั่ง ไม่ใช้ม่วง
 
@@ -143,10 +147,12 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
   const [cancelling, setCancelling] = useState(null);
   const [slipUrl, setSlipUrl] = useState(null);
   const [statsRange, setStatsRange] = useState(() => {
-    const t = getTodayStr();
-    return { from: `${t.slice(0, 8)}01`, to: t };
+    const m = pickDatePresets(["thisMonth"])[0];
+    return { from: m.start, to: m.end };
   });
   const [stats, setStats] = useState(null);
+  const statsPresets = useMemo(() => pickDatePresets(STATS_PRESET_KEYS), []);
+  const activeStatsPreset = statsPresets.find((p) => p.start === statsRange.from && p.end === statsRange.to)?.key ?? "";
   const fileRef = useRef(null);
   const { isSaving, run } = useSubmissionLock();
 
@@ -183,7 +189,10 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
   useEffect(() => {
     if (tab !== "stats") return undefined;
     let alive = true;
-    fetchDepositStats(token, { from: statsRange.from || null, to: statsRange.to || null })
+    // ใส่ "จาก" หลัง "ถึง" ได้ — สลับให้ ไม่ปล่อยให้เซิร์ฟเวอร์ตอบ invalid_range
+    const { from, to } = statsRange;
+    const [lo, hi] = from && to && from > to ? [to, from] : [from, to];
+    fetchDepositStats(token, { from: lo || null, to: hi || null })
       .then((data) => { if (alive) setStats(data); })
       .catch(async (err) => { if (alive) onToast?.("error", await explain(err)); });
     return () => { alive = false; };
@@ -396,11 +405,29 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
 
       {tab === "stats" && (
         <div className="card" style={{ padding: 16 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-            <span style={{ fontSize: 13 }}>วันที่บันทึก</span>
-            <input className="input" type="date" style={{ width: 160 }} value={statsRange.from} onChange={(e) => setStatsRange((r) => ({ ...r, from: e.target.value }))} />
-            <span>ถึง</span>
-            <input className="input" type="date" style={{ width: 160 }} value={statsRange.to} onChange={(e) => setStatsRange((r) => ({ ...r, to: e.target.value }))} />
+          {/* แบบเดียวกับตัวกรองหน้าตารางคิว: ช่วงด่วน + จากวันที่/ถึงวันที่ (นับตาม "วันที่บันทึก" การโอน) */}
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">ช่วงด่วน</label>
+              <select
+                value={activeStatsPreset}
+                onChange={(e) => {
+                  const p = statsPresets.find((x) => x.key === e.target.value);
+                  if (p) setStatsRange({ from: p.start, to: p.end });
+                }}
+              >
+                {!activeStatsPreset && <option value="">กำหนดเอง ({Math.max(daySpan(statsRange.from, statsRange.to), daySpan(statsRange.to, statsRange.from), 0)} วัน)</option>}
+                {statsPresets.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">จากวันที่บันทึก</label>
+              <input type="date" value={statsRange.from} onChange={(e) => setStatsRange((r) => ({ ...r, from: e.target.value }))} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">ถึงวันที่</label>
+              <input type="date" value={statsRange.to} onChange={(e) => setStatsRange((r) => ({ ...r, to: e.target.value }))} />
+            </div>
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="data-table" style={{ minWidth: 620 }}>
