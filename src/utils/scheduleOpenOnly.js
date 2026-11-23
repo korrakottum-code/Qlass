@@ -57,12 +57,15 @@ export function buildOpenOnlyRows({ room, startBlock, endBlock, note = "" }) {
   const cb = room?.closeBlock ?? DEFAULT_CLOSE;
   const rows = [];
   const text = String(note ?? "").trim() || defaultOpenOnlyNote(startBlock, endBlock);
-  if (startBlock > ob) rows.push({ available: false, startBlock: ob, endBlock: Math.min(startBlock, cb), noteOnly: false, note: text });
-  if (endBlock < cb) rows.push({ available: false, startBlock: Math.max(endBlock, ob), endBlock: cb, noteOnly: false, note: text });
-  if (startBlock < ob || endBlock > cb) rows.push({ available: true, startBlock, endBlock, noteOnly: false, note: text });
+  if (startBlock > ob) rows.push({ available: false, startBlock: ob, endBlock: Math.min(startBlock, cb), noteOnly: false, note: "" });
+  if (endBlock < cb) rows.push({ available: false, startBlock: Math.max(endBlock, ob), endBlock: cb, noteOnly: false, note: "" });
+  if (startBlock < ob || endBlock > cb) rows.push({ available: true, startBlock, endBlock, noteOnly: false, note: "" });
   // startBlock < endBlock เสมอ ช่วงปิดหน้า/หลังจึงไม่ทับกัน; ช่วงที่อยู่นอกเวลาปกติทั้งก้อน
   // (เช่น ปกติ 11–20 เลือก 20–22) ได้ปิด 11–20 อันเดียว + เปิด 20–22
-  return rows.filter((r) => r.startBlock < r.endBlock);
+  const out = rows.filter((r) => r.startBlock < r.endBlock);
+  // หมายเหตุใส่แถวแรกแถวเดียว — Timeline/ฟอร์มลงคิวโชว์หมายเหตุทุกแถวของเตียง-วัน ใส่ทุกแถวจะขึ้นซ้ำ
+  if (out.length > 0) out[0].note = text;
+  return out;
 }
 
 /**
@@ -77,13 +80,23 @@ export function planOpenOnly({ rooms, roomSchedules, roomIds, dates, startBlock,
   const roomById = new Map((rooms || []).map((r) => [r.id, r]));
   const beds = [];
   if (!(endBlock > startBlock)) return { beds };
+  // จัดกลุ่มตามเตียงครั้งเดียว — ตารางทั้งระบบหลายหมื่นแถว × ทั้งเดือน × หลายเตียง ห้ามกรองซ้ำทุกรอบ
+  const wanted = new Set(roomIds || []);
+  const byRoom = new Map();
+  for (const s of roomSchedules || []) {
+    if (!s || !wanted.has(s.roomId)) continue;
+    if (!byRoom.has(s.roomId)) byRoom.set(s.roomId, []);
+    byRoom.get(s.roomId).push(s);
+  }
   for (const roomId of roomIds || []) {
     const room = roomById.get(roomId);
+    const roomRows = byRoom.get(roomId) || [];
     for (const date of dates || []) {
       if (!date) continue;
-      const sameDay = (roomSchedules || []).filter((s) => s.roomId === roomId && (s.date === date || s.date === "" || s.date === null));
+      const sameDay = roomRows.filter((s) => s.date === date || s.date === "" || s.date === null);
       // แถวที่กำลังแก้อยู่ในฟอร์ม (ที่กรอกเอง วันนั้น) = ผู้ใช้ตั้งใจเปลี่ยนแถวนี้ → แทนที่ได้แม้เป็น "ปิดทั้งวัน"
-      const isEditingRow = (s) => !!editingId && s.id === editingId && s.date === date && !s.noteOnly
+      // (รวมแถวโน้ตที่กำลังแก้ — ไม่งั้นโน้ตเดิมค้าง + หมายเหตุที่ติดมาในฟอร์มขึ้นซ้ำ)
+      const isEditingRow = (s) => !!editingId && s.id === editingId && s.date === date
         && (s.source === null || s.source === undefined || s.source === "");
       const wholeDay = sameDay.find((s) => isWholeDayClosure(s) && !isEditingRow(s));
       let blocked = null;
@@ -108,6 +121,14 @@ export function planOpenOnly({ rooms, roomSchedules, roomIds, dates, startBlock,
       const create = buildOpenOnlyRows({ room, startBlock, endBlock, note }).map((r) => ({ ...r, roomId, date }));
       beds.push({ roomId, date, create, remove, blocked: null });
     }
+  }
+  // แก้แถวเดิมแล้วเปลี่ยนเตียง/วันที่ไปด้วย: แบบเดิม (✅/⛔) "ย้าย" แถวนั้นไป — ที่นี่ก็ต้องเอาแถวเดิมออก
+  // ไม่งั้นช่วงเดิมค้างอยู่ที่เตียง/วันเก่า (ไม่แตะแถวปุ่มปิดเตียง)
+  const editing = editingId ? (roomSchedules || []).find((s) => s && s.id === editingId) : null;
+  if (editing && (editing.source === null || editing.source === undefined || editing.source === "")
+    && !beds.some((b) => b.roomId === editing.roomId && b.date === editing.date)) {
+    const target = beds.find((b) => !b.blocked);
+    if (target) target.remove = [...target.remove, editing];
   }
   return { beds };
 }

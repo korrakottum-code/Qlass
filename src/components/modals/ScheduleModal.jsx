@@ -319,8 +319,9 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
     setNoteOnly(false);
     setAvailable(true);
     setOpenOnly(true);
-    // เข้าโหมดนี้ครั้งแรก — ตั้ง 13:00–18:00 (กดซ้ำไม่ล้างเวลาที่กรอกไว้; แก้แถวที่มีช่วงเวลาอยู่แล้ว ใช้เวลาเดิม)
-    if (!already && data?.startBlock == null) {
+    // เข้าโหมดนี้ครั้งแรก — ตั้ง 13:00–18:00 (กดซ้ำไม่ล้างเวลาที่กรอกไว้)
+    // แก้แถว "เปิด" ที่มีช่วงเวลา → ใช้เวลาเดิม; แก้แถว "ปิดช่วง" → ไม่ใช้ เพราะช่วงปิดคือเวลาที่หมอ "ไม่อยู่"
+    if (!already && !(data?.available === true && data?.startBlock != null)) {
       setStartBlock(DEFAULT_OPEN_ONLY_START);
       setEndBlock(DEFAULT_OPEN_ONLY_END);
     }
@@ -693,7 +694,7 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
                       const room = rooms.find((r) => r.id === s.roomId);
                       return (
                         <div key={s.id}>
-                          {formatThaiDate(s.date)} · {room?.name || ""} · {s.available ? "เปิด" : "ปิด"} {blockToTime(s.startBlock)}–{blockToTime(s.endBlock)}{s.note ? ` · ${s.note}` : ""}
+                          {formatThaiDate(s.date)} · {room?.name || ""} · {s.startBlock == null ? "ปิดทั้งวัน" : `${s.available ? "เปิด" : "ปิด"} ${blockToTime(s.startBlock)}–${blockToTime(s.endBlock)}`}{s.note ? ` · ${s.note}` : ""}
                         </div>
                       );
                     })}
@@ -739,7 +740,7 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
         onClose={onClose}
         onSave={handleSave}
         disabled={selectedRoomIds.length === 0 || (!isEdit && generatedDates.length === 0)}
-        saveLabel={`💾 บันทึก ${!isEdit && generatedDates.length > 1 ? `(${generatedDates.length} วัน × ${selectedRoomIds.length} ห้อง = ${generatedDates.length * selectedRoomIds.length} รายการ)` : selectedRoomIds.length > 1 ? `(${selectedRoomIds.length} ห้อง)` : ""}`}
+        saveLabel={isOpenOnly ? `💾 บันทึก (${openOnlySummary?.bedDays ?? 0} เตียง-วัน)` : `💾 บันทึก ${!isEdit && generatedDates.length > 1 ? `(${generatedDates.length} วัน × ${selectedRoomIds.length} ห้อง = ${generatedDates.length * selectedRoomIds.length} รายการ)` : selectedRoomIds.length > 1 ? `(${selectedRoomIds.length} ห้อง)` : ""}`}
       />
     </>
   );

@@ -33,7 +33,7 @@ test("หมออยู่ช่วงกลาง 13:00–18:00 → ปิด�
   const rows = buildOpenOnlyRows({ room, startBlock: 156, endBlock: 216, note: "หมอ A" });
   assert.deepEqual(rows, [
     { available: false, startBlock: 132, endBlock: 156, noteOnly: false, note: "หมอ A" },
-    { available: false, startBlock: 216, endBlock: 240, noteOnly: false, note: "หมอ A" },
+    { available: false, startBlock: 216, endBlock: 240, noteOnly: false, note: "" }, // หมายเหตุแถวเดียว ไม่ขึ้นซ้ำ
   ]);
   assert.deepEqual(openSet(rows), range(156, 216));
 });
@@ -171,4 +171,33 @@ test("App: ลบแถวเปิดต่อเวลาเดิมก่อ
   const b = body.indexOf("for (const row of bed.create)");
   const c = body.indexOf("for (const old of oldCloses)");
   assert.ok(a > 0 && a < b && b < c);
+});
+
+test("แก้แถวเดิมแล้วเปลี่ยนวันที่ → แถวเดิมถูกเอาออก (เหมือน ✅/⛔ ที่ย้ายแถว) ไม่ค้างที่วันเก่า", () => {
+  const schedules = [
+    { id: "c9", roomId: "m1", date: "2026-12-05", available: false, startBlock: 132, endBlock: 204, noteOnly: false, source: null },
+  ];
+  const plan = planOpenOnly({ rooms: [room], roomSchedules: schedules, roomIds: ["m1"], dates: [D], startBlock: 156, endBlock: 216, editingId: "c9" });
+  assert.deepEqual(plan.beds[0].remove.map((s) => s.id), ["c9"]);
+  // แถวปุ่มปิดเตียง แม้กำลังแก้ ก็ไม่แตะ
+  const bs = [{ ...schedules[0], source: "bed_switch" }];
+  assert.deepEqual(planOpenOnly({ rooms: [room], roomSchedules: bs, roomIds: ["m1"], dates: [D], startBlock: 156, endBlock: 216, editingId: "c9" }).beds[0].remove, []);
+});
+
+test("ทั้งเดือน × 10 เตียง บนตาราง 40,000 แถว คำนวณเร็วพอพิมพ์หมายเหตุได้ไม่สะดุด", () => {
+  const rooms10 = Array.from({ length: 10 }, (_, i) => ({ id: `r${i}`, openBlock: 132, closeBlock: 240 }));
+  const big = Array.from({ length: 40000 }, (_, i) => ({ id: `s${i}`, roomId: `x${i % 500}`, date: "2026-12-01", available: false, startBlock: 132, endBlock: 150, noteOnly: false, source: null }));
+  const dates = Array.from({ length: 31 }, (_, i) => `2026-12-${String(i + 1).padStart(2, "0")}`);
+  const t = performance.now();
+  for (let k = 0; k < 5; k++) planOpenOnly({ rooms: rooms10, roomSchedules: big, roomIds: rooms10.map((r) => r.id), dates, startBlock: 156, endBlock: 216 });
+  assert.ok((performance.now() - t) / 5 < 50, "ต้องไม่เกิน ~50ms ต่อรอบ");
+});
+
+test("แก้แถวโน้ตแล้วเปลี่ยนเป็นเปิดเฉพาะช่วง → แถวโน้ตเดิมถูกแทนที่ (หมายเหตุไม่ขึ้นซ้ำ)", () => {
+  const schedules = [{ id: "n7", roomId: "m1", date: D, available: true, startBlock: null, endBlock: null, noteOnly: true, note: "หมอ B", source: null }];
+  const plan = planOpenOnly({ rooms: [room], roomSchedules: schedules, roomIds: ["m1"], dates: [D], startBlock: 156, endBlock: 216, note: "หมอ B", editingId: "n7" });
+  assert.deepEqual(plan.beds[0].remove.map((s) => s.id), ["n7"]);
+  assert.equal(plan.beds[0].create.filter((r) => r.note).length, 1);
+  // ไม่ได้แก้แถวโน้ต → โน้ตไม่ถูกแตะ
+  assert.deepEqual(planOpenOnly({ rooms: [room], roomSchedules: schedules, roomIds: ["m1"], dates: [D], startBlock: 156, endBlock: 216 }).beds[0].remove, []);
 });
