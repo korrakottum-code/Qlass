@@ -97,7 +97,11 @@ function BookingCell({ deposit, onBook, canBook }) {
   }
   return (
     <div style={{ textAlign: "center" }}>
-      {state === "lost" && <div style={{ color: "#dc2626", fontSize: 11, fontWeight: 700, marginBottom: 4 }}>คิวเดิมถูกยกเลิก/ไม่มา</div>}
+      {state === "lost" && (
+        <div style={{ color: "#dc2626", fontSize: 11, fontWeight: 700, marginBottom: 4 }}>
+          {deposit.booking?.status === "rescheduled" ? "คิวเดิมเลื่อนออก (ยังไม่มีวันใหม่)" : "คิวเดิมถูกยกเลิก/ไม่มา"}
+        </div>
+      )}
       {canBook
         ? <button className="btn btn-sm btn-primary" onClick={() => onBook(deposit)}>📅 เลือกวันที่</button>
         : <span style={{ fontSize: 12, color: "var(--text3)" }}>ยังไม่จอง</span>}

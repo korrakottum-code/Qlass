@@ -60,7 +60,11 @@ values ('deposit-slips', 'deposit-slips', false, 2097152, array['image/jpeg', 'i
 on conflict (id) do update set public = false, file_size_limit = 2097152,
   allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp'];
 
--- ไล่ตามการเลื่อนนัด: คิวเดิมสถานะ "เลื่อนออก" → คิวใหม่ที่ rescheduled_from_id ชี้มา (สูงสุด 10 ทอด)
+-- ไล่ตามการเลื่อนนัด (สูงสุด 10 ทอด): คิวเดิมสถานะ "เลื่อนออก" → คิว "เลื่อนมา" ที่ระบบสร้างต่อ
+-- หน้าเลื่อนนัดใน App.jsx ไม่ได้ใส่ rescheduled_from_id (ข้อมูลจริง 0 แถว ณ 23 พ.ย. 2569) แต่ทำแบบนี้เสมอ:
+-- อัปเดตคิวเดิมเป็น rescheduled (status_updated_at = ตอนกด) แล้วสร้างคิวใหม่ที่ก๊อปเบอร์/หัตถการเดิมทันที
+-- จึงหาคิวใหม่จาก เบอร์เดียวกัน + หัตถการเดียวกัน + สร้างภายใน -2 ถึง +10 นาทีจากตอนกดเลื่อน (ตรง 253/267 ราย ต.ค.–พ.ย.;
+-- ที่เหลือคือเลื่อนออกโดยยังไม่มีวันใหม่) เลือกตัวที่สร้างใกล้ที่สุด — ถ้าวันหน้ามี rescheduled_from_id ก็ใช้ตัวนั้นก่อน
 create or replace function public.deposit_current_queue(p_queue_id uuid)
 returns uuid
 language plpgsql
@@ -70,20 +74,30 @@ set search_path = public
 as $$
 declare
   v_id uuid := p_queue_id;
-  v_status text;
+  v_q public.queues%rowtype;
   v_next uuid;
   i int := 0;
 begin
   if v_id is null then return null; end if;
   loop
-    select status into v_status from public.queues where id = v_id;
+    select * into v_q from public.queues where id = v_id;
     if not found then return null; end if;
-    exit when v_status is distinct from 'rescheduled' or i >= 10;
+    exit when v_q.status is distinct from 'rescheduled' or i >= 10;
     select id into v_next from public.queues
      where rescheduled_from_id = v_id
      order by created_at desc nulls last limit 1;
-    exit when v_next is null;
+    if v_next is null and v_q.status_updated_at is not null then
+      select n.id into v_next from public.queues n
+       where n.phone = v_q.phone
+         and n.procedure_id is not distinct from v_q.procedure_id
+         and n.id <> v_q.id
+         and n.created_at between v_q.status_updated_at - interval '2 minutes' and v_q.status_updated_at + interval '10 minutes'
+       order by abs(extract(epoch from (n.created_at - v_q.status_updated_at)))
+       limit 1;
+    end if;
+    exit when v_next is null; -- เลื่อนออกแต่ยังไม่มีวันใหม่ → คืนคิวเดิม (สถานะ rescheduled)
     v_id := v_next;
+    v_next := null;
     i := i + 1;
   end loop;
   return v_id;
@@ -160,8 +174,8 @@ begin
      where case p_status
        when 'all' then true
        when 'cancelled' then cancelled_at is not null
-       when 'booked' then cancelled_at is null and q_status is not null and q_status not in ('cancelled', 'no_show')
-       when 'waiting' then cancelled_at is null and (q_status is null or q_status in ('cancelled', 'no_show'))
+       when 'booked' then cancelled_at is null and q_status is not null and q_status not in ('cancelled', 'no_show', 'rescheduled')
+       when 'waiting' then cancelled_at is null and (q_status is null or q_status in ('cancelled', 'no_show', 'rescheduled'))
      end
   )
   select count(*)::int,
@@ -236,7 +250,7 @@ begin
   if v_row.cancelled_at is not null then raise exception 'deposit_cancelled'; end if;
   if v_row.queue_id = p_queue_id then return public.deposit_json(v_row); end if; -- กดซ้ำ/ส่งซ้ำ
   select q.status into v_current_status from public.queues q where q.id = public.deposit_current_queue(v_row.queue_id);
-  if v_current_status is not null and v_current_status not in ('cancelled', 'no_show') then raise exception 'deposit_already_booked'; end if;
+  if v_current_status is not null and v_current_status not in ('cancelled', 'no_show', 'rescheduled') then raise exception 'deposit_already_booked'; end if;
   select * into v_queue from public.queues where id = p_queue_id;
   if not found then raise exception 'queue_not_found'; end if;
   if regexp_replace(coalesce(v_queue.phone, ''), '[^0-9]', '', 'g') <> v_row.customer_phone then raise exception 'queue_phone_mismatch'; end if;
@@ -315,8 +329,8 @@ as $$
   ), per as (
     select recorded_by,
            count(*)::int as count, sum(amount) as amount,
-           count(*) filter (where q_status is not null and q_status not in ('cancelled', 'no_show'))::int as booked_count,
-           coalesce(sum(amount) filter (where q_status is not null and q_status not in ('cancelled', 'no_show')), 0) as booked_amount,
+           count(*) filter (where q_status is not null and q_status not in ('cancelled', 'no_show', 'rescheduled'))::int as booked_count,
+           coalesce(sum(amount) filter (where q_status is not null and q_status not in ('cancelled', 'no_show', 'rescheduled')), 0) as booked_amount,
            count(*) filter (where q_status = 'done')::int as done_count,
            coalesce(sum(amount) filter (where q_status = 'done'), 0) as done_amount
       from base group by recorded_by

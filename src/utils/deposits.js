@@ -52,7 +52,8 @@ export function depositBookingState(deposit) {
   if (deposit.cancelledAt) return "cancelled";
   const b = deposit.booking;
   if (!b) return deposit.queueId ? "lost" : "waiting";
-  if (b.status === "cancelled" || b.status === "no_show") return "lost";
+  // rescheduled = เลื่อนออกแล้วยังไม่มีวันใหม่ (ถ้ามีวันใหม่ เซิร์ฟเวอร์ส่งคิวใหม่มาแทนแล้ว)
+  if (b.status === "cancelled" || b.status === "no_show" || b.status === "rescheduled") return "lost";
   if (b.status === "done") return "done";
   if (b.status === "waiting_queue") return "waitlist";
   return "booked";

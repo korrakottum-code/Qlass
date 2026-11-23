@@ -49,6 +49,14 @@ test("ผูกคิว: ล็อกแถว ตรวจเบอร์ แ�
   assert.match(body, /exception when unique_violation then\s+raise exception 'queue_already_linked'/);
 });
 
+test("ตามการเลื่อนนัดจริงของแอป (ไม่มี rescheduled_from_id): เบอร์+หัตถการเดิม สร้างใกล้เวลากดเลื่อน", () => {
+  const fn = sql.slice(sql.indexOf("function public.deposit_current_queue"), sql.indexOf("function public.deposit_json"));
+  assert.match(fn, /n\.phone = v_q\.phone/);
+  assert.match(fn, /n\.procedure_id is not distinct from v_q\.procedure_id/);
+  assert.match(fn, /v_q\.status_updated_at - interval '2 minutes' and v_q\.status_updated_at \+ interval '10 minutes'/);
+  assert.match(sql, /not in \('cancelled', 'no_show', 'rescheduled'\)/);
+});
+
 test("ลบพนักงานต้องไม่ล้ม: recorded_by on delete set null (เหมือน queues.recorded_by)", () => {
   assert.match(sql, /recorded_by\s+uuid references public\.staff\(id\) on delete set null/);
   assert.doesNotMatch(sql, /references public\.staff\(id\) on delete restrict/);
@@ -139,6 +147,7 @@ test("สถานะคอลัมน์จองลงคิว", () => {
   assert.equal(depositBookingState({ queueId: "q", booking: { status: "cancelled" } }), "lost");
   assert.equal(depositBookingState({ queueId: "q", booking: { status: "no_show" } }), "lost");
   assert.equal(depositBookingState({ queueId: "q", booking: null }), "lost"); // คิวถูกลบ
+  assert.equal(depositBookingState({ queueId: "q", booking: { status: "rescheduled" } }), "lost"); // เลื่อนออก ยังไม่มีวันใหม่
   assert.ok(canBookDeposit({}));
   assert.ok(canBookDeposit({ queueId: "q", booking: { status: "cancelled" } }));
   assert.ok(!canBookDeposit({ queueId: "q", booking: { status: "confirmed" } }));

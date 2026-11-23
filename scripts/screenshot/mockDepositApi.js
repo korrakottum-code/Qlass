@@ -42,7 +42,7 @@ function view(d) {
   };
 }
 const qStatus = (d) => (d.queueId ? currentQueue(d.queueId)?.status ?? null : null);
-const isBooked = (s) => s != null && s !== "cancelled" && s !== "no_show";
+const isBooked = (s) => s != null && s !== "cancelled" && s !== "no_show" && s !== "rescheduled";
 
 export async function listDeposits(_t, { search = "", status = "all", branchId = null, from = null, to = null, limit = 50, offset = 0 } = {}) {
   const scoped = scopeBranch();
