@@ -88,6 +88,38 @@ const couponErrors = new Set([
   "invalid_expiry", "invalid_price", "invalid_name", "prefix_exhausted", "invalid_start", "batch_not_found", "batch_already_cancelled", "batch_not_cancelled", "batch_has_used", "batch_not_latest", "invalid_range",
   "category_exists", "category_not_found", "category_inactive", "invalid_category",
 ]);
+// ลูกค้าโอนแล้ว รอจองคิว (ตาราง transfer_deposits + bucket deposit-slips ปิดจากคีย์หน้าเว็บ)
+// บันทึก/ดูรายการ/จองคิว = ทุกบทบาทที่ลงคิวได้ (ผู้จัดการสาขา/แคชเชียถูกล็อกสาขาตัวเองฝั่งเซิร์ฟเวอร์)
+// ยกเลิก/คืนเงิน = แอดมินขึ้นไป, ยอดรวมทุกคน = ผู้ดูแลระบบ หัวหน้าแอดมิน CEO (คนอื่นเห็นยอดของตัวเองเท่านั้น)
+const depositUseRoles = new Set(["superadmin", "head_admin", "admin", "branch_manager", "cashier"]);
+const depositCancelRoles = new Set(["superadmin", "head_admin", "admin"]);
+const depositAllStatsRoles = new Set(["superadmin", "head_admin", "ceo"]);
+const depositErrors = new Set([
+  "invalid_name", "invalid_phone", "invalid_amount", "invalid_date", "invalid_branch", "invalid_promo",
+  "deposit_not_found", "deposit_cancelled", "deposit_already_booked", "queue_not_found", "queue_phone_mismatch",
+  "queue_already_linked", "invalid_reason", "invalid_deposit_payload", "invalid_range",
+]);
+const MAX_SLIP_BYTES = 1_500_000;
+const isUuidValue = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+// สลิป: รับเป็น base64 (หน้าเว็บย่อรูปให้เหลือ ~200 KB แล้ว) ตรวจชนิดจากไบต์จริง ไม่เชื่อนามสกุลหรือชนิดที่เบราว์เซอร์บอก
+function decodeSlip(value: unknown): { bytes: Uint8Array; ext: "jpg" | "png" | "webp"; type: string } | null {
+  if (typeof value !== "string" || value.length < 100 || value.length > Math.ceil(MAX_SLIP_BYTES * 4 / 3) + 8) return null;
+  let bytes: Uint8Array;
+  try {
+    const bin = atob(value);
+    bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+  } catch {
+    return null;
+  }
+  if (bytes.length > MAX_SLIP_BYTES) return null;
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return { bytes, ext: "jpg", type: "image/jpeg" };
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return { bytes, ext: "png", type: "image/png" };
+  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return { bytes, ext: "webp", type: "image/webp" };
+  return null;
+}
+
 function validDay(value: unknown): string | null {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const d = new Date(`${value}T00:00:00Z`);
@@ -641,6 +673,122 @@ Deno.serve(async (req) => {
       }
 
       return response({ error: "invalid_coupon_payload" }, 400, origin);
+    }
+
+    if (typeof body?.action === "string" && body.action.startsWith("deposit_")) {
+      const current = await findSession(body.token);
+      if (!current) return response({ error: "invalid_session" }, 401, origin);
+      const role = String(current.user.role ?? "");
+      const staffId = String(current.user.id);
+      // ผู้จัดการสาขา/แคชเชีย: เห็น/บันทึก/จองได้เฉพาะสาขาตัวเอง — ไม่เชื่อสาขาที่เบราว์เซอร์ส่งมา
+      const branchScoped = role === "branch_manager" || role === "cashier";
+      const ownBranch = branchScoped ? String(current.user.branchId ?? "") : null;
+      if (branchScoped && !ownBranch) return response({ error: "forbidden" }, 403, origin);
+      const fail = (error: { message?: string }) => {
+        const code = String(error?.message ?? "");
+        if (depositErrors.has(code)) {
+          return response({ error: code }, code === "deposit_not_found" || code === "queue_not_found" ? 404 : code.startsWith("invalid_") ? 400 : 409, origin);
+        }
+        throw error;
+      };
+
+      if (body.action === "deposit_stats") {
+        if (!depositUseRoles.has(role) && !depositAllStatsRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        const from = body.from == null ? null : validDay(body.from);
+        const to = body.to == null ? null : validDay(body.to);
+        if ((body.from != null && !from) || (body.to != null && !to) || (from && to && from > to)) return response({ error: "invalid_range" }, 400, origin);
+        const all = depositAllStatsRoles.has(role);
+        const { data, error } = await supabase.rpc("deposit_stats_v1", {
+          p_from: from, p_to: to,
+          p_branch_id: all && isUuidValue(body.branchId) ? body.branchId : null,
+          p_recorder: all ? null : staffId,
+        });
+        if (error) return fail(error);
+        return response({ stats: data, scope: all ? "all" : "self" }, 200, origin);
+      }
+
+      if (!depositUseRoles.has(role) && !(body.action === "deposit_cancel" && depositCancelRoles.has(role))) {
+        return response({ error: "forbidden" }, 403, origin);
+      }
+
+      if (body.action === "deposit_list") {
+        const status = String(body.status ?? "all");
+        const from = body.from == null || body.from === "" ? null : validDay(body.from);
+        const to = body.to == null || body.to === "" ? null : validDay(body.to);
+        if ((body.from && !from) || (body.to && !to)) return response({ error: "invalid_range" }, 400, origin);
+        const branchId = ownBranch ?? (isUuidValue(body.branchId) ? body.branchId : null);
+        const { data, error } = await supabase.rpc("deposit_list_v1", {
+          p_branch_id: branchId,
+          p_search: typeof body.search === "string" ? body.search.slice(0, 80) : null,
+          p_status: status, p_from: from, p_to: to,
+          p_limit: Number.isInteger(body.limit) ? body.limit : 50,
+          p_offset: Number.isInteger(body.offset) ? body.offset : 0,
+        });
+        if (error) return fail(error);
+        return response(data, 200, origin);
+      }
+
+      if (body.action === "deposit_create") {
+        const d = body.deposit;
+        if (!d || typeof d !== "object" || Array.isArray(d)) return response({ error: "invalid_deposit_payload" }, 400, origin);
+        const branchId = ownBranch ?? (isUuidValue(d.branchId) ? d.branchId : "");
+        if (!isUuidValue(branchId)) return response({ error: "invalid_branch" }, 400, origin);
+        if (!isUuidValue(d.promoId)) return response({ error: "invalid_promo" }, 400, origin);
+        const recordDate = validDay(d.recordDate);
+        if (!recordDate) return response({ error: "invalid_date" }, 400, origin);
+        const slip = decodeSlip(d.slipBase64);
+        if (!slip) return response({ error: "invalid_slip" }, 400, origin);
+        const path = `${recordDate.slice(0, 7)}/${crypto.randomUUID()}.${slip.ext}`;
+        const { error: uploadError } = await supabase.storage.from("deposit-slips").upload(path, slip.bytes, { contentType: slip.type, upsert: false });
+        if (uploadError) throw uploadError;
+        const { data, error } = await supabase.rpc("deposit_create_v1", {
+          p_actor_staff_id: staffId, p_branch_id: branchId,
+          p_customer_name: String(d.customerName ?? "").slice(0, 200),
+          p_customer_phone: String(d.customerPhone ?? "").slice(0, 30),
+          p_promo_id: d.promoId, p_amount: Number(d.amount),
+          p_record_date: recordDate,
+          p_note: typeof d.note === "string" ? d.note.slice(0, 300) : null,
+          p_slip_path: path,
+        });
+        if (error) {
+          // บันทึกไม่ผ่าน = ไม่ทิ้งไฟล์สลิปกำพร้าไว้ใน bucket
+          await supabase.storage.from("deposit-slips").remove([path]).catch(() => {});
+          return fail(error);
+        }
+        return response({ deposit: data }, 200, origin);
+      }
+
+      if (body.action === "deposit_link") {
+        if (!isUuidValue(body.depositId) || !isUuidValue(body.queueId)) return response({ error: "invalid_deposit_payload" }, 400, origin);
+        const { data, error } = await supabase.rpc("deposit_link_v1", {
+          p_actor_staff_id: staffId, p_deposit_id: body.depositId, p_queue_id: body.queueId, p_branch_id: ownBranch,
+        });
+        if (error) return fail(error);
+        return response({ deposit: data }, 200, origin);
+      }
+
+      if (body.action === "deposit_cancel") {
+        if (!depositCancelRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
+        if (!isUuidValue(body.depositId)) return response({ error: "invalid_deposit_payload" }, 400, origin);
+        const { data, error } = await supabase.rpc("deposit_cancel_v1", {
+          p_actor_staff_id: staffId, p_deposit_id: body.depositId,
+          p_reason: typeof body.reason === "string" ? body.reason.slice(0, 200) : "",
+        });
+        if (error) return fail(error);
+        return response({ deposit: data }, 200, origin);
+      }
+
+      if (body.action === "deposit_slip_url") {
+        if (!isUuidValue(body.depositId)) return response({ error: "invalid_deposit_payload" }, 400, origin);
+        const { data: path, error } = await supabase.rpc("deposit_slip_path_v1", { p_deposit_id: body.depositId, p_branch_id: ownBranch });
+        if (error) return fail(error);
+        if (!path) return response({ error: "deposit_not_found" }, 404, origin);
+        const { data: signed, error: signError } = await supabase.storage.from("deposit-slips").createSignedUrl(String(path), 60);
+        if (signError) throw signError;
+        return response({ url: signed.signedUrl }, 200, origin);
+      }
+
+      return response({ error: "invalid_deposit_payload" }, 400, origin);
     }
 
     if (body?.action === "online_booking_settings" || body?.action === "online_booking_save") {

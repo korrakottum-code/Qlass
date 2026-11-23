@@ -25,6 +25,7 @@ function StatusBadge({ status }) {
 
 export default function BookingPage({
   form, setForm, editingQueueId, setEditingQueueId, onAbandonDraft,
+  depositBooking = null, onCancelDepositBooking,
   branches, rooms, procedures, promos,
   roomSchedules, queues, roomProcedureIndex, procedureAreaIndex,
   onSubmit, onQuickAddPromo, onSmartApply, onBulkBooking, parseHints, todayStats,
@@ -74,6 +75,15 @@ export default function BookingPage({
   }, [selectedRoom, procedures, roomProcedureIndex]);
 
   const roomIsConfigured = !!selectedRoom && isRoomConfigured(roomProcedureIndex, selectedRoom.id);
+
+  // จองจากรายการ "ลูกค้าโอนแล้ว": เลือกห้องแล้วฟอร์มล้างหัตถการ/โปร (พฤติกรรมเดิม) — ใส่โปรที่ลูกค้าโอนกลับให้
+  // ถ้าเตียงนั้นรับหัตถการนี้ ทำเฉพาะตอนมีรายการโอนอยู่เท่านั้น การจองปกติไม่เปลี่ยนอะไร
+  const depositPromo = depositBooking ? promos.find((p) => p.id === depositBooking.promoId && p.active !== false) : null;
+  useEffect(() => {
+    if (!depositPromo || editingQueueId || !form.roomId || form.procedureId) return;
+    if (!filteredProcedures.some((p) => p.id === depositPromo.procedureId)) return;
+    setForm((f) => (f.procedureId ? f : { ...f, procedureId: depositPromo.procedureId, promoId: depositPromo.id, price: depositPromo.price }));
+  }, [depositPromo, editingQueueId, form.roomId, form.procedureId, filteredProcedures, setForm]);
 
   // Filtered promos by selected procedure
   // รวมโปรที่ผูกกับหัตถการนี้ + โปรที่ใช้ได้ทุกหัตถการ (procedureId ว่าง) — ตอนนี้ยัง
@@ -323,6 +333,18 @@ export default function BookingPage({
         onApply={onSmartApply}
         onBulkApply={onBulkBooking}
       />
+
+      {depositBooking && !editingQueueId && (
+        <div className="card" style={{ marginBottom: 12, padding: "10px 14px", borderColor: "#6b1f6b", background: "#f6f1fb" }}>
+          <div style={{ fontWeight: 800, color: "#6b1f6b" }}>💸 กำลังจองให้ลูกค้าที่โอนแล้ว: {depositBooking.customerName}</div>
+          <div style={{ fontSize: 12, marginTop: 2 }}>
+            {depositBooking.promoName || depositBooking.procedureName} · โอน {Number(depositBooking.amount).toLocaleString("th-TH")} บาท
+            {!depositPromo && " · โปรนี้ปิดใช้งานแล้ว กรุณาเลือกโปรเอง"}
+            {" "}— เลือกห้อง วัน เวลา และประเภทลูกค้า แล้วกดบันทึก ระบบจะขึ้น “จองแล้ว” ในรายการโอนให้เอง (อย่าเปลี่ยนเบอร์)
+          </div>
+          <button type="button" className="btn btn-sm btn-secondary" style={{ marginTop: 6 }} onClick={onCancelDepositBooking}>ยกเลิก กลับไปรายการโอน</button>
+        </div>
+      )}
 
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-header">

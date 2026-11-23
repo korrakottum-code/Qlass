@@ -80,9 +80,12 @@ import TicketPage from "./pages/TicketPage";
 import ActivityLogPage from "./pages/ActivityLogPage";
 import CeoDashboardPage from "./pages/CeoDashboardPage";
 import ManualPage from "./pages/ManualPage";
+import { linkDepositQueue, getServerSessionToken as getDepositToken } from "./utils/depositApi";
+import { depositToBookingForm, shouldLinkDeposit, phonesMatch } from "./utils/deposits";
 import { shouldCheckTiktokBedRule, tiktokBedRuleCheck, tiktokBedRuleMessage, tiktokBedRuleCodeFromError } from "./utils/tiktokBedRule";
 // หน้าคูปองโหลดเมื่อเปิดเมนูเท่านั้น และไม่เก็บข้อมูลคูปองใน state ของ App (ค้นจากเซิร์ฟเวอร์เป็นรายใบ)
 const CouponPage = lazy(() => import("./pages/CouponPage"));
+const DepositPage = lazy(() => import("./pages/DepositPage"));
 // ตั้งค่าลูกค้าจองเอง (/#book): สาขาที่เปิด + บริการที่ให้จอง — ข้อมูลอยู่ฝั่งเซิร์ฟเวอร์ (staff-session online_booking_*)
 const OnlineBookingSettingsPage = lazy(() => import("./pages/OnlineBookingSettingsPage"));
 
@@ -567,6 +570,60 @@ export default function App() {
   // attempt lifecycle from the Booking page form above).
   const timelineServerQueueRequestIdRef = useRef(null);
 
+  // ─── ลูกค้าโอนแล้ว รอจองคิว: ปุ่ม "เลือกวันที่" เปิดฟอร์มนี้พร้อมข้อมูล แล้วผูกคิวกลับไปที่รายการโอนหลังบันทึกสำเร็จ ───
+  // depositBooking = รายการโอนที่กำลังจองให้ (null = จองคิวปกติ ไม่มีอะไรเปลี่ยน)
+  // pendingDepositLink = คิวบันทึกแล้วแต่ผูกไม่สำเร็จ (เน็ตหลุด) → หน้ารายการโอนมีปุ่ม "ลองผูกอีกครั้ง" กันจองซ้ำ
+  const [depositBookingRaw, setDepositBooking] = useState(null);
+  // ใช้ได้เฉพาะตอนฟอร์มยังเป็นเบอร์ของรายการโอน — กด "ล้าง" หรือพิมพ์ลูกค้าคนอื่นแทน = ไม่ผูก ไม่ขึ้นแถบ
+  const depositBooking = depositBookingRaw && phonesMatch(form.phone, depositBookingRaw.customerPhone) ? depositBookingRaw : null;
+  const [pendingDepositLink, setPendingDepositLink] = useState(null);
+  const linkDepositWithRetry = useCallback(async (depositId, queueId) => {
+    let lastError = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        await linkDepositQueue(getDepositToken(), depositId, queueId);
+        return { ok: true };
+      } catch (err) {
+        lastError = err;
+        const code = (await serverErrorCode(err)) || err?.message;
+        // เหตุผลทางธุรกิจ (เบอร์ไม่ตรง/ผูกไปแล้ว ฯลฯ) ลองซ้ำก็ไม่ผ่าน
+        if (code && code !== "service_unavailable" && !/fetch|network|Failed/i.test(String(code))) return { ok: false, code };
+        await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+      }
+    }
+    return { ok: false, code: lastError?.message || "network" };
+  }, []);
+  const startDepositBooking = useCallback((deposit) => {
+    serverQueueRequestIdRef.current = null;
+    setEditingQueueId(null);
+    setForm(depositToBookingForm(deposit, { promos, procedures, emptyForm: getEmptyBookingForm() }));
+    setDepositBooking(deposit);
+    navigateTo("booking");
+  }, [promos, procedures, navigateTo]);
+  const retryPendingDepositLink = useCallback(async () => {
+    if (!pendingDepositLink) return false;
+    const r = await linkDepositWithRetry(pendingDepositLink.depositId, pendingDepositLink.queueId);
+    if (r.ok) {
+      setPendingDepositLink(null);
+      showToast("success", "ผูกคิวกับรายการโอนแล้ว");
+      return true;
+    }
+    showToast("error", "ยังผูกไม่สำเร็จ ลองอีกครั้งภายหลัง");
+    return false;
+  }, [pendingDepositLink, linkDepositWithRetry, showToast]);
+  // ออกจากหน้าบันทึกคิว = เลิกจองให้รายการโอนนั้น (กันไปผูกกับคิวคนอื่นที่ลงทีหลัง) และล้างฟอร์มที่กรอกไว้ให้
+  // (ไม่ล้าง = กลับมากดบันทึกทีหลังจะได้คิวที่ไม่ผูกกับรายการโอน แล้วรายการยังขึ้น "ยังไม่จอง" → จองซ้ำ)
+  const clearDepositBooking = useCallback(() => {
+    if (!depositBookingRaw) return;
+    const current = depositBookingRaw;
+    setDepositBooking(null);
+    setForm((f) => (phonesMatch(f.phone, current.customerPhone) ? getEmptyBookingForm() : f));
+    serverQueueRequestIdRef.current = null;
+  }, [depositBookingRaw]);
+  useEffect(() => {
+    if (page !== "booking") clearDepositBooking();
+  }, [page, clearDepositBooking]);
+
   const handleBookingSubmit = useCallback(async () => {
     if (!form.name.trim() || !form.phone.trim()) {
       showToast("error", "กรุณากรอกชื่อและเบอร์โทร");
@@ -782,7 +839,24 @@ export default function App() {
         if (newQueue) {
           setQueues((prev) => prev.some((q) => q.id === newQueue.id) ? prev : [...prev, newQueue]);
         }
-        showToast("success", "บันทึกคิวเรียบร้อย ✓");
+        if (depositBooking) {
+          // จองจากรายการโอน: ผูกคิวกลับ (คิวบันทึกแล้วไม่ว่าผูกได้หรือไม่ — ห้ามล้มทั้งการบันทึก)
+          const deposit = depositBooking;
+          setDepositBooking(null);
+          if (shouldLinkDeposit(deposit, { newQueue, editing: false })) {
+            const linked = await linkDepositWithRetry(deposit.id, newQueue.id);
+            if (linked.ok) {
+              showToast("success", `บันทึกคิวเรียบร้อย ✓ — รายการโอนของ ${deposit.customerName} ขึ้น “จองแล้ว”`);
+            } else {
+              setPendingDepositLink({ depositId: deposit.id, queueId: newQueue.id, customerName: deposit.customerName });
+              showToast("error", "บันทึกคิวแล้ว แต่ผูกกับรายการโอนไม่สำเร็จ — ไปที่เมนู “ลูกค้าโอนแล้ว” กด “ลองผูกอีกครั้ง” (ห้ามจองซ้ำ)");
+            }
+          } else {
+            showToast("error", "บันทึกคิวแล้ว แต่เบอร์ไม่ตรงกับรายการโอน จึงไม่ได้ผูก — รายการโอนยังขึ้น “ยังไม่จอง”");
+          }
+        } else {
+          showToast("success", "บันทึกคิวเรียบร้อย ✓");
+        }
       }
 
       if (lastParseSnapshot) {
@@ -816,9 +890,10 @@ export default function App() {
       }
       return false;
     }
-  }, [form, editingQueueId, showToast, queues, procedures, parseHints, lastParseSnapshot, branches, promos, rooms, currentUser, roomProcedureIndex]);
+  }, [form, editingQueueId, showToast, queues, procedures, parseHints, lastParseSnapshot, branches, promos, rooms, currentUser, roomProcedureIndex, depositBooking, linkDepositWithRetry]);
 
   const editQueue = useCallback((q) => {
+    setDepositBooking(null);
     setForm({ ...q });
     setEditingQueueId(q.id);
     navigateTo("booking");
@@ -826,6 +901,7 @@ export default function App() {
 
   // เรียกคิวรอเข้ารับบริการ: เปิดฟอร์มพร้อมให้เลือกห้อง/เวลาทันที ไม่ต้องกดปุ่ม "ลงคิวรอ" อีกครั้ง
   const callInWaitingQueue = useCallback((q) => {
+    setDepositBooking(null);
     setForm({ ...q, status: "pending" });
     setEditingQueueId(q.id);
     navigateTo("booking");
@@ -1688,6 +1764,8 @@ export default function App() {
                 editingQueueId={editingQueueId}
                 setEditingQueueId={setEditingQueueId}
                 onAbandonDraft={() => { serverQueueRequestIdRef.current = null; }}
+                depositBooking={depositBooking}
+                onCancelDepositBooking={() => { clearDepositBooking(); navigateTo("deposits"); }}
                 branches={filteredBranches}
                 rooms={filteredRooms}
                 procedures={procedures}
@@ -2098,6 +2176,22 @@ export default function App() {
             {page === "coupons" && (
               <Suspense fallback={<div style={{ padding: 24 }}>กำลังโหลด…</div>}>
                 <CouponPage branches={filteredBranches} currentUser={currentUser} onToast={showToast} />
+              </Suspense>
+            )}
+
+            {page === "deposits" && (
+              <Suspense fallback={<div style={{ padding: 24 }}>กำลังโหลด…</div>}>
+                <DepositPage
+                  branches={filteredBranches}
+                  promos={promos}
+                  procedures={procedures}
+                  currentUser={currentUser}
+                  onToast={showToast}
+                  onBook={startDepositBooking}
+                  pendingLink={pendingDepositLink}
+                  onRetryLink={retryPendingDepositLink}
+                  onDismissPendingLink={() => setPendingDepositLink(null)}
+                />
               </Suspense>
             )}
 

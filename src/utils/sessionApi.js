@@ -116,6 +116,25 @@ export function createSessionApi(invoke) {
     generateCoupons(token, batch) {
       return callSessionFunction({ action: "coupon_generate", token, batch });
     },
+    // ลูกค้าโอนแล้ว รอจองคิว: ทุกการอ่าน/เขียนผ่าน staff-session (ตาราง+สลิปปิดจากคีย์หน้าเว็บ)
+    listDeposits(token, { search = "", status = "all", branchId = null, from = null, to = null, limit = 50, offset = 0 } = {}) {
+      return callSessionFunction({ action: "deposit_list", token, search, status, branchId, from, to, limit, offset });
+    },
+    async createDeposit(token, deposit) {
+      return (await callSessionFunction({ action: "deposit_create", token, deposit })).deposit;
+    },
+    async linkDepositQueue(token, depositId, queueId) {
+      return (await callSessionFunction({ action: "deposit_link", token, depositId, queueId })).deposit;
+    },
+    async cancelDeposit(token, depositId, reason) {
+      return (await callSessionFunction({ action: "deposit_cancel", token, depositId, reason })).deposit;
+    },
+    async fetchDepositSlipUrl(token, depositId) {
+      return (await callSessionFunction({ action: "deposit_slip_url", token, depositId })).url;
+    },
+    fetchDepositStats(token, { from = null, to = null, branchId = null } = {}) {
+      return callSessionFunction({ action: "deposit_stats", token, from, to, branchId });
+    },
     flushClientDiagnostics(token, events) {
       return callSessionFunction({ action: "client_diagnostics", token, events });
     },
