@@ -11,7 +11,10 @@ const root = path.resolve(here, "../..");
 export default defineConfig({
   root,
   plugins: [react()],
-  define: { "import.meta.env.VITE_ENABLE_COUPONS": JSON.stringify("true") }, // เดโม/ถ่ายรูปคู่มือ ต้องเห็นเมนูคูปอง
+  define: {
+    "import.meta.env.VITE_ENABLE_COUPONS": JSON.stringify("true"), // เดโม/ถ่ายรูปคู่มือ ต้องเห็นเมนูคูปอง
+    "import.meta.env.VITE_ENABLE_DEPOSITS": JSON.stringify("true"), // และเมนู "ลูกค้าโอนแล้ว รอจองคิว"
+  },
   envDir: here, // อ่านเฉพาะ .env ในโฟลเดอร์นี้ ไม่แตะ .env จริงของโปรเจกต์
   resolve: {
     alias: [
@@ -20,6 +23,7 @@ export default defineConfig({
       { find: /^(.*\/)?supabaseClient(\.js)?$/, replacement: path.join(here, "mockSupabaseClient.js") },
       { find: /^(.*\/)?utils\/couponApi(\.js)?$/, replacement: path.join(here, "mockCouponApi.js") },
       { find: /^(.*\/)?utils\/onlineBookingApi(\.js)?$/, replacement: path.join(here, "mockOnlineBookingApi.js") },
+      { find: /^(.*\/)?utils\/depositApi(\.js)?$/, replacement: path.join(here, "mockDepositApi.js") },
     ],
   },
 });

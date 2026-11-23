@@ -137,6 +137,7 @@ export const NAV_ITEMS = [
   { id: "export",        label: "Export ข้อมูล",       icon: "📥" },
   { id: "tickets",       label: "แจ้งปัญหาระบบ",       icon: "🎫" },
   { id: "coupons",       label: "คูปอง",                icon: "🎟️" },
+  { id: "deposits",      label: "ลูกค้าโอนแล้ว รอจองคิว", icon: "💸" },
   { id: "online-booking", label: "จองออนไลน์ (ลูกค้า)", icon: "🌐" },
   { section: "ตั้งค่าระบบ" },
   { id: "branches",      label: "จัดการสาขา",          icon: "🏢" },
@@ -159,7 +160,7 @@ const ROLE_DEFS = [
     branchScope: "all",
     color: "#b45309",
     bg: "rgba(180,83,9,0.1)",
-    pages: ["ceo-dashboard","summary","capacity","manual"],
+    pages: ["ceo-dashboard","summary","capacity","deposits","manual"],
   },
   {
     value: "superadmin",
@@ -167,7 +168,7 @@ const ROLE_DEFS = [
     branchScope: "all",
     color: "#dc2626",
     bg: "rgba(220,38,38,0.1)",
-    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","coupons","online-booking","branches","procedures","promos","rooms","room-schedule","staff","activity-log","manual"],
+    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","coupons","deposits","online-booking","branches","procedures","promos","rooms","room-schedule","staff","activity-log","manual"],
   },
   {
     value: "head_admin",
@@ -175,7 +176,7 @@ const ROLE_DEFS = [
     branchScope: "all",
     color: "#7c3aed",
     bg: "rgba(124,58,237,0.1)",
-    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","coupons","online-booking","procedures","promos","rooms","room-schedule","staff","activity-log","manual"],
+    pages: ["ceo-dashboard","booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","coupons","deposits","online-booking","procedures","promos","rooms","room-schedule","staff","activity-log","manual"],
   },
   {
     value: "admin",
@@ -183,7 +184,7 @@ const ROLE_DEFS = [
     branchScope: "all",
     color: "#2563eb",
     bg: "rgba(37,99,235,0.1)",
-    pages: ["booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","coupons","room-schedule","manual"],
+    pages: ["booking","queue-table","waiting-queue","timeline","summary","capacity","commission","export","tickets","coupons","deposits","room-schedule","manual"],
   },
   {
     value: "branch_manager",
@@ -191,7 +192,7 @@ const ROLE_DEFS = [
     branchScope: "single",
     color: "#059669",
     bg: "rgba(5,150,105,0.1)",
-    pages: ["booking","queue-table","waiting-queue","timeline","summary","export","tickets","coupons","rooms","room-schedule","manual"],
+    pages: ["booking","queue-table","waiting-queue","timeline","summary","export","tickets","coupons","deposits","rooms","room-schedule","manual"],
   },
   {
     value: "cashier",
@@ -199,7 +200,7 @@ const ROLE_DEFS = [
     branchScope: "single",
     color: "#d97706",
     bg: "rgba(217,119,6,0.1)",
-    pages: ["booking","queue-table","waiting-queue","timeline","summary","export","tickets","coupons","manual"],
+    pages: ["booking","queue-table","waiting-queue","timeline","summary","export","tickets","coupons","deposits","manual"],
   },
 ];
 
@@ -209,9 +210,13 @@ const ROLE_DEFS = [
 // บทบาท+หน้าที่เปิดได้ "เมื่อเปิดสวิตช์คูปองแล้ว" (ให้เทสต์คู่มือตรวจกับตัวนี้ ไม่ใช่ตัวที่กรองแล้ว)
 export const ALL_ROLES = ROLE_DEFS;
 export const COUPONS_ENABLED = import.meta.env?.VITE_ENABLE_COUPONS === "true";
-export const ROLES = ROLE_DEFS.map((role) => (
-  COUPONS_ENABLED ? role : { ...role, pages: role.pages.filter((page) => page !== "coupons") }
-));
+// เมนู "ลูกค้าโอนแล้ว รอจองคิว" ซ่อนไว้แบบเดียวกับคูปอง จนกว่าตาราง transfer_deposits + staff-session deposit_* จะขึ้นระบบจริง
+// เปิดด้วย VITE_ENABLE_DEPOSITS=true (ต้อง build/deploy ใหม่)
+export const DEPOSITS_ENABLED = import.meta.env?.VITE_ENABLE_DEPOSITS === "true";
+export const ROLES = ROLE_DEFS.map((role) => ({
+  ...role,
+  pages: role.pages.filter((page) => (page !== "coupons" || COUPONS_ENABLED) && (page !== "deposits" || DEPOSITS_ENABLED)),
+}));
 
 // ─── INITIAL STAFF ───
 export const initStaff = [
