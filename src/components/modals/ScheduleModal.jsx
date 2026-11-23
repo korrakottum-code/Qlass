@@ -7,6 +7,11 @@ import {
   buildScheduleTiming, findQueuesInClosure, formatBlockDuration,
   DEFAULT_CLOSE_START_BLOCK, DEFAULT_CLOSE_END_BLOCK,
 } from "../../utils/scheduleClosure";
+import { planOpenOnly, summarizeOpenOnlyPlan, findQueuesOutsideOpenWindow } from "../../utils/scheduleOpenOnly";
+
+// ค่าเริ่มต้นตอนเลือก "เปิดเฉพาะช่วงเวลา" ครั้งแรก: 13:00–18:00 (หมอเข้าบ่าย ที่เจอบ่อย)
+const DEFAULT_OPEN_ONLY_START = 156;
+const DEFAULT_OPEN_ONLY_END = 216;
 
 const DAY_NAMES = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 const DAY_NAMES_FULL = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัส", "ศุกร์", "เสาร์"];
@@ -193,7 +198,7 @@ function TimeSpinner({ label, value, onChange }) {
   );
 }
 
-export default function ScheduleModal({ data, rooms, branches, queues = [], procedures = [], onSave, onClose }) {
+export default function ScheduleModal({ data, rooms, branches, queues = [], procedures = [], roomSchedules = [], onSave, onApplyOpenOnly, onClose }) {
   const [filterBranchId, setFilterBranchId] = useState(
     data?.roomId ? (rooms.find((r) => r.id === data.roomId)?.branchId || "") : ""
   );
@@ -219,6 +224,10 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
   const [startBlock, setStartBlock] = useState(data?.startBlock ?? 108); // 09:00
   const [endBlock, setEndBlock] = useState(data?.endBlock ?? 132);       // 11:00
   const [note, setNote] = useState(data?.note || "");
+  // ✅ เปิด มี 2 แบบ: "เปิดเฉพาะช่วงนี้" (นอกช่วงปิดให้เอง, แทนที่ช่วงเดิมของเตียงวันนั้น) / "ต่อเวลา" (แบบเดิม)
+  // แก้แถว "เปิดต่อเวลา" เดิม → อยู่โหมดต่อเวลาเหมือนเดิม; สร้างใหม่ → เปิดเฉพาะช่วงนี้
+  const editingExtendRow = !!data && data.available === true && !data.noteOnly && data.startBlock != null;
+  const [openOnly, setOpenOnly] = useState(!editingExtendRow && !!onApplyOpenOnly);
 
   const filteredRooms = useMemo(() => {
     if (!filterBranchId) return rooms;
@@ -246,10 +255,20 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
 
   const isClosing = !noteOnly && !available;
   const showTimeRange = !noteOnly && (available || closeRange);
+  const isOpenOnly = !noteOnly && available && openOnly && !!onApplyOpenOnly;
   const saveDates = useMemo(() => (isEdit ? [date] : generatedDates), [isEdit, date, generatedDates]);
+
+  const openOnlyPlan = useMemo(() => {
+    if (!isOpenOnly) return null;
+    return planOpenOnly({ rooms, roomSchedules, roomIds: selectedRoomIds, dates: saveDates, startBlock, endBlock, note });
+  }, [isOpenOnly, rooms, roomSchedules, selectedRoomIds, saveDates, startBlock, endBlock, note]);
+  const openOnlySummary = useMemo(() => (openOnlyPlan ? summarizeOpenOnlyPlan(openOnlyPlan) : null), [openOnlyPlan]);
 
   // คิวที่ยังค้างอยู่ในช่วงที่จะปิด — ปิดได้ แต่คิวไม่ถูกย้าย ต้องให้หน้าร้านจัดการเอง
   const affectedQueues = useMemo(() => {
+    if (isOpenOnly) {
+      return findQueuesOutsideOpenWindow({ plan: openOnlyPlan, queues, procedures, startBlock, endBlock, isActiveQueueStatus });
+    }
     if (!isClosing) return [];
     return findQueuesInClosure({
       queues, procedures, roomIds: selectedRoomIds, dates: saveDates,
@@ -257,11 +276,24 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
       endBlock: closeRange ? endBlock : null,
       isActiveQueueStatus,
     });
-  }, [isClosing, queues, procedures, selectedRoomIds, saveDates, closeRange, startBlock, endBlock]);
+  }, [isOpenOnly, openOnlyPlan, isClosing, queues, procedures, selectedRoomIds, saveDates, closeRange, startBlock, endBlock]);
 
   function handleSave() {
     if (selectedRoomIds.length === 0) return;
     if (generatedDates.length === 0 && !isEdit) return;
+    if (isOpenOnly) {
+      const sum = openOnlySummary;
+      if (!sum || sum.bedDays === 0) {
+        window.alert(sum?.blocked?.length ? "ทุกเตียง-วันที่เลือกเปิดไม่ได้ (ปิดทั้งวันอยู่) — ต้องเปิดเตียงก่อน" : "ยังไม่ได้เลือกเตียง/วันที่");
+        return;
+      }
+      const lines = [`เปิดเฉพาะ ${blockToTime(startBlock)}–${blockToTime(endBlock)} · ${sum.bedDays} เตียง-วัน`];
+      if (sum.removeCount > 0) lines.push(`จะแทนที่ช่วงปิด/เปิดเดิม ${sum.removeCount} รายการ (ลบของเดิมออก)`);
+      if (sum.blocked.length > 0) lines.push(`ข้าม ${sum.blocked.length} เตียง-วัน ที่ปิดทั้งวันอยู่`);
+      if (affectedQueues.length > 0) lines.push(`มีคิว ${affectedQueues.length} คิวอยู่นอกช่วงที่เปิด — คิวไม่ถูกย้าย ต้องไปเลื่อน/ย้ายเอง`);
+      if (!window.confirm(`${lines.join("\n")}\n\nยืนยันหรือไม่?`)) return;
+      return onApplyOpenOnly(openOnlyPlan);
+    }
     if (affectedQueues.length > 0) {
       const ok = window.confirm(
         `มีคิว ${affectedQueues.length} คิวอยู่ในช่วงที่จะปิด\n` +
@@ -277,6 +309,15 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
       noteOnly,
       note: note.trim(),
     });
+  }
+
+  function chooseOpenOnly(next) {
+    setOpenOnly(next);
+    // เข้าโหมดเปิดเฉพาะช่วงครั้งแรก (แถวใหม่ หรือแก้แถวที่ไม่ใช่ช่วงเปิด) — ตั้ง 13:00–18:00
+    if (next && !(data?.startBlock != null && data?.available === true)) {
+      setStartBlock(DEFAULT_OPEN_ONLY_START);
+      setEndBlock(DEFAULT_OPEN_ONLY_END);
+    }
   }
 
   function chooseCloseRange(next) {
@@ -483,7 +524,7 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
               </button>
               <button
                 className={`type-option ${!noteOnly && available ? "selected" : ""}`}
-                onClick={() => { setNoteOnly(false); setAvailable(true); }}
+                onClick={() => { setNoteOnly(false); setAvailable(true); if (openOnly && !editingExtendRow) chooseOpenOnly(true); }}
                 style={!noteOnly && available ? { borderColor: "var(--green)", background: "var(--green)", color: "#fff" } : {}}
               >
                 ✅ เปิด (กำหนดช่วงเวลา)
@@ -501,11 +542,36 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
                 ไม่เปลี่ยนช่วงเวลารับคิว — แค่แสดงหมายเหตุในหน้าบันทึกคิว
               </div>
             )}
-            {!noteOnly && available && (
+            {!noteOnly && available && onApplyOpenOnly && (
+              <div className="type-options" style={{ marginTop: 8 }}>
+                <button
+                  className={`type-option ${openOnly ? "selected" : ""}`}
+                  onClick={() => chooseOpenOnly(true)}
+                  style={openOnly ? { borderColor: "var(--green)", background: "var(--green-soft)", color: "var(--green)" } : {}}
+                >
+                  เปิดเฉพาะช่วงเวลา
+                </button>
+                <button
+                  className={`type-option ${!openOnly ? "selected" : ""}`}
+                  onClick={() => setOpenOnly(false)}
+                  style={!openOnly ? { borderColor: "var(--green)", background: "var(--green-soft)", color: "var(--green)" } : {}}
+                >
+                  ต่อเวลาเปิด
+                </button>
+              </div>
+            )}
+            {isOpenOnly && (
+              <div style={{ marginTop: 6, fontSize: 11, color: "var(--green)", fontWeight: 600, lineHeight: 1.5 }}>
+                💡 เตียงเปิดรับคิวเฉพาะช่วงที่เลือก นอกช่วงปิดให้เอง (เลยเวลาปกติก็ต่อเวลาให้)<br />
+                ตัวอย่าง: หมอเข้า 13:00–18:00 → ตั้ง <b>13:00–18:00</b> ครั้งเดียว ไม่ต้องปิดเช้า/ปิดเย็นแยก<br />
+                ช่วงปิด/เปิดที่เคยกรอกไว้ของเตียงวันนั้นจะถูกแทนที่ (ไม่แตะ ปิดเตียง พนักงานหยุด / ปิดทั้งวัน)
+              </div>
+            )}
+            {!noteOnly && available && !isOpenOnly && (
               <div style={{ marginTop: 6, fontSize: 11, color: "var(--green)", fontWeight: 600, lineHeight: 1.5 }}>
                 💡 ใช้ต่อเวลาเปิดให้ยาวกว่าปกติเท่านั้น (ย่นเวลาไม่ได้)<br />
                 ตัวอย่าง: ห้องเปิดปกติ 11:00–20:00 อยากต่อเวลาเป็น 22:00 → ตั้ง <b>11:00–22:00</b><br />
-                หมอมาช้า/กลับก่อน → ใช้ <b>⛔ ปิด / ไม่พร้อม → ปิดเฉพาะช่วงเวลา</b>
+                หมอมาช้า/กลับก่อน → ใช้ <b>เปิดเฉพาะช่วงเวลา</b> หรือ <b>⛔ ปิด / ไม่พร้อม → ปิดเฉพาะช่วงเวลา</b>
               </div>
             )}
             {isClosing && (
@@ -539,14 +605,14 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
             <>
               <div className="form-group">
                 <TimeSpinner
-                  label={available ? "เวลาเปิดเริ่ม" : "ปิดตั้งแต่"}
+                  label={isOpenOnly ? "เปิดตั้งแต่" : available ? "เวลาเปิดเริ่ม" : "ปิดตั้งแต่"}
                   value={startBlock}
                   onChange={(v) => { setStartBlock(v); if (v >= endBlock) setEndBlock(v + STEP); }}
                 />
               </div>
               <div className="form-group">
                 <TimeSpinner
-                  label={available ? "เวลาปิด" : "ปิดถึง"}
+                  label={isOpenOnly ? "เปิดถึง" : available ? "เวลาปิด" : "ปิดถึง"}
                   value={endBlock}
                   onChange={(v) => { setEndBlock(v); if (v <= startBlock) setStartBlock(v - STEP); }}
                 />
@@ -562,7 +628,7 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
                     color: available ? "var(--green)" : "var(--red)",
                     display: "flex", gap: 12, alignItems: "center",
                   }}>
-                    <span>{available ? "✅ เปิด" : "⛔ ปิด"}</span>
+                    <span>{isOpenOnly ? "✅ เปิดเฉพาะ" : available ? "✅ เปิด" : "⛔ ปิด"}</span>
                     <span style={{ fontFamily: "var(--mono)" }}>
                       {blockToTime(startBlock)} — {blockToTime(endBlock)}
                     </span>
@@ -584,7 +650,7 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
                 fontSize: 12, color: "var(--red)", lineHeight: 1.6,
               }}>
                 <div style={{ fontWeight: 700 }}>
-                  ⚠️ มีคิว {affectedQueues.length} คิวอยู่ในช่วงที่จะปิด — ปิดได้ แต่คิวไม่ถูกย้ายให้
+                  ⚠️ มีคิว {affectedQueues.length} คิว{isOpenOnly ? "อยู่นอกช่วงที่เปิด — บันทึกได้" : "อยู่ในช่วงที่จะปิด — ปิดได้"} แต่คิวไม่ถูกย้ายให้
                 </div>
                 {affectedQueues.slice(0, 8).map((q) => {
                   const room = rooms.find((r) => r.id === q.roomId);
@@ -596,6 +662,54 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
                 })}
                 {affectedQueues.length > 8 && (
                   <div style={{ color: "var(--text3)" }}>และอีก {affectedQueues.length - 8} คิว</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* เปิดเฉพาะช่วง: สิ่งที่จะถูกแทนที่ / เตียงที่ข้าม */}
+          {isOpenOnly && openOnlySummary && (openOnlySummary.removeCount > 0 || openOnlySummary.blocked.length > 0) && (
+            <div className="form-group full">
+              <div style={{
+                padding: "8px 12px", borderRadius: "var(--radius-sm)",
+                background: "var(--surface2, #f7f5f2)", border: "1px solid var(--border, #e5e0d8)",
+                fontSize: 12, color: "var(--text2)", lineHeight: 1.6,
+              }}>
+                {openOnlySummary.removeCount > 0 && (
+                  <>
+                    <div style={{ fontWeight: 700, color: "var(--text)" }}>
+                      🔁 จะแทนที่ช่วงเวลาเดิม {openOnlySummary.removeCount} รายการ
+                    </div>
+                    {openOnlySummary.replaced.slice(0, 8).map((s) => {
+                      const room = rooms.find((r) => r.id === s.roomId);
+                      return (
+                        <div key={s.id}>
+                          {formatThaiDate(s.date)} · {room?.name || ""} · {s.available ? "เปิด" : "ปิด"} {blockToTime(s.startBlock)}–{blockToTime(s.endBlock)}{s.note ? ` · ${s.note}` : ""}
+                        </div>
+                      );
+                    })}
+                    {openOnlySummary.replaced.length > 8 && (
+                      <div style={{ color: "var(--text3)" }}>และอีก {openOnlySummary.replaced.length - 8} รายการ</div>
+                    )}
+                  </>
+                )}
+                {openOnlySummary.blocked.length > 0 && (
+                  <>
+                    <div style={{ fontWeight: 700, color: "var(--red)", marginTop: openOnlySummary.removeCount > 0 ? 6 : 0 }}>
+                      ⛔ ข้าม {openOnlySummary.blocked.length} เตียง-วัน
+                    </div>
+                    {openOnlySummary.blocked.slice(0, 8).map((b) => {
+                      const room = rooms.find((r) => r.id === b.roomId);
+                      return (
+                        <div key={`${b.roomId}|${b.date}`}>
+                          {formatThaiDate(b.date)} · {room?.name || ""} · {b.blocked}
+                        </div>
+                      );
+                    })}
+                    {openOnlySummary.blocked.length > 8 && (
+                      <div style={{ color: "var(--text3)" }}>และอีก {openOnlySummary.blocked.length - 8} เตียง-วัน</div>
+                    )}
+                  </>
                 )}
               </div>
             </div>

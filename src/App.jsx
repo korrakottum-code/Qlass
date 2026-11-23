@@ -1458,6 +1458,37 @@ export default function App() {
     setModal(null);
   }, [showToast]);
 
+  // "เปิดเฉพาะช่วงเวลา" (scheduleOpenOnly.js) — สร้างแถวใหม่ก่อน แล้วค่อยลบแถวเดิมที่ถูกแทนที่
+  // ถ้าล้มกลางทาง: สร้างไปแล้วแต่ยังไม่ลบ = เตียงปิดมากกว่าที่ตั้งใจ (ไม่เปิดเกิน) ปลอดภัยกว่าลบก่อน
+  const applyOpenOnlySchedule = useCallback(async (plan) => {
+    const beds = (plan?.beds || []).filter((b) => !b.blocked);
+    const created = [];
+    const removedIds = [];
+    let failed = 0;
+    for (const bed of beds) {
+      try {
+        for (const row of bed.create) created.push(await createRoomSchedule(row));
+        for (const old of bed.remove) {
+          await deleteRoomScheduleDB(old.id);
+          removedIds.push(old.id);
+        }
+      } catch (e) {
+        console.error("open-only schedule failed", bed.roomId, bed.date, e);
+        failed += 1;
+      }
+    }
+    setRoomSchedules((prev) => {
+      const withNew = created.reduce((acc, it) => reconcileRealtimeById(acc, "INSERT", it), prev);
+      return removedIds.reduce((acc, id) => reconcileRealtimeById(acc, "DELETE", { id }), withNew);
+    });
+    if (failed > 0) {
+      showToast("error", `บันทึกไม่ครบ ${failed} เตียง-วัน — เปิดหน้าตารางห้องตรวจอีกครั้ง แล้วลองบันทึกใหม่`);
+    } else {
+      showToast("success", `เปิดเฉพาะช่วงเวลา ${beds.length} เตียง-วัน เรียบร้อย 🗓️`);
+    }
+    setModal(null);
+  }, [showToast]);
+
   // Goal 18: staff writes go through the server boundary when server sessions
   // are on, so the browser's direct staff grants can be revoked afterwards.
   const persistStaffCreate = useCallback((data) => (
@@ -2260,7 +2291,7 @@ export default function App() {
             <RoomModal data={modal.data} branches={filteredBranches} rooms={filteredRooms} defaultBranchId={modal.defaultBranchId} bulkMode={modal.bulkMode} procedures={procedures} roomProcedureIndex={roomProcedureIndex} roomSchedules={filteredRoomSchedules} onSave={saveRoom} onClose={() => setModal(null)} />
           )}
           {modal.type === "schedule" && (
-            <ScheduleModal data={modal.data} rooms={filteredRooms} branches={filteredBranches} queues={queues} procedures={procedures} onSave={saveRoomSchedule} onClose={() => setModal(null)} />
+            <ScheduleModal data={modal.data} rooms={filteredRooms} branches={filteredBranches} queues={queues} procedures={procedures} roomSchedules={roomSchedules} onSave={saveRoomSchedule} onApplyOpenOnly={applyOpenOnlySchedule} onClose={() => setModal(null)} />
           )}
           {modal.type === "bed-switch" && (() => {
             // คำนวณสถานะ/รายชื่อคิวจาก state สด ตอน render — ถ้า realtime เปลี่ยนตอน modal เปิดอยู่จะเห็นทันที
