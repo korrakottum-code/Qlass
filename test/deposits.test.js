@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   phoneDigits, phonesMatch, validateDepositForm, depositBookingState, canBookDeposit,
   depositToBookingForm, sumDepositStats, shouldLinkDeposit, formatPhone,
+  DEPOSIT_COMMISSION_RATE, depositCommission, depositCommissionForRow,
 } from "../src/utils/deposits.js";
 import { ALL_ROLES, NAV_ITEMS } from "../src/utils/constants.js";
 
@@ -189,7 +190,37 @@ test("ยอดรวมแถวสุดท้าย", () => {
     { count: 2, amount: 178, bookedCount: 1, bookedAmount: 89, doneCount: 0, doneAmount: 0 },
     { count: 1, amount: "290", bookedCount: 1, bookedAmount: 290, doneCount: 1, doneAmount: 290 },
   ]);
-  assert.deepEqual(sum, { count: 3, amount: 468, bookedCount: 2, bookedAmount: 379, doneCount: 1, doneAmount: 290 });
+  // ไม่ส่งรายชื่อพนักงาน = ไม่รู้ตำแหน่ง → ไม่มีใครได้ค่าคอม
+  assert.deepEqual(sum, { count: 3, amount: 468, bookedCount: 2, bookedAmount: 379, doneCount: 1, doneAmount: 290, commission: 0 });
+});
+
+test("ค่าคอม 2% เฉพาะตำแหน่งแอดมิน (เจ้าของตอบ: แค่ แอดมิน)", () => {
+  const staff = [
+    { id: "a", role: "admin" }, { id: "h", role: "head_admin" }, { id: "s", role: "superadmin" },
+    { id: "m", role: "branch_manager" }, { id: "c", role: "cashier" },
+  ];
+  assert.equal(depositCommissionForRow({ staffId: "a", amount: 1000 }, staff), 20);
+  for (const id of ["h", "s", "m", "c"]) assert.equal(depositCommissionForRow({ staffId: id, amount: 1000 }, staff), null, id);
+  assert.equal(depositCommissionForRow({ staffId: null, amount: 1000 }, staff), null); // พนักงานถูกลบ
+  assert.equal(depositCommissionForRow({ staffId: "zz", amount: 1000 }, staff), null);
+  const rows = [{ staffId: "a", amount: 89 }, { staffId: "c", amount: 290 }, { staffId: "a", amount: 790 }];
+  assert.equal(sumDepositStats(rows, staff).commission, 17.58); // 1.78 + 15.80 (แคชเชียไม่นับ)
+  assert.equal(sumDepositStats(rows, staff).amount, 1169);
+});
+
+test("ค่าคอม 2% ของยอดโอน ได้ทันทีที่บันทึก (เจ้าของกำหนด 23 พ.ย. 2569)", () => {
+  assert.equal(DEPOSIT_COMMISSION_RATE, 0.02);
+  assert.equal(depositCommission(89), 1.78);
+  assert.equal(depositCommission(290), 5.8);
+  assert.equal(depositCommission("790"), 15.8);
+  assert.equal(depositCommission(0), 0);
+  assert.equal(depositCommission(null), 0);
+  assert.equal(depositCommission(12345.67), 246.91);
+  // คิดจากคอลัมน์ "บันทึกทั้งหมด" (amount) ไม่ใช่ยอดจองแล้ว/มาทำแล้ว
+  const page = read("../src/pages/DepositPage.jsx");
+  assert.match(page, /depositCommissionForRow\(r, staff\)/);
+  assert.match(read("../src/utils/deposits.js"), /return depositCommission\(row\.amount\)/);
+  assert.match(read("../src/App.jsx"), /<DepositPage[\s\S]{0,200}staff=\{staff\}/);
 });
 
 // ─── App.jsx: การจองปกติไม่เปลี่ยน ผูกเฉพาะตอนมาจากรายการโอน และคิวไม่ล้มถ้าผูกไม่ได้ ───

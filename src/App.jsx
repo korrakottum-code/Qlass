@@ -2207,6 +2207,7 @@ export default function App() {
                   branches={filteredBranches}
                   promos={promos}
                   procedures={procedures}
+                  staff={staff}
                   currentUser={currentUser}
                   onToast={showToast}
                   onBook={startDepositBooking}

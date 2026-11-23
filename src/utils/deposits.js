@@ -94,8 +94,29 @@ export function formatPhone(value) {
   return d;
 }
 
-/** ยอดรวมของตารางสรุป (แถวสุดท้าย "รวม") */
-export function sumDepositStats(rows) {
+// ค่าคอมแคมเปญโอนเงิน: **เฉพาะตำแหน่งแอดมิน (role admin)** ได้ 2% ของยอดโอน ทันทีที่บันทึก (เจ้าของกำหนด 23 พ.ย. 2569)
+// นับจาก "บันทึกทั้งหมด" ไม่ต้องรอจองคิว/มาทำ — รายการที่ยกเลิก/คืนเงินไม่นับ (deposit_stats_v1 ตัดทิ้งแล้ว) จึงหักคืนเอง
+// หัวหน้าแอดมิน / ผู้ดูแลระบบ / ผู้จัดการสาขา / แคชเชีย ไม่ได้ (เจ้าของตอบ "แค่ แอดมิน")
+export const DEPOSIT_COMMISSION_RATE = 0.02;
+export const DEPOSIT_COMMISSION_ROLES = new Set(["admin"]);
+export function depositCommission(amount) {
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.round(n * DEPOSIT_COMMISSION_RATE * 100) / 100;
+}
+
+/**
+ * ค่าคอมของแถวสรุปหนึ่งคน — null = ตำแหน่งนี้ไม่ได้ค่าคอม (แสดง "—")
+ * ตำแหน่งดูจากรายชื่อพนักงานปัจจุบัน; พนักงานที่ถูกลบไปแล้ว (staffId ว่าง/ไม่พบ) = ไม่ได้
+ */
+export function depositCommissionForRow(row, staffList = []) {
+  const s = row?.staffId ? staffList.find((x) => x.id === row.staffId) : null;
+  if (!s || !DEPOSIT_COMMISSION_ROLES.has(s.role)) return null;
+  return depositCommission(row.amount);
+}
+
+/** ยอดรวมของตารางสรุป (แถวสุดท้าย "รวม") — ค่าคอมรวมเฉพาะคนที่ได้ (แอดมิน) */
+export function sumDepositStats(rows, staffList = []) {
   return (rows || []).reduce((acc, r) => ({
     count: acc.count + Number(r.count || 0),
     amount: acc.amount + Number(r.amount || 0),
@@ -103,7 +124,8 @@ export function sumDepositStats(rows) {
     bookedAmount: acc.bookedAmount + Number(r.bookedAmount || 0),
     doneCount: acc.doneCount + Number(r.doneCount || 0),
     doneAmount: acc.doneAmount + Number(r.doneAmount || 0),
-  }), { count: 0, amount: 0, bookedCount: 0, bookedAmount: 0, doneCount: 0, doneAmount: 0 });
+    commission: Math.round((acc.commission + (depositCommissionForRow(r, staffList) ?? 0)) * 100) / 100,
+  }), { count: 0, amount: 0, bookedCount: 0, bookedAmount: 0, doneCount: 0, doneAmount: 0, commission: 0 });
 }
 
 /**
