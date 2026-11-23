@@ -1458,8 +1458,8 @@ export default function App() {
     setModal(null);
   }, [showToast]);
 
-  // "เปิดเฉพาะช่วงเวลา" (scheduleOpenOnly.js) — สร้างแถวใหม่ก่อน แล้วค่อยลบแถวเดิมที่ถูกแทนที่
-  // ถ้าล้มกลางทาง: สร้างไปแล้วแต่ยังไม่ลบ = เตียงปิดมากกว่าที่ตั้งใจ (ไม่เปิดเกิน) ปลอดภัยกว่าลบก่อน
+  // "เปิดเฉพาะช่วงเวลา" (scheduleOpenOnly.js) ทีละเตียง-วัน เรียงให้ล้มกลางทางแล้ว "เปิดน้อยกว่า" ไม่ใช่ "เปิดเกิน":
+  //   1) ลบแถวเปิดต่อเวลาเดิม  2) สร้างแถวใหม่  3) ลบแถวปิดเดิม
   const applyOpenOnlySchedule = useCallback(async (plan) => {
     const beds = (plan?.beds || []).filter((b) => !b.blocked);
     const created = [];
@@ -1467,8 +1467,14 @@ export default function App() {
     let failed = 0;
     for (const bed of beds) {
       try {
+        const oldOpens = bed.remove.filter((r) => r.available);
+        const oldCloses = bed.remove.filter((r) => !r.available);
+        for (const old of oldOpens) {
+          await deleteRoomScheduleDB(old.id);
+          removedIds.push(old.id);
+        }
         for (const row of bed.create) created.push(await createRoomSchedule(row));
-        for (const old of bed.remove) {
+        for (const old of oldCloses) {
           await deleteRoomScheduleDB(old.id);
           removedIds.push(old.id);
         }

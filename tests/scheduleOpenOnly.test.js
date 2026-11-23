@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  buildOpenOnlyRows, planOpenOnly, summarizeOpenOnlyPlan, findQueuesOutsideOpenWindow,
+  buildOpenOnlyRows, planOpenOnly, summarizeOpenOnlyPlan, findQueuesOutsideOpenWindow, describeOpenOnlyBed,
 } from "../src/utils/scheduleOpenOnly.js";
 import { openBlocksForRoomDay } from "../src/utils/capacity.js";
 
@@ -130,4 +130,45 @@ test("เตือนคิวที่จะตกไปอยู่นอก�
 test("ไม่มี migration / ไม่มีกติกาใหม่ฝั่งเซิร์ฟเวอร์: แถวที่สร้างเป็นรูปเดิมที่ create_queue_v1 อ่านอยู่แล้ว", () => {
   const src = readFileSync(new URL("../src/utils/scheduleOpenOnly.js", import.meta.url), "utf8");
   assert.doesNotMatch(src, /source:\s*["']/, "ห้ามตั้ง source ใหม่ — DB มี CHECK ให้แค่ null/bed_switch");
+});
+
+test("แก้แถว \"ปิดทั้งวัน\" ที่กรอกเองแล้วเปลี่ยนเป็นเปิดเฉพาะช่วง → แทนที่แถวนั้นได้ (ไม่ถูกข้าม)", () => {
+  const schedules = [
+    { id: "w1", roomId: "m1", date: D, available: false, startBlock: null, endBlock: null, noteOnly: false, source: null },
+  ];
+  const plan = planOpenOnly({ rooms: [room], roomSchedules: schedules, roomIds: ["m1"], dates: [D], startBlock: 156, endBlock: 216, editingId: "w1" });
+  assert.equal(plan.beds[0].blocked, null);
+  assert.deepEqual(plan.beds[0].remove.map((s) => s.id), ["w1"]);
+  // แต่ถ้าแถวปิดทั้งวันมาจากปุ่มปิดเตียง แม้ id ตรงก็ไม่แตะ
+  const bs = [{ ...schedules[0], source: "bed_switch" }];
+  assert.ok(planOpenOnly({ rooms: [room], roomSchedules: bs, roomIds: ["m1"], dates: [D], startBlock: 156, endBlock: 216, editingId: "w1" }).beds[0].blocked);
+});
+
+test("มีแถวใช้ทุกวัน (ไม่มีวันที่) ที่เป็นช่วงเวลา → ข้าม พร้อมเหตุผลที่ถูก", () => {
+  const schedules = [{ id: "e1", roomId: "m1", date: "", available: true, startBlock: 240, endBlock: 264, noteOnly: false, source: null }];
+  const plan = planOpenOnly({ rooms: [room], roomSchedules: schedules, roomIds: ["m1"], dates: [D], startBlock: 156, endBlock: 216 });
+  assert.match(plan.beds[0].blocked, /ทุกวัน/);
+});
+
+test("ข้อความผลต่อเตียง", () => {
+  const bed = { create: buildOpenOnlyRows({ room, startBlock: 156, endBlock: 264 }) };
+  assert.equal(describeOpenOnlyBed(bed), "ปิด 11:00–13:00 · ต่อเวลา 13:00–22:00");
+  assert.equal(describeOpenOnlyBed({ create: [] }), "เปิดตามเวลาปกติ");
+});
+
+test("ปุ่มเดิม ⛔ / ✅ / 📝 ใน ScheduleModal ไม่ถูกเปลี่ยนความหมาย: เปิดเฉพาะช่วงเป็นปุ่มแยก ไม่เป็นค่าเริ่มต้น", () => {
+  const src = readFileSync(new URL("../src/components/modals/ScheduleModal.jsx", import.meta.url), "utf8");
+  assert.match(src, /const \[openOnly, setOpenOnly\] = useState\(false\)/);
+  assert.match(src, /✅ เปิด \(กำหนดช่วงเวลา\)/);
+  assert.match(src, /🕐 เปิดเฉพาะช่วงเวลา/);
+});
+
+test("App: ลบแถวเปิดต่อเวลาเดิมก่อนสร้าง แล้วค่อยลบแถวปิดเดิม (ล้มกลางทาง = เปิดน้อยกว่า ไม่เปิดเกิน)", () => {
+  const src = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  const i = src.indexOf("const applyOpenOnlySchedule");
+  const body = src.slice(i, src.indexOf("}, [showToast]);", i));
+  const a = body.indexOf("for (const old of oldOpens)");
+  const b = body.indexOf("for (const row of bed.create)");
+  const c = body.indexOf("for (const old of oldCloses)");
+  assert.ok(a > 0 && a < b && b < c);
 });

@@ -7,7 +7,7 @@ import {
   buildScheduleTiming, findQueuesInClosure, formatBlockDuration,
   DEFAULT_CLOSE_START_BLOCK, DEFAULT_CLOSE_END_BLOCK,
 } from "../../utils/scheduleClosure";
-import { planOpenOnly, summarizeOpenOnlyPlan, findQueuesOutsideOpenWindow } from "../../utils/scheduleOpenOnly";
+import { planOpenOnly, summarizeOpenOnlyPlan, findQueuesOutsideOpenWindow, describeOpenOnlyBed } from "../../utils/scheduleOpenOnly";
 
 // ค่าเริ่มต้นตอนเลือก "เปิดเฉพาะช่วงเวลา" ครั้งแรก: 13:00–18:00 (หมอเข้าบ่าย ที่เจอบ่อย)
 const DEFAULT_OPEN_ONLY_START = 156;
@@ -224,10 +224,11 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
   const [startBlock, setStartBlock] = useState(data?.startBlock ?? 108); // 09:00
   const [endBlock, setEndBlock] = useState(data?.endBlock ?? 132);       // 11:00
   const [note, setNote] = useState(data?.note || "");
-  // ✅ เปิด มี 2 แบบ: "เปิดเฉพาะช่วงนี้" (นอกช่วงปิดให้เอง, แทนที่ช่วงเดิมของเตียงวันนั้น) / "ต่อเวลา" (แบบเดิม)
-  // แก้แถว "เปิดต่อเวลา" เดิม → อยู่โหมดต่อเวลาเหมือนเดิม; สร้างใหม่ → เปิดเฉพาะช่วงนี้
-  const editingExtendRow = !!data && data.available === true && !data.noteOnly && data.startBlock != null;
-  const [openOnly, setOpenOnly] = useState(!editingExtendRow && !!onApplyOpenOnly);
+  // 🕐 เปิดเฉพาะช่วงเวลา = ปุ่มสถานะแยก (นอกช่วงปิดให้เอง แทนที่ช่วงเดิมของเตียงวันนั้น)
+  // ไม่เป็นค่าเริ่มต้นของอะไรเลย — ⛔ / ✅ / 📝 และการแก้แถวเดิม ทำงานเหมือนก่อนมีปุ่มนี้ทุกอย่าง
+  const [openOnly, setOpenOnly] = useState(false);
+  // แก้แถว "ใช้ทุกวัน" (ไม่มีวันที่) → เปิดเฉพาะช่วงต้องมีวันจริง จึงไม่ให้เลือก
+  const canOpenOnly = !!onApplyOpenOnly && !(isEdit && !date);
 
   const filteredRooms = useMemo(() => {
     if (!filterBranchId) return rooms;
@@ -255,13 +256,13 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
 
   const isClosing = !noteOnly && !available;
   const showTimeRange = !noteOnly && (available || closeRange);
-  const isOpenOnly = !noteOnly && available && openOnly && !!onApplyOpenOnly;
+  const isOpenOnly = !noteOnly && available && openOnly && canOpenOnly;
   const saveDates = useMemo(() => (isEdit ? [date] : generatedDates), [isEdit, date, generatedDates]);
 
   const openOnlyPlan = useMemo(() => {
     if (!isOpenOnly) return null;
-    return planOpenOnly({ rooms, roomSchedules, roomIds: selectedRoomIds, dates: saveDates, startBlock, endBlock, note });
-  }, [isOpenOnly, rooms, roomSchedules, selectedRoomIds, saveDates, startBlock, endBlock, note]);
+    return planOpenOnly({ rooms, roomSchedules, roomIds: selectedRoomIds, dates: saveDates, startBlock, endBlock, note, editingId: data?.id ?? null });
+  }, [isOpenOnly, rooms, roomSchedules, selectedRoomIds, saveDates, startBlock, endBlock, note, data?.id]);
   const openOnlySummary = useMemo(() => (openOnlyPlan ? summarizeOpenOnlyPlan(openOnlyPlan) : null), [openOnlyPlan]);
 
   // คิวที่ยังค้างอยู่ในช่วงที่จะปิด — ปิดได้ แต่คิวไม่ถูกย้าย ต้องให้หน้าร้านจัดการเอง
@@ -284,12 +285,14 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
     if (isOpenOnly) {
       const sum = openOnlySummary;
       if (!sum || sum.bedDays === 0) {
-        window.alert(sum?.blocked?.length ? "ทุกเตียง-วันที่เลือกเปิดไม่ได้ (ปิดทั้งวันอยู่) — ต้องเปิดเตียงก่อน" : "ยังไม่ได้เลือกเตียง/วันที่");
+        window.alert(sum?.blocked?.length ? "ทุกเตียง-วันที่เลือกเปิดไม่ได้ — ดูเหตุผลในกล่อง \"ข้าม\" ในฟอร์ม" : "ยังไม่ได้เลือกเตียง/วันที่");
         return;
       }
       const lines = [`เปิดเฉพาะ ${blockToTime(startBlock)}–${blockToTime(endBlock)} · ${sum.bedDays} เตียง-วัน`];
+      const results = [...new Set(openOnlyPlan.beds.filter((b) => !b.blocked).map(describeOpenOnlyBed))];
+      lines.push(`ผล: ${results.slice(0, 3).join(" / ")}${results.length > 3 ? " ..." : ""}`);
       if (sum.removeCount > 0) lines.push(`จะแทนที่ช่วงปิด/เปิดเดิม ${sum.removeCount} รายการ (ลบของเดิมออก)`);
-      if (sum.blocked.length > 0) lines.push(`ข้าม ${sum.blocked.length} เตียง-วัน ที่ปิดทั้งวันอยู่`);
+      if (sum.blocked.length > 0) lines.push(`ข้าม ${sum.blocked.length} เตียง-วัน (ดูเหตุผลในฟอร์ม)`);
       if (affectedQueues.length > 0) lines.push(`มีคิว ${affectedQueues.length} คิวอยู่นอกช่วงที่เปิด — คิวไม่ถูกย้าย ต้องไปเลื่อน/ย้ายเอง`);
       if (!window.confirm(`${lines.join("\n")}\n\nยืนยันหรือไม่?`)) return;
       return onApplyOpenOnly(openOnlyPlan);
@@ -311,10 +314,13 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
     });
   }
 
-  function chooseOpenOnly(next) {
-    setOpenOnly(next);
-    // เข้าโหมดเปิดเฉพาะช่วงครั้งแรก (แถวใหม่ หรือแก้แถวที่ไม่ใช่ช่วงเปิด) — ตั้ง 13:00–18:00
-    if (next && !(data?.startBlock != null && data?.available === true)) {
+  function chooseOpenOnly() {
+    const already = isOpenOnly;
+    setNoteOnly(false);
+    setAvailable(true);
+    setOpenOnly(true);
+    // เข้าโหมดนี้ครั้งแรก — ตั้ง 13:00–18:00 (กดซ้ำไม่ล้างเวลาที่กรอกไว้; แก้แถวที่มีช่วงเวลาอยู่แล้ว ใช้เวลาเดิม)
+    if (!already && data?.startBlock == null) {
       setStartBlock(DEFAULT_OPEN_ONLY_START);
       setEndBlock(DEFAULT_OPEN_ONLY_END);
     }
@@ -517,21 +523,30 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
             <div className="type-options">
               <button
                 className={`type-option ${!noteOnly && !available ? "selected" : ""}`}
-                onClick={() => { setNoteOnly(false); setAvailable(false); }}
+                onClick={() => { setNoteOnly(false); setAvailable(false); setOpenOnly(false); }}
                 style={!noteOnly && !available ? { borderColor: "var(--red)", background: "var(--red)", color: "#fff" } : {}}
               >
                 ⛔ ปิด / ไม่พร้อม
               </button>
               <button
-                className={`type-option ${!noteOnly && available ? "selected" : ""}`}
-                onClick={() => { setNoteOnly(false); setAvailable(true); if (openOnly && !editingExtendRow) chooseOpenOnly(true); }}
-                style={!noteOnly && available ? { borderColor: "var(--green)", background: "var(--green)", color: "#fff" } : {}}
+                className={`type-option ${!noteOnly && available && !isOpenOnly ? "selected" : ""}`}
+                onClick={() => { setNoteOnly(false); setAvailable(true); setOpenOnly(false); }}
+                style={!noteOnly && available && !isOpenOnly ? { borderColor: "var(--green)", background: "var(--green)", color: "#fff" } : {}}
               >
                 ✅ เปิด (กำหนดช่วงเวลา)
               </button>
+              {canOpenOnly && (
+                <button
+                  className={`type-option ${isOpenOnly ? "selected" : ""}`}
+                  onClick={chooseOpenOnly}
+                  style={isOpenOnly ? { borderColor: "var(--green)", background: "var(--green)", color: "#fff" } : {}}
+                >
+                  🕐 เปิดเฉพาะช่วงเวลา
+                </button>
+              )}
               <button
                 className={`type-option ${noteOnly ? "selected" : ""}`}
-                onClick={() => setNoteOnly(true)}
+                onClick={() => { setNoteOnly(true); setOpenOnly(false); }}
                 style={noteOnly ? { borderColor: "#b45309", background: "#b45309", color: "#fff" } : {}}
               >
                 📝 Note เท่านั้น
@@ -540,24 +555,6 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
             {noteOnly && (
               <div style={{ marginTop: 6, fontSize: 11, color: "#b45309", fontWeight: 600 }}>
                 ไม่เปลี่ยนช่วงเวลารับคิว — แค่แสดงหมายเหตุในหน้าบันทึกคิว
-              </div>
-            )}
-            {!noteOnly && available && onApplyOpenOnly && (
-              <div className="type-options" style={{ marginTop: 8 }}>
-                <button
-                  className={`type-option ${openOnly ? "selected" : ""}`}
-                  onClick={() => chooseOpenOnly(true)}
-                  style={openOnly ? { borderColor: "var(--green)", background: "var(--green-soft)", color: "var(--green)" } : {}}
-                >
-                  เปิดเฉพาะช่วงเวลา
-                </button>
-                <button
-                  className={`type-option ${!openOnly ? "selected" : ""}`}
-                  onClick={() => setOpenOnly(false)}
-                  style={!openOnly ? { borderColor: "var(--green)", background: "var(--green-soft)", color: "var(--green)" } : {}}
-                >
-                  ต่อเวลาเปิด
-                </button>
               </div>
             )}
             {isOpenOnly && (
@@ -668,16 +665,28 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
           )}
 
           {/* เปิดเฉพาะช่วง: สิ่งที่จะถูกแทนที่ / เตียงที่ข้าม */}
-          {isOpenOnly && openOnlySummary && (openOnlySummary.removeCount > 0 || openOnlySummary.blocked.length > 0) && (
+          {isOpenOnly && openOnlySummary && openOnlyPlan.beds.length > 0 && (
             <div className="form-group full">
               <div style={{
                 padding: "8px 12px", borderRadius: "var(--radius-sm)",
                 background: "var(--surface2, #f7f5f2)", border: "1px solid var(--border, #e5e0d8)",
                 fontSize: 12, color: "var(--text2)", lineHeight: 1.6,
               }}>
+                <div style={{ fontWeight: 700, color: "var(--green)" }}>📋 ผลที่จะได้</div>
+                {openOnlyPlan.beds.filter((b) => !b.blocked).slice(0, 8).map((b) => {
+                  const room = rooms.find((r) => r.id === b.roomId);
+                  return (
+                    <div key={`r|${b.roomId}|${b.date}`}>
+                      {formatThaiDate(b.date)} · {room?.name || ""} · เปิด {blockToTime(startBlock)}–{blockToTime(endBlock)} ({describeOpenOnlyBed(b)})
+                    </div>
+                  );
+                })}
+                {openOnlySummary.bedDays > 8 && (
+                  <div style={{ color: "var(--text3)" }}>และอีก {openOnlySummary.bedDays - 8} เตียง-วัน</div>
+                )}
                 {openOnlySummary.removeCount > 0 && (
                   <>
-                    <div style={{ fontWeight: 700, color: "var(--text)" }}>
+                    <div style={{ fontWeight: 700, color: "var(--text)", marginTop: 6 }}>
                       🔁 จะแทนที่ช่วงเวลาเดิม {openOnlySummary.removeCount} รายการ
                     </div>
                     {openOnlySummary.replaced.slice(0, 8).map((s) => {
@@ -695,7 +704,7 @@ export default function ScheduleModal({ data, rooms, branches, queues = [], proc
                 )}
                 {openOnlySummary.blocked.length > 0 && (
                   <>
-                    <div style={{ fontWeight: 700, color: "var(--red)", marginTop: openOnlySummary.removeCount > 0 ? 6 : 0 }}>
+                    <div style={{ fontWeight: 700, color: "var(--red)", marginTop: 6 }}>
                       ⛔ ข้าม {openOnlySummary.blocked.length} เตียง-วัน
                     </div>
                     {openOnlySummary.blocked.slice(0, 8).map((b) => {

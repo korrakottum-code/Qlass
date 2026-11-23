@@ -73,7 +73,7 @@ export function buildOpenOnlyRows({ room, startBlock, endBlock, note = "" }) {
  *   blocked = null หรือเหตุผลภาษาไทยที่ข้ามเตียงนี้ (ไม่สร้าง ไม่ลบอะไรเลย)
  * แถว "โน้ตอย่างเดียว" ไม่ถูกแตะ
  */
-export function planOpenOnly({ rooms, roomSchedules, roomIds, dates, startBlock, endBlock, note = "" }) {
+export function planOpenOnly({ rooms, roomSchedules, roomIds, dates, startBlock, endBlock, note = "", editingId = null }) {
   const roomById = new Map((rooms || []).map((r) => [r.id, r]));
   const beds = [];
   if (!(endBlock > startBlock)) return { beds };
@@ -82,15 +82,21 @@ export function planOpenOnly({ rooms, roomSchedules, roomIds, dates, startBlock,
     for (const date of dates || []) {
       if (!date) continue;
       const sameDay = (roomSchedules || []).filter((s) => s.roomId === roomId && (s.date === date || s.date === "" || s.date === null));
-      const wholeDay = sameDay.find(isWholeDayClosure);
+      // แถวที่กำลังแก้อยู่ในฟอร์ม (ที่กรอกเอง วันนั้น) = ผู้ใช้ตั้งใจเปลี่ยนแถวนี้ → แทนที่ได้แม้เป็น "ปิดทั้งวัน"
+      const isEditingRow = (s) => !!editingId && s.id === editingId && s.date === date && !s.noteOnly
+        && (s.source === null || s.source === undefined || s.source === "");
+      const wholeDay = sameDay.find((s) => isWholeDayClosure(s) && !isEditingRow(s));
       let blocked = null;
       if (wholeDay) {
         blocked = wholeDay.source === "bed_switch"
           ? "เตียงปิดทั้งวัน (ปิดเตียง พนักงานหยุด) — ต้องเปิดเตียงก่อน"
           : "เตียงปิดทั้งวันอยู่ — ต้องลบ \"ปิดทั้งวัน\" ก่อน";
+      } else if (sameDay.some((s) => s.date !== date && !s.noteOnly && hasRange(s))) {
+        // แถว "ใช้ทุกวัน" ลบเฉพาะวันเดียวไม่ได้ ถ้าปล่อยไว้เตียงจะไม่ได้ "เปิดเฉพาะช่วง" จริง (ตอนนี้ production ไม่มีแถวแบบนี้)
+        blocked = "มีตารางแบบใช้ทุกวันของเตียงนี้ — แก้แถวทุกวันก่อน";
       } else {
-        // ช่วงปิดที่ลบไม่ได้ (ปุ่มปิดเตียง / ใช้ทุกวัน) แต่ทับช่วงที่จะเปิด → เปิดไม่ได้จริง ข้ามไปดีกว่าบอกว่าเปิดแล้ว
-        const stuck = sameDay.find((s) => !s.available && hasRange(s) && !(isReplaceableTimeRow(s) && s.date === date)
+        // ช่วงปิดจากปุ่มปิดเตียงที่ทับช่วงที่จะเปิด ลบไม่ได้ → เปิดไม่ได้จริง ข้ามไปดีกว่าบอกว่าเปิดแล้ว
+        const stuck = sameDay.find((s) => !s.available && hasRange(s) && !isReplaceableTimeRow(s)
           && s.startBlock < endBlock && startBlock < s.endBlock);
         if (stuck) blocked = "มีช่วงปิดจากปุ่มปิดเตียงทับช่วงที่จะเปิด — ต้องเปิดเตียงก่อน";
       }
@@ -98,7 +104,7 @@ export function planOpenOnly({ rooms, roomSchedules, roomIds, dates, startBlock,
         beds.push({ roomId, date, create: [], remove: [], blocked });
         continue;
       }
-      const remove = sameDay.filter((s) => s.date === date && isReplaceableTimeRow(s));
+      const remove = sameDay.filter((s) => s.date === date && (isReplaceableTimeRow(s) || isEditingRow(s)));
       const create = buildOpenOnlyRows({ room, startBlock, endBlock, note }).map((r) => ({ ...r, roomId, date }));
       beds.push({ roomId, date, create, remove, blocked: null });
     }
@@ -138,4 +144,14 @@ export function findQueuesOutsideOpenWindow({ plan, queues, procedures, startBlo
     })
     .slice()
     .sort((a, b) => (a.date === b.date ? (a.timeBlock ?? 0) - (b.timeBlock ?? 0) : a.date < b.date ? -1 : 1));
+}
+
+/** ผลของเตียง-วันหนึ่งเป็นข้อความสั้น เช่น "ปิด 11:00–13:00, 18:00–20:00" / "ปิด 11:00–13:00 · ต่อเวลา 13:00–22:00" / "เปิดตามเวลาปกติ" */
+export function describeOpenOnlyBed(bed) {
+  const closes = (bed?.create || []).filter((r) => !r.available).map((r) => `${hhmm(r.startBlock)}–${hhmm(r.endBlock)}`);
+  const opens = (bed?.create || []).filter((r) => r.available).map((r) => `${hhmm(r.startBlock)}–${hhmm(r.endBlock)}`);
+  const parts = [];
+  if (closes.length) parts.push(`ปิด ${closes.join(", ")}`);
+  if (opens.length) parts.push(`ต่อเวลา ${opens.join(", ")}`);
+  return parts.length ? parts.join(" · ") : "เปิดตามเวลาปกติ";
 }
