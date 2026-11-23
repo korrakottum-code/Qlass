@@ -335,8 +335,8 @@ export default function BookingPage({
       />
 
       {depositBooking && !editingQueueId && (
-        <div className="card" style={{ marginBottom: 12, padding: "10px 14px", borderColor: "#6b1f6b", background: "#f6f1fb" }}>
-          <div style={{ fontWeight: 800, color: "#6b1f6b" }}>💸 กำลังจองให้ลูกค้าที่โอนแล้ว: {depositBooking.customerName}</div>
+        <div className="card" style={{ marginBottom: 12, padding: "10px 14px", borderColor: "var(--accent)", background: "var(--accent-soft)" }}>
+          <div style={{ fontWeight: 800, color: "var(--accent)" }}>💸 กำลังจองให้ลูกค้าที่โอนแล้ว: {depositBooking.customerName}</div>
           <div style={{ fontSize: 12, marginTop: 2 }}>
             {depositBooking.promoName || depositBooking.procedureName} · โอน {Number(depositBooking.amount).toLocaleString("th-TH")} บาท
             {!depositPromo && " · โปรนี้ปิดใช้งานแล้ว กรุณาเลือกโปรเอง"}

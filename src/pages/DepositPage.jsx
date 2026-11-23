@@ -12,13 +12,7 @@ import {
 } from "../utils/deposits";
 import Modal, { ModalHeader, ModalBody } from "../components/Modal";
 
-// สีตามแบบ Class Clinic (ม่วงแบรนด์) — ใช้เฉพาะหน้านี้ ไม่แตะธีมส่วนอื่นของแอป
-const BRAND = "#6b1f6b";
-const BRAND_SOFT = "#f6f1fb";
-const BRAND_LINE = "#e3d3ef";
-const BOOKED = "#15803d";
-const brandBtn = { background: BRAND, borderColor: BRAND, color: "#fff" };
-const brandOutline = { background: "#fff", borderColor: BRAND_LINE, color: BRAND };
+// สีใช้ธีมของแอป (ปุ่ม btn-primary/btn-secondary, ตาราง data-table, var(--green)) เหมือนหน้าอื่น — เจ้าของสั่ง ไม่ใช้ม่วง
 
 const ERRORS = {
   invalid_name: "กรุณากรอกชื่อ-นามสกุลลูกค้า",
@@ -87,7 +81,7 @@ function BookingCell({ deposit, onBook, canBook }) {
   }
   if (state === "booked" || state === "done") {
     return (
-      <div style={{ color: BOOKED, fontWeight: 800, textAlign: "center" }}>
+      <div style={{ color: "var(--green)", fontWeight: 800, textAlign: "center" }}>
         {state === "done" ? "มาทำแล้ว" : "จองแล้ว"}
         <div style={{ fontWeight: 700, fontSize: 12 }}>{formatThaiDate(b.date)}{b.timeBlock != null ? ` · ${blockToTime(b.timeBlock)} น.` : ""}</div>
       </div>
@@ -97,7 +91,7 @@ function BookingCell({ deposit, onBook, canBook }) {
     <div style={{ textAlign: "center" }}>
       {state === "lost" && <div style={{ color: "#dc2626", fontSize: 11, fontWeight: 700, marginBottom: 4 }}>คิวเดิมถูกยกเลิก/ไม่มา</div>}
       {canBook
-        ? <button className="btn btn-sm" style={{ ...brandBtn, borderRadius: 8, fontWeight: 700, padding: "6px 14px" }} onClick={() => onBook(deposit)}>📅 เลือกวันที่</button>
+        ? <button className="btn btn-sm btn-primary" onClick={() => onBook(deposit)}>📅 เลือกวันที่</button>
         : <span style={{ fontSize: 12, color: "var(--text3)" }}>ยังไม่จอง</span>}
     </div>
   );
@@ -262,12 +256,12 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
   const totalPages = Math.max(1, Math.ceil(list.total / DEPOSIT_PAGE_SIZE));
   const statRows = stats?.stats || [];
   const statSum = sumDepositStats(statRows);
-  const th = { padding: "10px 8px", background: BRAND, color: "#fff", fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", textAlign: "center" };
-  const td = { padding: "8px", borderTop: "1px solid var(--border)", fontSize: 13, verticalAlign: "middle" };
+  const th = { whiteSpace: "nowrap" };
+  const td = {};
 
   return (
-    <div style={{ background: BRAND_SOFT, borderRadius: 16, padding: 16 }}>
-      <h2 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 800, color: BRAND }}>💸 ลูกค้าโอนแล้ว รอจองคิว</h2>
+    <div>
+      <h2 style={{ margin: "0 0 4px", fontSize: 16, fontWeight: 800 }}>💸 ลูกค้าโอนแล้ว รอจองคิว</h2>
       <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 12 }}>รายชื่อลูกค้าหลังบันทึกข้อมูลการโอน — กด “เลือกวันที่” เพื่อจองคิวจริงให้ลูกค้า</div>
 
       {pendingLink && (
@@ -275,7 +269,7 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
           <div style={{ fontWeight: 700, color: "#b91c1c" }}>คิวของ {pendingLink.customerName} บันทึกแล้ว แต่ยังผูกกับรายการโอนไม่สำเร็จ</div>
           <div style={{ fontSize: 12, margin: "4px 0 8px" }}>กด “ลองผูกอีกครั้ง” (ห้ามกดจองใหม่ จะได้คิวซ้ำ)</div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-sm" style={brandBtn} onClick={async () => { if (await onRetryLink?.()) setReloadKey((k) => k + 1); }}>ลองผูกอีกครั้ง</button>
+            <button className="btn btn-sm btn-primary" onClick={async () => { if (await onRetryLink?.()) setReloadKey((k) => k + 1); }}>ลองผูกอีกครั้ง</button>
             <button className="btn btn-sm btn-secondary" onClick={onDismissPendingLink}>ปิด</button>
           </div>
         </div>
@@ -283,7 +277,7 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         {tabs.map(([id, label]) => (
-          <button key={id} className="btn btn-sm" style={tab === id ? brandBtn : brandOutline} onClick={() => setTab(id)}>{label}</button>
+          <button key={id} className={`btn btn-sm ${tab === id ? "btn-primary" : "btn-secondary"}`} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
 
@@ -333,21 +327,21 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
             สลิปการโอน * (บังคับ)
             <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePickSlip} />
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
-              <button type="button" className="btn btn-sm" style={brandOutline} onClick={() => fileRef.current?.click()}>{form.slipBase64 ? "เปลี่ยนรูปสลิป" : "📎 แนบสลิป"}</button>
+              <button type="button" className="btn btn-sm btn-secondary" onClick={() => fileRef.current?.click()}>{form.slipBase64 ? "เปลี่ยนรูปสลิป" : "📎 แนบสลิป"}</button>
               {form.slipPreview
                 ? <img src={form.slipPreview} alt="สลิป" style={{ height: 80, borderRadius: 6, border: "1px solid var(--border)" }} />
                 : <span style={{ fontSize: 12, color: "#dc2626" }}>ยังไม่ได้แนบสลิป</span>}
             </div>
           </div>
           <div style={{ fontSize: 12, color: "var(--text3)" }}>ผู้บันทึก: <b>{currentUser?.nickname || currentUser?.name}</b> (ใส่ให้อัตโนมัติ ใช้คิดค่าคอม)</div>
-          <button className="btn" style={{ ...brandBtn, fontWeight: 700 }} type="submit" disabled={isSaving}>{isSaving ? "กำลังบันทึก…" : "บันทึกการโอน"}</button>
+          <button className="btn btn-primary" type="submit" disabled={isSaving}>{isSaving ? "กำลังบันทึก…" : "บันทึกการโอน"}</button>
         </form>
       )}
 
       {tab === "list" && !isCeo && (
         <div>
           <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-            <input className="input" style={{ flex: "1 1 240px", minWidth: 0, borderColor: BRAND_LINE, background: "#fff" }} placeholder="🔍 ค้นหาชื่อ-นามสกุล หรือเบอร์โทร" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} />
+            <input className="input" style={{ flex: "1 1 240px", minWidth: 0 }} placeholder="🔍 ค้นหาชื่อ-นามสกุล หรือเบอร์โทร" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} />
             <select className="input" style={{ flex: "0 1 170px" }} value={status} onChange={(e) => { setStatus(e.target.value); setPage(0); }}>
               <option value="all">ทุกสถานะ</option>
               <option value="waiting">ยังไม่จอง</option>
@@ -362,8 +356,8 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
             )}
             <span style={{ alignSelf: "center", fontSize: 12, color: "var(--text3)" }}>{loading ? "กำลังโหลด…" : `${list.total.toLocaleString()} รายการ`}</span>
           </div>
-          <div className="card" style={{ padding: 0, overflowX: "auto", borderColor: BRAND_LINE, borderRadius: 12 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
+          <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+            <table className="data-table" style={{ minWidth: 860 }}>
               <thead>
                 <tr>
                   <th style={th}>วันที่บันทึก</th><th style={th}>ชื่อ-นามสกุล</th><th style={th}>เบอร์โทร</th><th style={th}>สาขา</th>
@@ -372,7 +366,7 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
               </thead>
               <tbody>
                 {list.deposits.map((d) => (
-                  <tr key={d.id} style={{ opacity: d.cancelledAt ? 0.6 : 1, background: "#fff" }}>
+                  <tr key={d.id} style={{ opacity: d.cancelledAt ? 0.6 : 1 }}>
                     <td style={{ ...td, whiteSpace: "nowrap" }}>{formatThaiDate(d.recordDate)}</td>
                     <td style={td}>{d.customerName}<div style={{ fontSize: 11, color: "var(--text3)" }}>บันทึกโดย {d.recordedByName || "—"}</div></td>
                     <td style={{ ...td, whiteSpace: "nowrap", fontFamily: "var(--mono)" }}>{formatPhone(d.customerPhone)}</td>
@@ -381,7 +375,7 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
                     <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap", fontWeight: 700 }}>{formatBaht(d.amount)} บาท</td>
                     <td style={{ ...td, minWidth: 150 }}><BookingCell deposit={d} canBook={canBookDeposit(d)} onBook={onBook} /></td>
                     <td style={{ ...td, whiteSpace: "nowrap" }}>
-                      <button className="btn btn-sm" style={brandOutline} onClick={() => openSlip(d)}>สลิป</button>
+                      <button className="btn btn-sm btn-secondary" onClick={() => openSlip(d)}>สลิป</button>
                       {canCancel && !d.cancelledAt && <button className="btn btn-sm btn-secondary" style={{ marginLeft: 6, color: "#dc2626" }} onClick={() => setCancelling(d)}>ยกเลิก</button>}
                     </td>
                   </tr>
@@ -409,7 +403,7 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
             <input className="input" type="date" style={{ width: 160 }} value={statsRange.to} onChange={(e) => setStatsRange((r) => ({ ...r, to: e.target.value }))} />
           </div>
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
+            <table className="data-table" style={{ minWidth: 620 }}>
               <thead>
                 <tr>
                   <th style={th}>คนบันทึก</th>
