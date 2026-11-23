@@ -9,7 +9,7 @@ import { serverErrorCode } from "../utils/sessionApi";
 import { getServerSessionToken, depositsAvailable, listDeposits, createDeposit, cancelDeposit, fetchDepositSlipUrl, fetchDepositStats } from "../utils/depositApi";
 import {
   DEPOSIT_PAGE_SIZE, MAX_SLIP_BYTES, validateDepositForm, depositBookingState, canBookDeposit,
-  formatBaht, formatPhone, sumDepositStats, depositCommission,
+  formatBaht, formatPhone, sumDepositStats, depositCommissionForRow,
 } from "../utils/deposits";
 import Modal, { ModalHeader, ModalBody } from "../components/Modal";
 
@@ -135,7 +135,7 @@ function CancelModal({ deposit, busy, onClose, onConfirm }) {
   );
 }
 
-export default function DepositPage({ branches = [], promos = [], procedures = [], currentUser, onToast, onBook, pendingLink, onRetryLink, onDismissPendingLink }) {
+export default function DepositPage({ branches = [], promos = [], procedures = [], staff = [], currentUser, onToast, onBook, pendingLink, onRetryLink, onDismissPendingLink }) {
   const role = currentUser?.role;
   const isCeo = role === "ceo";
   const branchScoped = role === "branch_manager" || role === "cashier";
@@ -272,7 +272,7 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
     : [["list", "📋 รายชื่อลูกค้า"], ["new", "➕ บันทึกการโอน"], ["stats", statsAll ? "📊 ยอดรวมรายคน" : "📊 ยอดของฉัน"]];
   const totalPages = Math.max(1, Math.ceil(list.total / DEPOSIT_PAGE_SIZE));
   const statRows = stats?.stats || [];
-  const statSum = sumDepositStats(statRows);
+  const statSum = sumDepositStats(statRows, staff);
   const th = { whiteSpace: "nowrap" };
   const td = {};
 
@@ -445,7 +445,7 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
                   <th style={th}>บันทึกทั้งหมด</th>
                   <th style={th}>จองคิวแล้ว</th>
                   <th style={th}>ลูกค้ามาทำแล้ว</th>
-                  <th style={th}>ค่าคอม 2%</th>
+                  <th style={th}>ค่าคอม 2% (แอดมิน)</th>
                 </tr>
               </thead>
               <tbody>
@@ -455,7 +455,9 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
                     <td style={{ ...td, textAlign: "right" }}>{r.count} ราย · <b>{formatBaht(r.amount)}</b> บาท</td>
                     <td style={{ ...td, textAlign: "right" }}>{r.bookedCount} ราย · <b>{formatBaht(r.bookedAmount)}</b> บาท</td>
                     <td style={{ ...td, textAlign: "right" }}>{r.doneCount} ราย · <b>{formatBaht(r.doneAmount)}</b> บาท</td>
-                    <td style={{ ...td, textAlign: "right", color: "var(--green)", fontWeight: 800 }}>{formatBaht(depositCommission(r.amount))} บาท</td>
+                    <td style={{ ...td, textAlign: "right", color: "var(--green)", fontWeight: 800 }}>
+                      {depositCommissionForRow(r, staff) == null ? <span style={{ color: "var(--text3)", fontWeight: 400 }}>—</span> : `${formatBaht(depositCommissionForRow(r, staff))} บาท`}
+                    </td>
                   </tr>
                 ))}
                 {statRows.length > 1 && (
@@ -472,7 +474,7 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
             </table>
           </div>
           <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 8 }}>
-            ค่าคอม 2% ของยอด “บันทึกทั้งหมด” ได้ทันทีที่บันทึกการโอน · ไม่นับรายการที่ยกเลิก/คืนเงิน (ยกเลิกทีหลัง = ค่าคอมรายการนั้นหายไปจากยอด) · “จองคิวแล้ว” ไม่นับคิวที่ถูกยกเลิก/ไม่มา · {stats?.scope === "self" ? "แสดงเฉพาะยอดที่คุณบันทึก" : "ทุกคนทุกสาขา"}
+            ค่าคอม 2% ของยอด “บันทึกทั้งหมด” เฉพาะตำแหน่งแอดมิน ได้ทันทีที่บันทึกการโอน (ตำแหน่งอื่นขึ้น —) · ไม่นับรายการที่ยกเลิก/คืนเงิน (ยกเลิกทีหลัง = ค่าคอมรายการนั้นหายไปจากยอด) · “จองคิวแล้ว” ไม่นับคิวที่ถูกยกเลิก/ไม่มา · {stats?.scope === "self" ? "แสดงเฉพาะยอดที่คุณบันทึก" : "ทุกคนทุกสาขา"}
           </div>
         </div>
       )}
