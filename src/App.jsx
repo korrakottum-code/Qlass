@@ -576,7 +576,21 @@ export default function App() {
   const [depositBookingRaw, setDepositBooking] = useState(null);
   // ใช้ได้เฉพาะตอนฟอร์มยังเป็นเบอร์ของรายการโอน — กด "ล้าง" หรือพิมพ์ลูกค้าคนอื่นแทน = ไม่ผูก ไม่ขึ้นแถบ
   const depositBooking = depositBookingRaw && phonesMatch(form.phone, depositBookingRaw.customerPhone) ? depositBookingRaw : null;
-  const [pendingDepositLink, setPendingDepositLink] = useState(null);
+  // เก็บใน localStorage (เฉพาะ id ไม่เก็บชื่อ/เบอร์ลูกค้า) — รีเฟรช/ปิดแท็บแล้วปุ่ม "ลองผูกอีกครั้ง" ต้องยังอยู่
+  // ไม่งั้นรายการโอนขึ้น "ยังไม่จอง" ทั้งที่มีคิวแล้ว → พนักงานจองซ้ำ
+  const [pendingDepositLink, setPendingDepositLinkState] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("qlass_pending_deposit_link") || "null");
+      return saved && typeof saved.depositId === "string" && typeof saved.queueId === "string" ? { depositId: saved.depositId, queueId: saved.queueId, customerName: "" } : null;
+    } catch { return null; }
+  });
+  const setPendingDepositLink = useCallback((value) => {
+    setPendingDepositLinkState(value);
+    try {
+      if (value) localStorage.setItem("qlass_pending_deposit_link", JSON.stringify({ depositId: value.depositId, queueId: value.queueId }));
+      else localStorage.removeItem("qlass_pending_deposit_link");
+    } catch { /* โหมดส่วนตัว — ยังมีใน state จนปิดแท็บ */ }
+  }, []);
   const linkDepositWithRetry = useCallback(async (depositId, queueId) => {
     let lastError = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -608,9 +622,15 @@ export default function App() {
       showToast("success", "ผูกคิวกับรายการโอนแล้ว");
       return true;
     }
+    // เหตุผลทางธุรกิจ (เช่น คิวถูกลบไปแล้ว / ผูกกับรายการอื่นแล้ว) ลองซ้ำก็ไม่ผ่าน — เลิกค้างปุ่มไว้
+    if (r.code && r.code !== "network" && r.code !== "service_unavailable" && !/fetch|network|Failed/i.test(String(r.code))) {
+      setPendingDepositLink(null);
+      showToast("error", "ผูกไม่ได้ (คิวนั้นถูกลบ/แก้ไป หรือผูกกับรายการอื่นแล้ว) — ตรวจคิวของลูกค้าในตารางคิว แล้วกด “เลือกวันที่” ใหม่ถ้ายังไม่มีคิว");
+      return true;
+    }
     showToast("error", "ยังผูกไม่สำเร็จ ลองอีกครั้งภายหลัง");
     return false;
-  }, [pendingDepositLink, linkDepositWithRetry, showToast]);
+  }, [pendingDepositLink, linkDepositWithRetry, showToast, setPendingDepositLink]);
   // ออกจากหน้าบันทึกคิว = เลิกจองให้รายการโอนนั้น (กันไปผูกกับคิวคนอื่นที่ลงทีหลัง) และล้างฟอร์มที่กรอกไว้ให้
   // (ไม่ล้าง = กลับมากดบันทึกทีหลังจะได้คิวที่ไม่ผูกกับรายการโอน แล้วรายการยังขึ้น "ยังไม่จอง" → จองซ้ำ)
   const clearDepositBooking = useCallback(() => {
@@ -843,7 +863,9 @@ export default function App() {
           // จองจากรายการโอน: ผูกคิวกลับ (คิวบันทึกแล้วไม่ว่าผูกได้หรือไม่ — ห้ามล้มทั้งการบันทึก)
           const deposit = depositBooking;
           setDepositBooking(null);
-          if (shouldLinkDeposit(deposit, { newQueue, editing: false })) {
+          if (!newQueue?.id) {
+            showToast("error", "บันทึกคิวแล้ว แต่ไม่ได้รับเลขคิวกลับมา จึงยังไม่ได้ผูกกับรายการโอน — ตรวจในตารางคิวก่อนจองซ้ำ");
+          } else if (shouldLinkDeposit(deposit, { newQueue, editing: false })) {
             const linked = await linkDepositWithRetry(deposit.id, newQueue.id);
             if (linked.ok) {
               showToast("success", `บันทึกคิวเรียบร้อย ✓ — รายการโอนของ ${deposit.customerName} ขึ้น “จองแล้ว”`);
@@ -890,7 +912,7 @@ export default function App() {
       }
       return false;
     }
-  }, [form, editingQueueId, showToast, queues, procedures, parseHints, lastParseSnapshot, branches, promos, rooms, currentUser, roomProcedureIndex, depositBooking, linkDepositWithRetry]);
+  }, [form, editingQueueId, showToast, queues, procedures, parseHints, lastParseSnapshot, branches, promos, rooms, currentUser, roomProcedureIndex, depositBooking, linkDepositWithRetry, setPendingDepositLink]);
 
   const editQueue = useCallback((q) => {
     setDepositBooking(null);

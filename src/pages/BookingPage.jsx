@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { CUSTOMER_TYPES, QUEUE_STATUSES, WORK_START_BLOCK, WORK_END_BLOCK, roomTypeMeta } from "../utils/constants";
 import { isPastPlacement } from "../utils/backdateRule";
@@ -78,10 +78,14 @@ export default function BookingPage({
 
   // จองจากรายการ "ลูกค้าโอนแล้ว": เลือกห้องแล้วฟอร์มล้างหัตถการ/โปร (พฤติกรรมเดิม) — ใส่โปรที่ลูกค้าโอนกลับให้
   // ถ้าเตียงนั้นรับหัตถการนี้ ทำเฉพาะตอนมีรายการโอนอยู่เท่านั้น การจองปกติไม่เปลี่ยนอะไร
+  // ใส่คืนครั้งเดียวต่อการเลือกห้องหนึ่งครั้ง — ถ้าพนักงานล้างหัตถการเองทีหลัง ต้องไม่เด้งกลับมา
   const depositPromo = depositBooking ? promos.find((p) => p.id === depositBooking.promoId && p.active !== false) : null;
+  const depositRefillRoomRef = useRef(null);
   useEffect(() => {
     if (!depositPromo || editingQueueId || !form.roomId || form.procedureId) return;
+    if (depositRefillRoomRef.current === form.roomId) return;
     if (!filteredProcedures.some((p) => p.id === depositPromo.procedureId)) return;
+    depositRefillRoomRef.current = form.roomId;
     setForm((f) => (f.procedureId ? f : { ...f, procedureId: depositPromo.procedureId, promoId: depositPromo.id, price: depositPromo.price }));
   }, [depositPromo, editingQueueId, form.roomId, form.procedureId, filteredProcedures, setForm]);
 

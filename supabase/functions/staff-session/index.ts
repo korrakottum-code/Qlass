@@ -97,7 +97,7 @@ const depositAllStatsRoles = new Set(["superadmin", "head_admin", "ceo"]);
 const depositErrors = new Set([
   "invalid_name", "invalid_phone", "invalid_amount", "invalid_date", "invalid_branch", "invalid_promo",
   "deposit_not_found", "deposit_cancelled", "deposit_already_booked", "queue_not_found", "queue_phone_mismatch",
-  "queue_already_linked", "invalid_reason", "invalid_deposit_payload", "invalid_range",
+  "queue_already_linked", "queue_not_new", "invalid_reason", "invalid_deposit_payload", "invalid_range",
 ]);
 const MAX_SLIP_BYTES = 1_500_000;
 const isUuidValue = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);

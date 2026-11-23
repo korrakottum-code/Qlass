@@ -21,7 +21,9 @@ export function validateDepositForm(form, { today, branchLocked = false } = {}) 
   const name = String(form?.customerName ?? "").trim();
   if (!name) return "กรุณากรอกชื่อ-นามสกุลลูกค้า";
   if (name.length > 120) return "ชื่อยาวเกิน 120 ตัวอักษร";
-  if (!/^[0-9]{9,10}$/.test(phoneDigits(form?.customerPhone))) return "เบอร์โทรต้องเป็นตัวเลข 9–10 หลัก";
+  const phone = phoneDigits(form?.customerPhone);
+  if (!/^[0-9]{9,10}$/.test(phone)) return "เบอร์โทรต้องเป็นตัวเลข 9–10 หลัก";
+  if (/^(.)\1+$/.test(phone)) return "กรุณาใส่เบอร์จริงของลูกค้า (ใช้ผูกกับคิวตอนจอง)";
   if (!branchLocked && !form?.branchId) return "กรุณาเลือกสาขา";
   if (!form?.promoId) return "กรุณาเลือกโปร/หัตถการ";
   const amount = Number(form?.amount);
@@ -41,6 +43,7 @@ export function validateDepositForm(form, { today, branchLocked = false } = {}) 
  *   cancelled — ยกเลิก/คืนเงินแล้ว
  *   waiting   — ยังไม่จอง (ปุ่ม "เลือกวันที่")
  *   lost      — เคยจองแต่คิวถูกยกเลิก/ไม่มา/ถูกลบ (ปุ่ม "เลือกวันที่" ให้จองใหม่)
+ *   waitlist  — ลงเป็น "คิวรอ" (ยังไม่มีห้อง/วันเวลา) — นับว่าจองแล้ว แต่ไม่แสดงวันที่ (วันที่ของคิวรอไม่ใช่วันนัด)
  *   done      — ลูกค้ามาทำแล้ว
  *   booked    — จองแล้ว (วันเวลาของคิวล่าสุด ไล่ตามการเลื่อนนัดแล้วที่เซิร์ฟเวอร์)
  */
@@ -51,6 +54,7 @@ export function depositBookingState(deposit) {
   if (!b) return deposit.queueId ? "lost" : "waiting";
   if (b.status === "cancelled" || b.status === "no_show") return "lost";
   if (b.status === "done") return "done";
+  if (b.status === "waiting_queue") return "waitlist";
   return "booked";
 }
 

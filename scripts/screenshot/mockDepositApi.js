@@ -67,7 +67,7 @@ export async function createDeposit(_t, d) {
   const name = String(d.customerName || "").trim();
   const phone = digits(d.customerPhone);
   if (!name) fail("invalid_name");
-  if (!/^[0-9]{9,10}$/.test(phone)) fail("invalid_phone");
+  if (!/^[0-9]{9,10}$/.test(phone) || /^(.)\1+$/.test(phone)) fail("invalid_phone");
   const amount = Number(d.amount);
   if (!(amount > 0 && amount <= 1000000)) fail("invalid_amount");
   if (!d.recordDate || d.recordDate > today() || d.recordDate < shift(today(), -7)) fail("invalid_date");
@@ -99,6 +99,7 @@ export async function linkDepositQueue(_t, depositId, queueId) {
   const q = DB.queues.find((x) => x.id === queueId);
   if (!q) fail("queue_not_found");
   if (digits(q.phone) !== d.customerPhone) fail("queue_phone_mismatch");
+  if (!q.createdAt || q.createdAt < d.createdAt || ["done", "cancelled", "no_show", "rescheduled"].includes(q.status)) fail("queue_not_new");
   if (deposits.some((x) => x.queueId === queueId && x.id !== depositId)) fail("queue_already_linked");
   d.queueId = queueId;
   d.bookedAt = new Date().toISOString();

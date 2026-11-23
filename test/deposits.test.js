@@ -39,11 +39,26 @@ test("สลิปบังคับ + 1 คิวผูกได้รายก
   assert.match(sql, /check \(\(cancelled_at is null\) = \(cancel_reason is null\)\)/);
 });
 
-test("ผูกคิว: ล็อกแถว และตรวจเบอร์คิวต้องตรงกับรายการโอน", () => {
+test("ผูกคิว: ล็อกแถว ตรวจเบอร์ และผูกได้เฉพาะคิวใหม่หลังบันทึกการโอน (กันเอาคิวเก่ามาเพิ่มยอด)", () => {
   const body = sql.slice(sql.indexOf("function public.deposit_link_v1"), sql.indexOf("function public.deposit_cancel_v1"));
   assert.match(body, /for update/);
   assert.match(body, /queue_phone_mismatch/);
   assert.match(body, /deposit_already_booked/);
+  assert.match(body, /v_queue\.created_at < v_row\.created_at then raise exception 'queue_not_new'/);
+  assert.match(body, /v_queue\.status in \('done', 'cancelled', 'no_show', 'rescheduled'\) then raise exception 'queue_not_new'/);
+  assert.match(body, /exception when unique_violation then\s+raise exception 'queue_already_linked'/);
+});
+
+test("ลบพนักงานต้องไม่ล้ม: recorded_by on delete set null (เหมือน queues.recorded_by)", () => {
+  assert.match(sql, /recorded_by\s+uuid references public\.staff\(id\) on delete set null/);
+  assert.doesNotMatch(sql, /references public\.staff\(id\) on delete restrict/);
+  assert.match(sql, /references public\.queues\(id\) on delete set null/);
+});
+
+test("เบอร์ปลอม (เลขซ้ำทั้งเบอร์) บันทึกไม่ได้ ทั้งหน้าเว็บและฐานข้อมูล", () => {
+  assert.match(sql, /if v_phone ~ '\^\(\.\)\\1\+\$' then raise exception 'invalid_phone'/);
+  const ok = { customerName: "a", customerPhone: "0000000000", branchId: "b1", promoId: "p", amount: "1", recordDate: "2026-11-23", slipBase64: "x" };
+  assert.match(validateDepositForm(ok, { today: "2026-11-23" }), /เบอร์จริง/);
 });
 
 test("migration ไม่แตะตารางเดิม (ไม่มี alter/drop/update ตาราง queues ฯลฯ)", () => {
@@ -119,6 +134,8 @@ test("สถานะคอลัมน์จองลงคิว", () => {
   assert.equal(depositBookingState({ queueId: "q", booking: { status: "pending" } }), "booked");
   assert.equal(depositBookingState({ queueId: "q", booking: { status: "rescheduled_in" } }), "booked");
   assert.equal(depositBookingState({ queueId: "q", booking: { status: "done" } }), "done");
+  assert.equal(depositBookingState({ queueId: "q", booking: { status: "waiting_queue", date: "2026-11-23" } }), "waitlist");
+  assert.ok(!canBookDeposit({ queueId: "q", booking: { status: "waiting_queue" } }));
   assert.equal(depositBookingState({ queueId: "q", booking: { status: "cancelled" } }), "lost");
   assert.equal(depositBookingState({ queueId: "q", booking: { status: "no_show" } }), "lost");
   assert.equal(depositBookingState({ queueId: "q", booking: null }), "lost"); // คิวถูกลบ
@@ -172,4 +189,6 @@ test("App: ผูกคิวหลังบันทึกเฉพาะตอ
   assert.match(app, /\} else \{\s*showToast\("success", "บันทึกคิวเรียบร้อย ✓"\);\s*\}/);
   assert.match(app, /if \(page !== "booking"\) clearDepositBooking\(\);/);
   assert.match(app, /setPendingDepositLink\(\{ depositId: deposit\.id, queueId: newQueue\.id/);
+  // ค้างผูกไม่สำเร็จต้องรอดรีเฟรช (เก็บเฉพาะ id ไม่เก็บชื่อ/เบอร์)
+  assert.match(app, /localStorage\.setItem\("qlass_pending_deposit_link", JSON\.stringify\(\{ depositId: value\.depositId, queueId: value\.queueId \}\)\)/);
 });

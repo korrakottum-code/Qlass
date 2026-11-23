@@ -26,7 +26,9 @@ create table if not exists public.transfer_deposits (
   record_date     date not null,
   note            text check (note is null or length(note) <= 300),
   slip_path       text not null check (slip_path ~ '^[0-9]{4}-[0-9]{2}/[0-9a-f-]{36}\.(jpg|png|webp)$'),
-  recorded_by     uuid not null references public.staff(id) on delete restrict,
+  -- ผู้บันทึก (ค่าคอม) — on delete set null แบบเดียวกับ queues.recorded_by: ลบพนักงานในหน้าจัดการพนักงานต้องไม่ล้ม
+  -- (restrict = ลบพนักงานที่เคยบันทึกการโอนไม่ได้ ขึ้น "ลองอีกครั้ง" วนไม่จบ) ส่วนการบันทึกใหม่บังคับมีผู้บันทึกที่ deposit_create_v1
+  recorded_by     uuid references public.staff(id) on delete set null,
   created_at      timestamptz not null default now(),
   -- คิวที่จองให้ (คิวแรกที่ลง ถ้าเลื่อนนัด ระบบไล่ต่อจาก rescheduled_from_id เอง)
   queue_id        uuid references public.queues(id) on delete set null,
@@ -188,8 +190,11 @@ declare
   v_proc_name text := '';
   v_row public.transfer_deposits%rowtype;
 begin
+  if p_actor_staff_id is null then raise exception 'invalid_deposit_payload'; end if;
   if length(v_name) < 1 or length(v_name) > 120 then raise exception 'invalid_name'; end if;
   if v_phone !~ '^[0-9]{9,10}$' then raise exception 'invalid_phone'; end if;
+  -- เบอร์ปลอม (0000000000 / 1111111111 …) ผูกได้กับคิวของคนอื่นหลายสิบคน = ผูกผิดคนได้ จึงไม่รับ
+  if v_phone ~ '^(.)\1+$' then raise exception 'invalid_phone'; end if;
   if p_amount is null or p_amount <= 0 or p_amount > 1000000 then raise exception 'invalid_amount'; end if;
   if p_record_date is null then raise exception 'invalid_date'; end if;
   -- วันที่บันทึก: ย้อนได้ไม่เกิน 7 วัน (ลืมกรอกวันที่โอน) ห้ามล่วงหน้า — วันตามเวลาไทย
@@ -235,12 +240,20 @@ begin
   select * into v_queue from public.queues where id = p_queue_id;
   if not found then raise exception 'queue_not_found'; end if;
   if regexp_replace(coalesce(v_queue.phone, ''), '[^0-9]', '', 'g') <> v_row.customer_phone then raise exception 'queue_phone_mismatch'; end if;
+  -- ผูกได้เฉพาะคิวที่เพิ่งลงหลังบันทึกการโอน (กันเอาคิวเก่า/คิวที่มาทำแล้วของลูกค้าคนเดิมมาผูกเพื่อเพิ่มยอด)
+  -- created_at ของคิวมาจาก default now() ของฐานข้อมูล (หน้าเว็บไม่ได้ส่งค่านี้)
+  if v_queue.created_at is null or v_queue.created_at < v_row.created_at then raise exception 'queue_not_new'; end if;
+  if v_queue.status in ('done', 'cancelled', 'no_show', 'rescheduled') then raise exception 'queue_not_new'; end if;
   if exists (select 1 from public.transfer_deposits where queue_id = p_queue_id and id <> p_deposit_id) then raise exception 'queue_already_linked'; end if;
 
-  update public.transfer_deposits
-     set queue_id = p_queue_id, booked_by = p_actor_staff_id, booked_at = now()
-   where id = p_deposit_id
-  returning * into v_row;
+  begin
+    update public.transfer_deposits
+       set queue_id = p_queue_id, booked_by = p_actor_staff_id, booked_at = now()
+     where id = p_deposit_id
+    returning * into v_row;
+  exception when unique_violation then
+    raise exception 'queue_already_linked'; -- สองเครื่องผูกคิวเดียวกันพร้อมกัน
+  end;
   return public.deposit_json(v_row);
 end;
 $$;

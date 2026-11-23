@@ -20,7 +20,7 @@ const STATS_PRESET_KEYS = ["today", "yesterday", "last7", "thisWeek", "lastWeek"
 
 const ERRORS = {
   invalid_name: "กรุณากรอกชื่อ-นามสกุลลูกค้า",
-  invalid_phone: "เบอร์โทรต้องเป็นตัวเลข 9–10 หลัก",
+  invalid_phone: "เบอร์โทรต้องเป็นตัวเลข 9–10 หลัก และเป็นเบอร์จริง (ไม่ใช่ 0000000000)",
   invalid_amount: "ยอดโอนไม่ถูกต้อง",
   invalid_date: "วันที่บันทึกต้องไม่ใช่วันล่วงหน้า และย้อนได้ไม่เกิน 7 วัน",
   invalid_branch: "ไม่พบสาขาที่เลือก",
@@ -31,6 +31,7 @@ const ERRORS = {
   deposit_already_booked: "รายการนี้จองคิวไปแล้ว",
   queue_phone_mismatch: "เบอร์ในคิวไม่ตรงกับเบอร์ที่บันทึกการโอน จึงไม่ผูกให้",
   queue_already_linked: "คิวนี้ผูกกับรายการโอนอื่นอยู่แล้ว",
+  queue_not_new: "ผูกได้เฉพาะคิวที่เพิ่งจองหลังบันทึกการโอน",
   queue_not_found: "ไม่พบคิว",
   invalid_reason: "กรุณาใส่เหตุผล (2–200 ตัวอักษร)",
   invalid_range: "ช่วงวันที่ไม่ถูกต้อง",
@@ -82,6 +83,9 @@ function BookingCell({ deposit, onBook, canBook }) {
   const b = deposit.booking;
   if (state === "cancelled") {
     return <div style={{ color: "#6b7280", fontWeight: 700, fontSize: 13 }}>ยกเลิก/คืนเงิน<div style={{ fontWeight: 400, fontSize: 11 }}>{deposit.cancelReason}</div></div>;
+  }
+  if (state === "waitlist") {
+    return <div style={{ color: "#b45309", fontWeight: 700, textAlign: "center", fontSize: 13 }}>อยู่คิวรอ<div style={{ fontWeight: 400, fontSize: 11 }}>ยังไม่มีวันเวลา</div></div>;
   }
   if (state === "booked" || state === "done") {
     return (
@@ -275,7 +279,7 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
 
       {pendingLink && (
         <div className="card" style={{ padding: 12, marginBottom: 12, borderColor: "#dc2626", background: "#fef2f2" }}>
-          <div style={{ fontWeight: 700, color: "#b91c1c" }}>คิวของ {pendingLink.customerName} บันทึกแล้ว แต่ยังผูกกับรายการโอนไม่สำเร็จ</div>
+          <div style={{ fontWeight: 700, color: "#b91c1c" }}>คิว{pendingLink.customerName ? `ของ ${pendingLink.customerName}` : "ล่าสุด"} บันทึกแล้ว แต่ยังผูกกับรายการโอนไม่สำเร็จ</div>
           <div style={{ fontSize: 12, margin: "4px 0 8px" }}>กด “ลองผูกอีกครั้ง” (ห้ามกดจองใหม่ จะได้คิวซ้ำ)</div>
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-sm btn-primary" onClick={async () => { if (await onRetryLink?.()) setReloadKey((k) => k + 1); }}>ลองผูกอีกครั้ง</button>
