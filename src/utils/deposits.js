@@ -136,3 +136,39 @@ export function shouldLinkDeposit(pending, { newQueue, editing }) {
   if (!pending || editing || !newQueue?.id) return false;
   return phonesMatch(pending.customerPhone, newQueue.phone);
 }
+
+// เวลาที่กดบันทึกจริง (เวลาไทย) จาก createdAt — ถ้าวันที่กดบันทึกไม่ตรงกับ "วันที่บันทึก" ที่เลือกไว้ (ลงย้อนหลัง) คืน sameDay=false
+export function depositRecordedAt(createdAt, recordDate) {
+  if (!createdAt) return null;
+  const t = new Date(createdAt);
+  if (Number.isNaN(t.getTime())) return null;
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(t).map((p) => [p.type, p.value])
+  );
+  const date = `${parts.year}-${parts.month}-${parts.day}`;
+  return { date, time: `${parts.hour}:${parts.minute}`, sameDay: !recordDate || date === recordDate };
+}
+
+// สรุปรายการโอนของวันหนึ่ง แยกตามโปร (ไม่นับที่ยกเลิก/คืนเงิน)
+// "จองลงคิวแล้ว" นับแบบเดียวกับตัวกรอง "จองแล้ว" ของเซิร์ฟเวอร์: มีคิวที่ยังไม่ ยกเลิก/ไม่มา/เลื่อนออก (รวมคิวรอและมาทำแล้ว)
+export function summarizeDepositsByPromo(rows = []) {
+  const groups = new Map();
+  const total = { count: 0, amount: 0, booked: 0, waiting: 0 };
+  for (const d of rows) {
+    if (!d || d.cancelledAt) continue;
+    const state = depositBookingState(d);
+    const booked = state === "booked" || state === "waitlist" || state === "done";
+    const name = d.promoName || d.procedureName || "ไม่ระบุโปร";
+    const g = groups.get(name) || { name, count: 0, amount: 0, booked: 0, waiting: 0 };
+    const amount = Number(d.amount) || 0;
+    g.count += 1; g.amount += amount; g[booked ? "booked" : "waiting"] += 1;
+    total.count += 1; total.amount += amount; total[booked ? "booked" : "waiting"] += 1;
+    groups.set(name, g);
+  }
+  const round = (n) => Math.round(n * 100) / 100;
+  const promos = [...groups.values()]
+    .map((g) => ({ ...g, amount: round(g.amount) }))
+    .sort((a, b) => b.count - a.count || b.amount - a.amount || a.name.localeCompare(b.name, "th"));
+  return { ...total, amount: round(total.amount), promos };
+}

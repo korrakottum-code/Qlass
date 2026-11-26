@@ -6,10 +6,10 @@ import { formatThaiDate, blockToTime, getTodayStr } from "../utils/helpers";
 import { useSubmissionLock } from "../hooks/useSubmissionLock";
 import { pickDatePresets, daySpan } from "../utils/datePresets";
 import { serverErrorCode } from "../utils/sessionApi";
-import { getServerSessionToken, depositsAvailable, listDeposits, createDeposit, cancelDeposit, fetchDepositSlipUrl, fetchDepositStats } from "../utils/depositApi";
+import { getServerSessionToken, depositsAvailable, listDeposits, createDeposit, updateDepositPromo, cancelDeposit, fetchDepositSlipUrl, fetchDepositStats } from "../utils/depositApi";
 import {
   DEPOSIT_PAGE_SIZE, MAX_SLIP_BYTES, validateDepositForm, depositBookingState, canBookDeposit,
-  formatBaht, formatPhone, sumDepositStats, depositCommissionForRow,
+  formatBaht, formatPhone, sumDepositStats, depositCommissionForRow, depositRecordedAt, summarizeDepositsByPromo,
 } from "../utils/deposits";
 import Modal, { ModalHeader, ModalBody } from "../components/Modal";
 
@@ -135,6 +135,143 @@ function CancelModal({ deposit, busy, onClose, onConfirm }) {
   );
 }
 
+// แก้โปร/หัตถการที่เลือกผิด — แก้ได้เฉพาะโปร (ยอดโอนผูกกับค่าคอม จึงไม่ให้แก้ตรงนี้) ระบบเก็บประวัติว่าใครแก้
+function EditPromoModal({ deposit, promos, procedures, busy, onClose, onConfirm }) {
+  const [procedureId, setProcedureId] = useState("");
+  const [promoId, setPromoId] = useState("");
+  const procName = (id) => procedures.find((p) => p.id === id)?.name || "";
+  const options = promos
+    .filter((p) => p.active !== false && p.id !== deposit.promoId && (!procedureId || p.procedureId === procedureId))
+    .map((p) => ({ id: p.id, label: `${p.name}${p.procedureId && !procedureId ? ` (${procName(p.procedureId)})` : ""}${p.price ? ` · ${formatBaht(p.price)} บาท` : ""}` }));
+  const usedProcedures = procedures.filter((pr) => promos.some((p) => p.active !== false && p.procedureId === pr.id));
+  return (
+    <Modal onClose={onClose}>
+      <ModalHeader title="แก้ไขโปร / หัตถการ" onClose={onClose} />
+      <ModalBody>
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ fontWeight: 700 }}>{deposit.customerName} · {formatPhone(deposit.customerPhone)}</div>
+          <div style={{ fontSize: 13, color: "var(--text3)" }}>ตอนนี้: {deposit.promoName || deposit.procedureName || "—"} · โอน {formatBaht(deposit.amount)} บาท</div>
+          <label style={{ fontSize: 13 }}>หัตถการ
+            <select className="input" style={{ marginTop: 4 }} value={procedureId} onChange={(e) => { setProcedureId(e.target.value); setPromoId(""); }}>
+              <option value="">ทุกหัตถการ</option>
+              {usedProcedures.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+            </select>
+          </label>
+          <label style={{ fontSize: 13 }}>โปรที่ถูกต้อง
+            <select className="input" style={{ marginTop: 4 }} value={promoId} onChange={(e) => setPromoId(e.target.value)}>
+              <option value="">— เลือกโปร —</option>
+              {options.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          </label>
+          {deposit.booking && (
+            <div style={{ fontSize: 12, color: "#b45309" }}>⚠️ รายการนี้ผูกคิวไว้แล้ว — แก้ตรงนี้ไม่เปลี่ยนหัตถการในคิว ถ้าคิวผิดด้วยต้องไปแก้ที่ตารางคิวเอง</div>
+          )}
+          <div style={{ fontSize: 12, color: "var(--text3)" }}>แก้ได้เฉพาะโปร ยอดโอนแก้ไม่ได้ (ถ้ายอดผิดให้ยกเลิกแล้วบันทึกใหม่) ระบบเก็บประวัติว่าใครแก้ เปลี่ยนจากโปรอะไร</div>
+        </div>
+      </ModalBody>
+      <div className="modal-footer">
+        <button className="btn btn-secondary" onClick={onClose}>ปิด</button>
+        <button className="btn btn-primary" disabled={busy || !promoId} onClick={() => onConfirm(promoId)}>บันทึกการแก้ไข</button>
+      </div>
+    </Modal>
+  );
+}
+
+// การ์ดสรุปรายวัน: ดึงทุกรายการของวันนั้น (ตามสาขาที่เลือก/สาขาของตัวเอง) แล้วรวมแยกตามโปร
+const SUMMARY_PAGE = 200;
+const SUMMARY_MAX_PAGES = 10;
+function DepositDaySummary({ token, branchId, reloadKey, onToast }) {
+  // ตัวเลือกวันแบบเดียวกับแท็บยอดรวมรายคน/หน้าตารางคิว: ช่วงด่วน + จากวันที่/ถึงวันที่ (ค่าเริ่มต้น = วันนี้)
+  const presets = useMemo(() => pickDatePresets(STATS_PRESET_KEYS), []);
+  const [range, setRange] = useState(() => { const t = getTodayStr(); return { from: t, to: t }; });
+  const [lo, hi] = range.from && range.to && range.from > range.to ? [range.to, range.from] : [range.from, range.to];
+  const activePreset = presets.find((p) => p.start === range.from && p.end === range.to);
+  const [result, setResult] = useState({ key: "", rows: [], partial: false });
+  const key = `${lo}|${hi}|${branchId || ""}|${reloadKey}`;
+  // ลบวันที่ออกจนว่าง = ไม่โหลด (ไม่ค้าง "กำลังโหลด…")
+  const loading = Boolean(lo && hi) && result.key !== key;
+  useEffect(() => {
+    if (!lo || !hi) return undefined;
+    let alive = true;
+    (async () => {
+      const rows = [];
+      let total = Infinity;
+      for (let i = 0; i < SUMMARY_MAX_PAGES && rows.length < total; i += 1) {
+        const data = await listDeposits(token, { status: "all", branchId: branchId || null, from: lo, to: hi, limit: SUMMARY_PAGE, offset: i * SUMMARY_PAGE });
+        const got = data?.deposits || [];
+        total = data?.total || 0;
+        rows.push(...got);
+        if (got.length < SUMMARY_PAGE) break;
+      }
+      if (alive) setResult({ key, rows, partial: rows.length < total });
+    })().catch(async (err) => {
+      if (!alive) return;
+      setResult({ key, rows: [], partial: false });
+      onToast?.("error", await explain(err));
+    });
+    return () => { alive = false; };
+  }, [lo, hi, branchId, token, key, onToast]);
+  const sum = useMemo(() => summarizeDepositsByPromo(result.rows), [result.rows]);
+  const today = getTodayStr();
+  const isToday = lo === today && hi === today;
+  const title = activePreset ? activePreset.label : lo === hi ? `วันที่ ${formatThaiDate(lo)}` : `${formatThaiDate(lo)} – ${formatThaiDate(hi)}`;
+  const th = { padding: "6px 10px", fontSize: 11, textAlign: "left" };
+  const td = { padding: "6px 10px", fontSize: 12 };
+  return (
+    <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>📊 สรุป{title}</div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">ช่วงด่วน</label>
+          <select value={activePreset?.key ?? ""} onChange={(e) => { const p = presets.find((x) => x.key === e.target.value); if (p) setRange({ from: p.start, to: p.end }); }}>
+            {!activePreset && <option value="">กำหนดเอง ({Math.max(daySpan(lo, hi), 0)} วัน)</option>}
+            {presets.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+          </select>
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">จากวันที่บันทึก</label>
+          <input type="date" value={range.from} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} />
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="form-label">ถึงวันที่</label>
+          <input type="date" value={range.to} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} />
+        </div>
+        <span style={{ fontSize: 12, color: "var(--text3)", paddingBottom: 8 }}>{loading ? "กำลังโหลด…" : "นับตามวันที่บันทึก ไม่รวมที่ยกเลิก/คืนเงิน"}</span>
+      </div>
+      {!loading && (
+        <>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 13, marginBottom: sum.promos.length ? 8 : 0 }}>
+            <span>โอนแล้ว <b>{sum.count.toLocaleString()}</b> ราย</span>
+            <span>ยอดโอน <b>{formatBaht(sum.amount)}</b> บาท</span>
+            <span style={{ color: "var(--success, #16a34a)" }}>จองลงคิวแล้ว <b>{sum.booked.toLocaleString()}</b> ราย</span>
+            <span style={{ color: "var(--warning, #d97706)" }}>ยังไม่จอง <b>{sum.waiting.toLocaleString()}</b> ราย</span>
+          </div>
+          {sum.promos.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table className="data-table" style={{ minWidth: 480 }}>
+                <thead><tr><th style={th}>โปร / หัตถการ</th><th style={{ ...th, textAlign: "right" }}>โอน (ราย)</th><th style={{ ...th, textAlign: "right" }}>ยอดโอน</th><th style={{ ...th, textAlign: "right" }}>จองลงคิวแล้ว</th><th style={{ ...th, textAlign: "right" }}>ยังไม่จอง</th></tr></thead>
+                <tbody>
+                  {sum.promos.map((p) => (
+                    <tr key={p.name}>
+                      <td style={td}>{p.name}</td>
+                      <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{p.count.toLocaleString()}</td>
+                      <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>{formatBaht(p.amount)} บาท</td>
+                      <td style={{ ...td, textAlign: "right" }}>{p.booked.toLocaleString()}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{p.waiting.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {sum.count === 0 && <div style={{ fontSize: 12, color: "var(--text3)" }}>{isToday ? "ยังไม่มีรายการโอนของวันนี้" : "ไม่มีรายการโอนในช่วงนี้"}</div>}
+          {result.partial && <div style={{ fontSize: 11, color: "var(--warning, #d97706)", marginTop: 6 }}>รายการเยอะเกินไป สรุปนี้นับได้ไม่ครบ ดูแท็บยอดรวมรายคนแทน</div>}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function DepositPage({ branches = [], promos = [], procedures = [], staff = [], currentUser, onToast, onBook, pendingLink, onRetryLink, onDismissPendingLink }) {
   const role = currentUser?.role;
   const isCeo = role === "ceo";
@@ -153,6 +290,7 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
   const [page, setPage] = useState(0);
   const [reloadKey, setReloadKey] = useState(0);
   const [cancelling, setCancelling] = useState(null);
+  const [editing, setEditing] = useState(null);
   const [slipUrl, setSlipUrl] = useState(null);
   const [statsRange, setStatsRange] = useState(() => {
     const m = pickDatePresets(["thisMonth"])[0];
@@ -239,6 +377,18 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
       setForm(emptyForm(ownBranchId));
       setTab("list");
       setPage(0);
+      setReloadKey((k) => k + 1);
+    }
+  }
+
+  async function handleEditPromo(promoId) {
+    const target = editing;
+    const r = await run(async () => {
+      try { return await updateDepositPromo(token, target.id, promoId); } catch (err) { onToast?.("error", await explain(err)); return null; }
+    });
+    if (r.started && r.result) {
+      setEditing(null);
+      onToast?.("success", "แก้ไขโปรแล้ว");
       setReloadKey((k) => k + 1);
     }
   }
@@ -357,6 +507,7 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
 
       {tab === "list" && !isCeo && (
         <div>
+          <DepositDaySummary token={token} branchId={branchScoped ? null : branchFilter || null} reloadKey={reloadKey} onToast={onToast} />
           <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
             <input className="input" style={{ flex: "1 1 240px", minWidth: 0 }} placeholder="🔍 ค้นหาชื่อ-นามสกุล หรือเบอร์โทร" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} />
             <select className="input" style={{ flex: "0 1 170px" }} value={status} onChange={(e) => { setStatus(e.target.value); setPage(0); }}>
@@ -384,15 +535,22 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
               <tbody>
                 {list.deposits.map((d) => (
                   <tr key={d.id} style={{ opacity: d.cancelledAt ? 0.6 : 1 }}>
-                    <td style={{ ...td, whiteSpace: "nowrap" }}>{formatThaiDate(d.recordDate)}</td>
+                    <td style={{ ...td, whiteSpace: "nowrap" }}>{formatThaiDate(d.recordDate)}{(() => {
+                      const at = depositRecordedAt(d.createdAt, d.recordDate);
+                      if (!at) return null;
+                      return <div style={{ fontSize: 11, color: "var(--text3)" }}>{at.sameDay ? `${at.time} น.` : `กดบันทึก ${formatThaiDate(at.date)} ${at.time} น.`}</div>;
+                    })()}</td>
                     <td style={td}>{d.customerName}<div style={{ fontSize: 11, color: "var(--text3)" }}>บันทึกโดย {d.recordedByName || "—"}</div></td>
                     <td style={{ ...td, whiteSpace: "nowrap", fontFamily: "var(--mono)" }}>{formatPhone(d.customerPhone)}</td>
                     <td style={td}>{d.branchName}</td>
-                    <td style={td}>{d.promoName || d.procedureName}</td>
+                    <td style={td}>{d.promoName || d.procedureName}{d.lastEdit && (
+                      <div style={{ fontSize: 11, color: "var(--text3)" }} title={d.lastEdit.at ? `แก้เมื่อ ${new Date(d.lastEdit.at).toLocaleString("th-TH")}` : undefined}>แก้ไขแล้ว{d.lastEdit.byName ? ` โดย ${d.lastEdit.byName}` : ""} (เดิม: {d.lastEdit.fromPromoName || "—"})</div>
+                    )}</td>
                     <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap", fontWeight: 700 }}>{formatBaht(d.amount)} บาท</td>
                     <td style={{ ...td, minWidth: 150 }}><BookingCell deposit={d} canBook={canBookDeposit(d)} onBook={onBook} /></td>
                     <td style={{ ...td, whiteSpace: "nowrap" }}>
                       <button className="btn btn-sm btn-secondary" onClick={() => openSlip(d)}>สลิป</button>
+                      {!d.cancelledAt && <button className="btn btn-sm btn-secondary" style={{ marginLeft: 6 }} onClick={() => setEditing(d)}>แก้ไข</button>}
                       {canCancel && !d.cancelledAt && <button className="btn btn-sm btn-secondary" style={{ marginLeft: 6, color: "#dc2626" }} onClick={() => setCancelling(d)}>ยกเลิก</button>}
                     </td>
                   </tr>
@@ -479,6 +637,7 @@ export default function DepositPage({ branches = [], promos = [], procedures = [
         </div>
       )}
 
+      {editing && <EditPromoModal deposit={editing} promos={promos} procedures={procedures} busy={isSaving} onClose={() => setEditing(null)} onConfirm={handleEditPromo} />}
       {cancelling && <CancelModal deposit={cancelling} busy={isSaving} onClose={() => setCancelling(null)} onConfirm={handleCancel} />}
       {slipUrl && (
         <Modal onClose={() => setSlipUrl(null)}>

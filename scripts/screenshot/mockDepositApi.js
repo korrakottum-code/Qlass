@@ -106,6 +106,23 @@ export async function linkDepositQueue(_t, depositId, queueId) {
   return view(d);
 }
 
+export async function updateDepositPromo(_t, depositId, promoId) {
+  const d = deposits.find((x) => x.id === depositId);
+  const scoped = scopeBranch();
+  if (!d || (scoped && d.branchId !== scoped)) fail("deposit_not_found");
+  if (d.cancelledAt) fail("deposit_cancelled");
+  const promo = DB.promos.find((p) => p.id === promoId);
+  if (!promo) fail("invalid_promo");
+  if (d.promoId === promo.id) return view(d);
+  const fromPromoName = d.promoName;
+  Object.assign(d, {
+    promoId: promo.id, procedureId: promo.procedureId, promoName: promo.name,
+    procedureName: DB.procedures.find((p) => p.id === promo.procedureId)?.name || "",
+    lastEdit: { at: new Date().toISOString(), fromPromoName, byName: me()?.nickname || me()?.name || "" },
+  });
+  return view(d);
+}
+
 export async function cancelDeposit(_t, depositId, reason) {
   const d = deposits.find((x) => x.id === depositId);
   if (!d) fail("deposit_not_found");

@@ -767,6 +767,17 @@ Deno.serve(async (req) => {
         return response({ deposit: data }, 200, origin);
       }
 
+      // แก้โปร/หัตถการที่เลือกผิด — เฉพาะโปร (ยอดโอนผูกกับค่าคอม จึงไม่ให้แก้) เก็บประวัติทุกครั้งในฐานข้อมูล
+      if (body.action === "deposit_update_promo") {
+        if (!isUuidValue(body.depositId)) return response({ error: "invalid_deposit_payload" }, 400, origin);
+        if (!isUuidValue(body.promoId)) return response({ error: "invalid_promo" }, 400, origin);
+        const { data, error } = await supabase.rpc("deposit_update_promo_v1", {
+          p_actor_staff_id: staffId, p_deposit_id: body.depositId, p_promo_id: body.promoId, p_branch_id: ownBranch,
+        });
+        if (error) return fail(error);
+        return response({ deposit: data }, 200, origin);
+      }
+
       if (body.action === "deposit_cancel") {
         if (!depositCancelRoles.has(role)) return response({ error: "forbidden" }, 403, origin);
         if (!isUuidValue(body.depositId)) return response({ error: "invalid_deposit_payload" }, 400, origin);
