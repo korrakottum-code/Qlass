@@ -232,3 +232,50 @@ test("App: ผูกคิวหลังบันทึกเฉพาะตอ
   // ค้างผูกไม่สำเร็จต้องรอดรีเฟรช (เก็บเฉพาะ id ไม่เก็บชื่อ/เบอร์)
   assert.match(app, /localStorage\.setItem\("qlass_pending_deposit_link", JSON\.stringify\(\{ depositId: value\.depositId, queueId: value\.queueId \}\)\)/);
 });
+
+test("depositRecordedAt: เวลาไทยจาก createdAt และบอกเมื่อวันที่กดบันทึกไม่ตรงกับวันที่บันทึก", async () => {
+  const { depositRecordedAt } = await import("../src/utils/deposits.js");
+  assert.deepEqual(depositRecordedAt("2026-11-26T07:32:10.123Z", "2026-11-26"), { date: "2026-11-26", time: "14:32", sameDay: true });
+  // 23:05 UTC = 06:05 วันถัดไปเวลาไทย
+  assert.deepEqual(depositRecordedAt("2026-11-25T23:05:00Z", "2026-11-26"), { date: "2026-11-26", time: "06:05", sameDay: true });
+  assert.deepEqual(depositRecordedAt("2026-11-26T03:00:00+00:00", "2026-11-24"), { date: "2026-11-26", time: "10:00", sameDay: false });
+  assert.equal(depositRecordedAt(null, "2026-11-26"), null);
+  assert.equal(depositRecordedAt("not-a-date", "2026-11-26"), null);
+});
+
+test("summarizeDepositsByPromo: แยกตามโปร ไม่นับยกเลิก จองแล้วรวมคิวรอ/มาแล้ว", async () => {
+  const { summarizeDepositsByPromo } = await import("../src/utils/deposits.js");
+  const rows = [
+    { promoName: "Bienox", amount: 2990, booking: { status: "booked" } },
+    { promoName: "Bienox", amount: 2990, booking: null },
+    { promoName: "Bienox", amount: 2990, booking: { status: "done" } },
+    { promoName: "ปรึกษา botox", amount: 500, booking: { status: "waiting_queue" } },
+    { promoName: null, procedureName: "ใช้คอร์ส", amount: 0.1, booking: { status: "cancelled" } },
+    { promoName: "Bienox", amount: 2990, cancelledAt: "2026-11-26T03:00:00Z", booking: { status: "booked" } },
+  ];
+  const s = summarizeDepositsByPromo(rows);
+  assert.equal(s.count, 5);
+  assert.equal(s.amount, 9470.1);
+  assert.equal(s.booked, 3);
+  assert.equal(s.waiting, 2);
+  assert.deepEqual(s.promos.map((p) => [p.name, p.count, p.amount, p.booked, p.waiting]), [
+    ["Bienox", 3, 8970, 2, 1],
+    ["ปรึกษา botox", 1, 500, 1, 0],
+    ["ใช้คอร์ส", 1, 0.1, 0, 1],
+  ]);
+  assert.deepEqual(summarizeDepositsByPromo([]), { count: 0, amount: 0, booked: 0, waiting: 0, promos: [] });
+});
+
+test("แก้โปร: ฟังก์ชันใหม่ปิดจากคีย์หน้าเว็บ แก้ได้เฉพาะโปร เก็บประวัติ และเซิร์ฟเวอร์ล็อกสาขา", () => {
+  const sql = readFileSync(new URL("../supabase/migrations/20261126120000_deposit_edit_promo.sql", import.meta.url), "utf8");
+  assert.match(sql, /revoke all on function public\.deposit_update_promo_v1\(uuid, uuid, uuid, uuid\) from public, anon, authenticated;/);
+  assert.match(sql, /grant execute on function public\.deposit_update_promo_v1\(uuid, uuid, uuid, uuid\) to service_role;/);
+  assert.match(sql, /revoke all on function public\.deposit_json\(public\.transfer_deposits\) from public, anon, authenticated;/);
+  assert.match(sql, /for update;/);
+  assert.match(sql, /edit_log = coalesce\(edit_log, '\[\]'::jsonb\) \|\|/);
+  // ห้ามแตะยอดโอน/ชื่อ/เบอร์/สาขา
+  const update = sql.slice(sql.indexOf("update public.transfer_deposits"), sql.indexOf("returning * into v_row;\n  return public.deposit_json(v_row);\nend;"));
+  assert.doesNotMatch(update, /amount|customer_name|customer_phone|branch_id\s*=|recorded_by/);
+  const fn = readFileSync(new URL("../supabase/functions/staff-session/index.ts", import.meta.url), "utf8");
+  assert.match(fn, /action === "deposit_update_promo"[\s\S]{0,600}p_branch_id: ownBranch/);
+});

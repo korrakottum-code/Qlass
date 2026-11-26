@@ -126,6 +126,9 @@ export function createSessionApi(invoke) {
     async linkDepositQueue(token, depositId, queueId) {
       return (await callSessionFunction({ action: "deposit_link", token, depositId, queueId })).deposit;
     },
+    async updateDepositPromo(token, depositId, promoId) {
+      return (await callSessionFunction({ action: "deposit_update_promo", token, depositId, promoId })).deposit;
+    },
     async cancelDeposit(token, depositId, reason) {
       return (await callSessionFunction({ action: "deposit_cancel", token, depositId, reason })).deposit;
     },
