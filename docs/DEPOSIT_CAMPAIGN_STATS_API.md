@@ -70,3 +70,19 @@ API นี้ไม่ส่งชื่อลูกค้า เบอร์ �
 4. ส่งคีย์ให้ทีมโฆษณาผ่านช่องทางที่ปลอดภัย
 
 **เพิกถอน:** ลบ secret (`supabase secrets unset QLASS_DEPOSIT_STATS_API_KEY`) ฟังก์ชันจะตอบ 503 ทันที และไม่กระทบส่วนอื่นของระบบ ส่วน**ล้างออกทั้งหมดหลังแคมเปญ** ให้ลบฟังก์ชันแล้วรัน `supabase/rollback/20261127120000_deposit_campaign_stats.sql`
+
+## รายชื่อ + เบอร์ลูกค้า (`deposit-campaign-list`) — เพิ่ม 28 พ.ย. 2569
+
+เจ้าของสั่งให้ทีมโฆษณาดึงชื่อและเบอร์ลูกค้าได้ด้วย โดย**ใช้คีย์เดิม** (`QLASS_DEPOSIT_STATS_API_KEY`) ไม่สร้างคีย์ใหม่ เป็นฟังก์ชันใหม่แยกจากยอดรวม (ยอดรวมไม่ถูกแก้)
+
+```
+GET https://<project>.supabase.co/functions/v1/deposit-campaign-list
+GET https://<project>.supabase.co/functions/v1/deposit-campaign-list?since=2026-11-23&until=2026-11-27
+Header: Authorization: Bearer <คีย์เดียวกับยอดรวม>
+```
+
+ตอบรายแถว (ใหม่สุดก่อน): `date`, `branchName`, `promoName`, `procedureName`, `amount`, `status` (`active` / `cancelled`), `booked`, `customerName`, `customerPhone` — ไม่มีสลิป หมายเหตุ เหตุผลยกเลิก ผู้บันทึก หรือ id ใด ๆ
+
+ข้อจำกัดเหมือนยอดรวม (30 วัน, หมดอายุ 4 ธ.ค. 2569) แต่นับ 30 ครั้ง/ชม. แยกจากยอดรวม **ลบคีย์ = ปิดทั้งยอดรวมและรายชื่อ** ถ้าจะปิดเฉพาะรายชื่อ ให้ลบฟังก์ชัน `deposit-campaign-list` แล้วรัน `supabase/rollback/20261128120000_deposit_campaign_list.sql`
+
+ข้อมูลนี้เป็นข้อมูลส่วนบุคคลของลูกค้า: ผู้รับคีย์ต้องเก็บคีย์และข้อมูลที่ดึงไปอย่างระวัง ใช้เพื่องานแคมเปญเท่านั้น
